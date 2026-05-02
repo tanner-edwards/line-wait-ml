@@ -79,7 +79,9 @@ node -e "import('./holidays.js').then(m => console.log(m.holidayFeatures(new Dat
 
 ## Firestore document schema
 
-Collection: `wait_times` (auto-generated document IDs).
+### `wait_times` collection
+
+Auto-generated document IDs. One doc per ride per run (~100 docs/run).
 
 | field | type | notes |
 |---|---|---|
@@ -99,6 +101,22 @@ Collection: `wait_times` (auto-generated document IDs).
 | `days_until_next_holiday` | number | 0 if today is a holiday |
 | `days_since_last_holiday` | number | 0 if today is a holiday |
 | `raw` | map | original API entity (with `forecast` removed) — insurance against schema regret |
+
+### `weather_snapshots` collection
+
+Auto-generated document IDs. One doc per run (only when at least one park is open). Source: [Open-Meteo](https://open-meteo.com) free tier, no API key.
+
+| field | type | notes |
+|---|---|---|
+| `timestamp_utc` | Timestamp | matches the `timestamp_utc` of all `wait_times` docs from the same run — join on this |
+| `temperature_f` | number | current air temperature, °F |
+| `feels_like_f` | number | apparent temperature factoring humidity + wind, °F |
+| `precipitation_mm` | number | current precipitation rate, mm/hr |
+| `wind_mph` | number | current wind speed at 10m, mph |
+| `weather_code` | number | [WMO code](https://open-meteo.com/en/docs#weathervariables): 0=clear, 1–3=cloudy, 45/48=fog, 51–67=rain, 71–77=snow, 80–86=showers, 95–99=thunderstorm |
+| `raw` | map | full Open-Meteo response — insurance against schema regret |
+
+If the Open-Meteo fetch fails, the run logs `weather_fetch_failed` and continues — `wait_times` still gets written, just no weather doc for that run.
 
 ## What's covered as a "holiday"
 

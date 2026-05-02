@@ -8,6 +8,13 @@ const PARKS = [
   { id: '832fcd51-ea19-4e77-85c7-75d5843b127c', name: 'Disney California Adventure Park' },
 ];
 
+const WEATHER_URL =
+  'https://api.open-meteo.com/v1/forecast' +
+  '?latitude=33.8121&longitude=-117.9190' +
+  '&current=temperature_2m,apparent_temperature,precipitation,wind_speed_10m,weather_code' +
+  '&temperature_unit=fahrenheit&wind_speed_unit=mph&precipitation_unit=mm' +
+  '&timezone=America%2FLos_Angeles';
+
 const PT_TZ = 'America/Los_Angeles';
 const PT_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
   timeZone: PT_TZ,
@@ -68,6 +75,21 @@ function stripForecast(entity) {
   return rest;
 }
 
+async function fetchWeatherSnapshot(now) {
+  const data = await fetchJson(WEATHER_URL);
+  const c = data.current;
+  if (!c) throw new Error('weather response missing `current`');
+  return {
+    timestamp_utc: now,
+    temperature_f: c.temperature_2m ?? null,
+    feels_like_f: c.apparent_temperature ?? null,
+    precipitation_mm: c.precipitation ?? null,
+    wind_mph: c.wind_speed_10m ?? null,
+    weather_code: c.weather_code ?? null,
+    raw: data,
+  };
+}
+
 function buildSnapshot(entity, park, now, parts, feats) {
   return {
     ride_id: entity.id,
@@ -120,9 +142,16 @@ async function run() {
     return;
   }
 
-  const live = await Promise.all(
-    openParks.map(async park => ({ park, data: await fetchJson(`${API_BASE}/entity/${park.id}/live`) }))
-  );
+  const liveFetches = openParks.map(async park => ({
+    park,
+    data: await fetchJson(`${API_BASE}/entity/${park.id}/live`),
+  }));
+  // Weather is intentionally allowed to fail without taking down the whole run.
+  const weatherFetch = fetchWeatherSnapshot(now).catch(err => {
+    console.warn(JSON.stringify({ event: 'weather_fetch_failed', error: String(err) }));
+    return null;
+  });
+  const [live, weather] = await Promise.all([Promise.all(liveFetches), weatherFetch]);
 
   const parts = ptParts(now);
   const feats = holidayFeatures(now);
@@ -139,7 +168,14 @@ async function run() {
 
   const db = initFirestore();
   await batchWrite(db.collection('wait_times'), rows);
-  log('wrote', { count: rows.length, parks: openParks.map(p => p.name) });
+  if (weather) {
+    await db.collection('weather_snapshots').add(weather);
+  }
+  log('wrote', {
+    count: rows.length,
+    parks: openParks.map(p => p.name),
+    weather: weather ? 'ok' : 'skipped',
+  });
 }
 
 run().catch(err => {
