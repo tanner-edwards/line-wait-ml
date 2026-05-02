@@ -2,7 +2,7 @@ name: Collect Disney wait times
 
 on:
   schedule:
-    - cron: '*/10 * * * *'
+    - cron: '7-59/10 * * * *'
   workflow_dispatch:
 
 jobs:
