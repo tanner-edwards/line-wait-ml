@@ -1,8 +1,8 @@
 name: Collect Disney wait times
 
 on:
-  schedule:
-    - cron: '7-59/15 * * * *'
+  repository_dispatch:
+    types: [collect]
   workflow_dispatch:
 
 jobs:
