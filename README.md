@@ -100,6 +100,11 @@ Auto-generated document IDs. One doc per ride per run (~100 docs/run).
 | `is_holiday_weekend` | boolean | Fri/Sat/Sun/Mon within 3 days of any holiday |
 | `days_until_next_holiday` | number | 0 if today is a holiday |
 | `days_since_last_holiday` | number | 0 if today is a holiday |
+| `local_event_today` | boolean | true if any entry in `local_events.json` covers today |
+| `local_event_types` | array of strings | event types active today, e.g. `["convention"]`. Empty if none. |
+| `local_event_names` | array of strings | human-readable names of active events |
+| `days_until_next_local_event` | number \| null | `null` if no future events on file |
+| `days_since_last_local_event` | number \| null | `null` if no past events on file |
 | `raw` | map | original API entity (with `forecast` removed) — insurance against schema regret |
 
 ### `weather_snapshots` collection
@@ -117,6 +122,36 @@ Auto-generated document IDs. One doc per run (only when at least one park is ope
 | `raw` | map | full Open-Meteo response — insurance against schema regret |
 
 If the Open-Meteo fetch fails, the run logs `weather_fetch_failed` and continues — `wait_times` still gets written, just no weather doc for that run.
+
+## Maintaining the local-events list
+
+`local_events.json` is a hand-curated list of non-holiday events near the parks that drive elevated crowds — conventions at the Anaheim Convention Center, runDisney race weekends, regional sports events, cheer/dance competitions, etc. Edit it directly and commit.
+
+**Format:**
+
+```json
+[
+  {
+    "name": "NAMM Show 2027",
+    "type": "convention",
+    "start_date": "2027-01-21",
+    "end_date": "2027-01-24"
+  }
+]
+```
+
+**Rules:**
+
+- `type` must be one of `convention`, `race`, `sports`, `competition`. Entries with any other type are silently skipped.
+- Dates are `YYYY-MM-DD`, **inclusive** on both ends. A single-day event uses the same date for both fields.
+- `name` is for your own reference — surfaced into snapshot docs as `local_event_names` for debugging in the Firestore console.
+- The collector reads this file on every run, so adding an event just means commit + push. No code change.
+- If the file is missing or invalid, the collector logs a warning and continues with no event features set on that run (rather than failing).
+
+**Don't include:**
+
+- US federal holidays — already handled by `holidays.js`.
+- Disney's own ticketed events (Halloween parties, Disneyland After Dark) — already captured via the `schedule_type` field on each snapshot.
 
 ## What's covered as a "holiday"
 

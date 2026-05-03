@@ -1,5 +1,6 @@
 import admin from 'firebase-admin';
 import { holidayFeatures } from './holidays.js';
+import { loadEvents, localEventFeatures } from './local_events.js';
 
 const API_BASE = 'https://api.themeparks.wiki/v1';
 
@@ -90,7 +91,7 @@ async function fetchWeatherSnapshot(now) {
   };
 }
 
-function buildSnapshot(entity, park, now, parts, feats) {
+function buildSnapshot(entity, park, now, parts, feats, eventFeats) {
   return {
     ride_id: entity.id,
     ride_name: entity.name,
@@ -107,6 +108,11 @@ function buildSnapshot(entity, park, now, parts, feats) {
     is_holiday_weekend: feats.is_holiday_weekend,
     days_until_next_holiday: feats.days_until_next_holiday,
     days_since_last_holiday: feats.days_since_last_holiday,
+    local_event_today: eventFeats.local_event_today,
+    local_event_types: eventFeats.local_event_types,
+    local_event_names: eventFeats.local_event_names,
+    days_until_next_local_event: eventFeats.days_until_next_local_event,
+    days_since_last_local_event: eventFeats.days_since_last_local_event,
     raw: stripForecast(entity),
   };
 }
@@ -155,10 +161,11 @@ async function run() {
 
   const parts = ptParts(now);
   const feats = holidayFeatures(now);
+  const eventFeats = localEventFeatures(now, loadEvents());
   const rows = live.flatMap(({ park, data }) =>
     (data.liveData || [])
       .filter(e => e.entityType === 'ATTRACTION' && e.queue)
-      .map(e => buildSnapshot(e, park, now, parts, feats))
+      .map(e => buildSnapshot(e, park, now, parts, feats, eventFeats))
   );
 
   if (rows.length === 0) {

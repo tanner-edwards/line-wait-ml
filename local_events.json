@@ -1,0 +1,80 @@
+[
+  {
+    "name": "runDisney Disneyland Halloween Half Marathon Weekend 2025",
+    "type": "race",
+    "start_date": "2025-09-04",
+    "end_date": "2025-09-07"
+  },
+  {
+    "name": "NAMM Show 2026",
+    "type": "convention",
+    "start_date": "2026-01-20",
+    "end_date": "2026-01-24"
+  },
+  {
+    "name": "runDisney Disneyland Half Marathon Weekend 2026",
+    "type": "race",
+    "start_date": "2026-01-29",
+    "end_date": "2026-02-01"
+  },
+  {
+    "name": "Showstopper Dance Competition Anaheim 2026",
+    "type": "competition",
+    "start_date": "2026-02-13",
+    "end_date": "2026-02-15"
+  },
+  {
+    "name": "USA Spirit Nationals & USA Collegiate Championships 2026",
+    "type": "competition",
+    "start_date": "2026-02-19",
+    "end_date": "2026-02-23"
+  },
+  {
+    "name": "USA All Star Cheer & Dance Super Nationals 2026",
+    "type": "competition",
+    "start_date": "2026-03-13",
+    "end_date": "2026-03-15"
+  },
+  {
+    "name": "WonderCon 2026",
+    "type": "convention",
+    "start_date": "2026-03-27",
+    "end_date": "2026-03-29"
+  },
+  {
+    "name": "ASSP Safety 2026 Professional Development Conference & Expo",
+    "type": "convention",
+    "start_date": "2026-06-15",
+    "end_date": "2026-06-17"
+  },
+  {
+    "name": "Nostalgia Con Anaheim 2026",
+    "type": "convention",
+    "start_date": "2026-06-19",
+    "end_date": "2026-06-21"
+  },
+  {
+    "name": "VidCon Anaheim 2026",
+    "type": "convention",
+    "start_date": "2026-06-25",
+    "end_date": "2026-06-27"
+  },
+  {
+    "name": "Celebrity Dance Nationals Anaheim 2026",
+    "type": "competition",
+    "start_date": "2026-06-30",
+    "end_date": "2026-07-05"
+  },
+  {
+    "name": "World of Dance Summit & Finals 2026",
+    "type": "competition",
+    "start_date": "2026-07-07",
+    "end_date": "2026-07-10"
+  },
+  {
+    "name": "D23 The Ultimate Disney Fan Event 2026",
+    "type": "convention",
+    "start_date": "2026-08-14",
+    "end_date": "2026-08-16"
+  }
+]
