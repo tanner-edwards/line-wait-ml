@@ -1,18 +1,18 @@
 // All date math runs against a synthetic UTC-midnight timestamp representing
-// the calendar day in America/Los_Angeles. Doing it this way sidesteps DST
-// and runtime-locale drift: we never compare wall-clock times, only whole
+// the calendar day in the resort's local timezone. Doing it this way sidesteps
+// DST and runtime-locale drift: we never compare wall-clock times, only whole
 // calendar days at a fixed offset.
 
 const DAY_MS = 86400000;
-const PT_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Los_Angeles',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
 
-function todayInPacific(now) {
-  const [y, m, d] = PT_DATE_FMT.format(now).split('-').map(Number);
+function todayInTimezone(now, timezone) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const [y, m, d] = fmt.format(now).split('-').map(Number);
   return Date.UTC(y, m - 1, d);
 }
 
@@ -84,8 +84,8 @@ function holidaysForYear(year) {
   ];
 }
 
-export function holidayFeatures(now) {
-  const today = todayInPacific(now);
+export function holidayFeatures(now, timezone = 'America/Los_Angeles') {
+  const today = todayInTimezone(now, timezone);
   const year = new Date(today).getUTCFullYear();
 
   // ±1 year so days_since / days_until resolve cleanly across year boundaries.

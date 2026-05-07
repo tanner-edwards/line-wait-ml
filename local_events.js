@@ -2,15 +2,15 @@ import { readFileSync } from 'node:fs';
 
 const DAY_MS = 86400000;
 const VALID_TYPES = new Set(['convention', 'race', 'sports', 'competition']);
-const PT_DATE_FMT = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Los_Angeles',
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-});
 
-function todayInPacific(now) {
-  const [y, m, d] = PT_DATE_FMT.format(now).split('-').map(Number);
+function todayInTimezone(now, timezone) {
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timezone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+  const [y, m, d] = fmt.format(now).split('-').map(Number);
   return Date.UTC(y, m - 1, d);
 }
 
@@ -44,8 +44,8 @@ export function loadEvents(path = './local_events.json') {
   return out;
 }
 
-export function localEventFeatures(now, events) {
-  const today = todayInPacific(now);
+export function localEventFeatures(now, events, timezone = 'America/Los_Angeles') {
+  const today = todayInTimezone(now, timezone);
 
   const activeToday = events.filter(e => today >= e.start && today <= e.end);
 

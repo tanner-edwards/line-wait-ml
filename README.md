@@ -1,12 +1,14 @@
 # line-wait-ml
 
-Polls Disneyland Park and Disney California Adventure ride wait times every 10 minutes via GitHub Actions and writes snapshots to Firebase Firestore. Data feeds a future ML model for predicting wait times and closure durations.
+Polls Disneyland Resort (DLR) and Walt Disney World (WDW) ride wait times every 10 minutes and writes snapshots to Firebase Firestore. Data feeds a future ML model for short-horizon wait-time forecasting and peak/trough detection.
 
 ## How it works
 
-1. GitHub Actions cron fires every 10 minutes (UTC).
-2. `collect.js` checks each park's live schedule (`themeparks.wiki` API). If both parks are closed right now, it logs `skip_closed` and exits — no Firestore write.
-3. For each open park, it fetches live wait times, filters to attractions with a standby queue, enriches each row with timestamp + holiday-proximity features (computed in `America/Los_Angeles`), and batch-writes to the `wait_times` collection.
+1. GitHub Actions runs every 10 minutes (triggered by cron-job.org via `repository_dispatch`).
+2. `collect.js` iterates over both resorts. For each, it checks every park's live schedule via the `themeparks.wiki` API. If all parks in a resort are closed right now, that resort logs `skip_closed` and is skipped — no Firestore write for that resort.
+3. For open parks, it fetches live wait times + current weather (Open-Meteo), filters to attractions with a standby queue, enriches each row with the resort's timezone-aware temporal features + holiday + local-event proximity, and batch-writes to that resort's collections.
+
+Each resort gets its own Firestore collections — no commingling. Resort-specific config (timezone, weather coords, target collections, events file) lives in the `RESORTS` array at the top of `collect.js`.
 
 Data source: [`themeparks.wiki`](https://api.themeparks.wiki/docs/v1.html) — free, no auth, community-maintained.
 
@@ -47,7 +49,7 @@ GitHub → repo **Settings → General → scroll to "Danger Zone" → Change re
 
 Either wait up to 10 minutes for the cron, or trigger manually: **Actions tab → Collect Disney wait times → Run workflow**.
 
-Verify in the Firebase console: **Firestore Database → Data tab → `wait_times` collection** — about 100 docs should appear per run while parks are open.
+Verify in the Firebase console: **Firestore Database → Data tab** — `wait_times` should populate while DLR is open (~100 docs/run), `wait_times_wdw` should populate while WDW is open (~125 docs/run).
 
 ## Local development
 
@@ -62,10 +64,12 @@ mv ~/Downloads/your-firebase-key.json ./firebase-key.json
 FIREBASE_SERVICE_ACCOUNT=$(cat firebase-key.json) node collect.js
 ```
 
-Expected output is a single JSON line — either:
+Expected output is one JSON line per resort — either:
 
-- `{"event":"skip_closed","at":"..."}` if both parks are closed, or
-- `{"event":"wrote","count":N,"parks":[...]}` on success.
+- `{"event":"skip_closed","resort":"DLR","at":"..."}` if all parks in that resort are closed, or
+- `{"event":"wrote","resort":"DLR","count":N,"parks":[...],"weather":"ok"}` on success.
+
+You'll see the same shape for `"WDW"`. One resort failing (e.g., transient API error) doesn't take down the other — they're processed independently.
 
 ### Verify the holiday math
 
@@ -79,37 +83,39 @@ node -e "import('./holidays.js').then(m => console.log(m.holidayFeatures(new Dat
 
 ## Firestore document schema
 
-### `wait_times` collection
+There are **two parallel sets of collections, one per resort.** DLR data lives in `wait_times` + `weather_snapshots`; WDW data lives in `wait_times_wdw` + `weather_snapshots_wdw`. Identical schemas; the only difference is which resort the rows came from.
 
-Auto-generated document IDs. One doc per ride per run (~100 docs/run).
+### `wait_times` / `wait_times_wdw`
+
+Auto-generated document IDs. ~100 DLR docs/run, ~125 WDW docs/run, only when at least one park in that resort is open.
 
 | field | type | notes |
 |---|---|---|
 | `ride_id` | string | UUID from themeparks.wiki |
 | `ride_name` | string | e.g. "Space Mountain" |
-| `park_id` | string | DLR or DCA UUID |
-| `park_name` | string | "Disneyland Park" / "Disney California Adventure Park" |
+| `park_id` | string | UUID of the specific park within the resort |
+| `park_name` | string | e.g. "Disneyland Park", "Magic Kingdom Park" |
 | `wait_minutes` | number \| null | `null` if not reported |
 | `status` | string | `OPERATING`, `CLOSED`, `DOWN`, `REFURBISHMENT` |
 | `timestamp_utc` | Timestamp | one timestamp shared by all rows from a single run |
 | `schedule_type` | string | `OPERATING`, `TICKETED_EVENT`, or `UNKNOWN` (if schedule fetch failed) |
-| `day_of_week` | number | 0=Sun … 6=Sat (Pacific time) |
-| `hour_of_day` | number | 0–23 (Pacific time) |
-| `month` | number | 1–12 (Pacific time) |
+| `day_of_week` | number | 0=Sun … 6=Sat, **in the resort's local timezone** (PT for DLR, ET for WDW) |
+| `hour_of_day` | number | 0–23, in the resort's local timezone |
+| `month` | number | 1–12, in the resort's local timezone |
 | `is_holiday` | boolean | one of the 16 holidays in `holidays.js` |
 | `is_holiday_weekend` | boolean | Fri/Sat/Sun/Mon within 3 days of any holiday |
 | `days_until_next_holiday` | number | 0 if today is a holiday |
 | `days_since_last_holiday` | number | 0 if today is a holiday |
-| `local_event_today` | boolean | true if any entry in `local_events.json` covers today |
+| `local_event_today` | boolean | true if any entry in the resort's events file covers today |
 | `local_event_types` | array of strings | event types active today, e.g. `["convention"]`. Empty if none. |
 | `local_event_names` | array of strings | human-readable names of active events |
 | `days_until_next_local_event` | number \| null | `null` if no future events on file |
 | `days_since_last_local_event` | number \| null | `null` if no past events on file |
 | `raw` | map | original API entity (with `forecast` removed) — insurance against schema regret |
 
-### `weather_snapshots` collection
+### `weather_snapshots` / `weather_snapshots_wdw`
 
-Auto-generated document IDs. One doc per run (only when at least one park is open). Source: [Open-Meteo](https://open-meteo.com) free tier, no API key.
+Auto-generated document IDs. One doc per run per resort (only when at least one park in the resort is open). Source: [Open-Meteo](https://open-meteo.com) free tier, no API key. DLR weather is fetched for Anaheim (33.81, -117.92); WDW for Orlando (28.39, -81.57).
 
 | field | type | notes |
 |---|---|---|
@@ -123,9 +129,13 @@ Auto-generated document IDs. One doc per run (only when at least one park is ope
 
 If the Open-Meteo fetch fails, the run logs `weather_fetch_failed` and continues — `wait_times` still gets written, just no weather doc for that run.
 
-## Maintaining the local-events list
+## Maintaining the local-events lists
 
-`local_events.json` is a hand-curated list of non-holiday events near the parks that drive elevated crowds — conventions at the Anaheim Convention Center, runDisney race weekends, regional sports events, cheer/dance competitions, etc. Edit it directly and commit.
+There are **two events files**, one per resort:
+- `local_events.json` — DLR events (Anaheim Convention Center, runDisney DLR weekends, SoCal-area events).
+- `local_events_wdw.json` — WDW events (Orange County Convention Center, runDisney WDW weekends, Orlando-area events). Currently empty — populate as you go.
+
+Both files use the same format and are read on every collector run. Edit either directly and commit.
 
 **Format:**
 
@@ -155,14 +165,18 @@ If the Open-Meteo fetch fails, the run logs `weather_fetch_failed` and continues
 
 ## What's covered as a "holiday"
 
-Sixteen dates per year, all rule-computed (no annual maintenance):
+Sixteen US federal holidays + a few non-federal high-impact dates, all rule-computed (no annual maintenance):
 
 New Year's Day, MLK Jr. Day, Presidents Day, Easter Sunday, Memorial Day, Juneteenth, Independence Day, Labor Day, Columbus / Indigenous Peoples Day, Veterans Day, Thanksgiving, Black Friday, Christmas Eve, Christmas Day, Day after Christmas, New Year's Eve.
+
+The same list applies to both resorts — federal holidays are nationwide. The only resort-specific difference is the timezone used to determine "what day is it today" (PT for DLR, ET for WDW), which matters near the date-boundary at midnight.
 
 Spring break is intentionally **not** modeled — it's a fuzzy multi-week window with no clean rule and varies by school district. The model can pick up that pattern from raw `month` + `day_of_week` features.
 
 ## Known limitations
 
-- GitHub Actions `schedule:` cron runs are best-effort; expect occasional 11–15 min gaps under load.
+- The cron is triggered externally via cron-job.org → `repository_dispatch`, which is dramatically more reliable than GitHub's native `schedule:` (used previously and abandoned for being too sparse). Expect runs to land within a minute of their scheduled time.
 - `themeparks.wiki` is an unofficial wrapper around Disney's internal API. Disney could change the underlying API at any time; field shapes may shift without notice.
 - Walk-through attractions and meet-and-greets without standby queues are excluded by design (they don't have wait times).
+- WDW and DLR are processed independently within a single workflow run — one resort failing (e.g., transient API hiccup) doesn't take down the other. Failures log `resort_failed` and the run exits non-zero so the failure surfaces in the Actions UI.
+- Daily Firestore writes run at ~85% of the 20k/day free-tier limit when both resorts are collecting normally. A bad data day or schema regression could blow the quota.
