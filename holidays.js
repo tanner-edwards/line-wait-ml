@@ -69,7 +69,9 @@ function holidaysForYear(year) {
     nthWeekdayOfMonth(year, 1, 1, 3),     // MLK Jr. Day (3rd Mon Jan)
     nthWeekdayOfMonth(year, 2, 1, 3),     // Presidents Day (3rd Mon Feb)
     easter(year),                         // Easter Sunday
+    nthWeekdayOfMonth(year, 5, 0, 2),     // Mother's Day (2nd Sun May)
     lastWeekdayOfMonth(year, 5, 1),       // Memorial Day (last Mon May)
+    nthWeekdayOfMonth(year, 6, 0, 3),     // Father's Day (3rd Sun Jun)
     dateUTC(year, 6, 19),                 // Juneteenth
     dateUTC(year, 7, 4),                  // Independence Day
     nthWeekdayOfMonth(year, 9, 1, 1),     // Labor Day (1st Mon Sep)

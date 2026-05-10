@@ -4,3 +4,5 @@ node_modules/
 firebase-key.json
 *.serviceaccount.json
 .DS_Store
+.venv/
+*.ipynb

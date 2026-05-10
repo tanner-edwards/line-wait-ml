@@ -165,9 +165,9 @@ Both files use the same format and are read on every collector run. Edit either 
 
 ## What's covered as a "holiday"
 
-Sixteen US federal holidays + a few non-federal high-impact dates, all rule-computed (no annual maintenance):
+Eighteen US federal holidays + a few non-federal high-impact dates, all rule-computed (no annual maintenance):
 
-New Year's Day, MLK Jr. Day, Presidents Day, Easter Sunday, Memorial Day, Juneteenth, Independence Day, Labor Day, Columbus / Indigenous Peoples Day, Veterans Day, Thanksgiving, Black Friday, Christmas Eve, Christmas Day, Day after Christmas, New Year's Eve.
+New Year's Day, MLK Jr. Day, Presidents Day, Easter Sunday, Mother's Day, Memorial Day, Father's Day, Juneteenth, Independence Day, Labor Day, Columbus / Indigenous Peoples Day, Veterans Day, Thanksgiving, Black Friday, Christmas Eve, Christmas Day, Day after Christmas, New Year's Eve.
 
 The same list applies to both resorts — federal holidays are nationwide. The only resort-specific difference is the timezone used to determine "what day is it today" (PT for DLR, ET for WDW), which matters near the date-boundary at midnight.
 
