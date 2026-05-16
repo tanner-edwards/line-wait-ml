@@ -10,3 +10,4 @@ df_cache.pkl
 CLAUDE.md
 .aws-sam/
 .expo/
+samconfig.toml

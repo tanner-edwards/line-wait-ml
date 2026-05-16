@@ -1,0 +1,24 @@
+{
+  "name": "club32-backend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "AWS Lambda backend for the Club 32 app — proxies the Themeparks public API and shapes responses for the frontend.",
+  "scripts": {
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc"
+  },
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.161",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^25.8.0",
+    "jest": "^30.4.2",
+    "ts-jest": "^29.4.9",
+    "typescript": "^6.0.3"
+  },
+  "dependencies": {
+    "esbuild": "^0.28.0"
+  }
+}

@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Club 32 wait-times Lambda backend (v0)
+
+Parameters:
+  ApiKeyValue:
+    Type: String
+    NoEcho: true
+    MinLength: 20
+    MaxLength: 128
+    Description: >
+      API key value that clients must send as the x-api-key header.
+      Used for both API Gateway's key check AND the Lambda's defensive check.
+
+Resources:
+  # --- API Gateway ---
+
+  WaitsApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: prod
+      Auth:
+        ApiKeyRequired: true
+
+  WaitsApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    DependsOn: WaitsApiprodStage
+    Properties:
+      Name: club32-v0-key
+      Enabled: true
+      Value: !Ref ApiKeyValue
+
+  WaitsUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    DependsOn: WaitsApiprodStage
+    Properties:
+      UsagePlanName: club32-v0-usage-plan
+      ApiStages:
+        - ApiId: !Ref WaitsApi
+          Stage: prod
+
+  WaitsUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId: !Ref WaitsApiKey
+      KeyType: API_KEY
+      UsagePlanId: !Ref WaitsUsagePlan
+
+  # --- Lambda ---
+
+  WaitsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: club32-waits-handler
+      Runtime: nodejs22.x
+      Handler: handler.handler
+      Architectures: [arm64]
+      MemorySize: 256
+      Timeout: 15
+      Environment:
+        Variables:
+          API_KEY: !Ref ApiKeyValue
+      Events:
+        Combined:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v0/waits
+            Method: get
+        Disneyland:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v0/waits/disneyland
+            Method: get
+        CaliforniaAdventure:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v0/waits/california-adventure
+            Method: get
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: false
+        Target: es2022
+        Sourcemap: true
+        EntryPoints:
+          - src/handler.ts
+
+Outputs:
+  ApiUrl:
+    Description: Base URL of the API Gateway endpoint (combine with /v0/waits[...] for full paths)
+    Value: !Sub https://${WaitsApi}.execute-api.${AWS::Region}.amazonaws.com/prod
+  ApiKeyId:
+    Description: Logical ID of the API Gateway API key (for AWS Console reference; clients use the Value, not the ID)
+    Value: !Ref WaitsApiKey
