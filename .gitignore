@@ -6,3 +6,7 @@ firebase-key.json
 .DS_Store
 .venv/
 *.ipynb
+df_cache.pkl
+CLAUDE.md
+.aws-sam/
+.expo/
