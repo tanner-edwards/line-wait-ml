@@ -1,5 +1,5 @@
 import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react-native';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Home } from './Home';
 import * as api from '../api';
 import { CombinedResponse } from '../types';
@@ -113,6 +113,20 @@ describe('Home — first-load failure', () => {
 
     await waitFor(() => expect(screen.queryByTestId('error-banner')).toBeTruthy());
     expect(screen.queryByTestId('empty-state')).toBeTruthy();
+  });
+});
+
+describe('Home — refresh button', () => {
+  it('re-fetches data when the Refresh button is pressed', async () => {
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    render(<Home />);
+
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+    expect(mockFetchWaits).toHaveBeenCalledTimes(1);
+
+    fireEvent.press(screen.getByTestId('refresh-button'));
+
+    await waitFor(() => expect(mockFetchWaits).toHaveBeenCalledTimes(2));
   });
 });
 

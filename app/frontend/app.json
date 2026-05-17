@@ -25,7 +25,14 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png",
+      "name": "Club 32",
+      "shortName": "Club32",
+      "themeColor": "#222222",
+      "backgroundColor": "#ffffff",
+      "display": "standalone",
+      "orientation": "portrait"
     }
   }
 }

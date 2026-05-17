@@ -80,7 +80,46 @@ beforeEach(() => {
   jest.clearAllMocks();
   _resetCacheForTests();
   process.env.API_KEY = 'test-api-key';
+  process.env.CORS_ORIGIN = 'https://example.cloudfront.net';
   setupHappyPath();
+});
+
+// ----- CORS headers -----
+
+describe('handler — CORS headers', () => {
+  it('echoes the configured CORS_ORIGIN on a successful 200 response', async () => {
+    const result = await handler(buildEvent('/v0/waits/disneyland'));
+    expect(result.statusCode).toBe(200);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
+    expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type');
+    expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, OPTIONS');
+  });
+
+  it('includes CORS headers on a 401 response', async () => {
+    const result = await handler(buildEvent('/v0/waits/disneyland', null));
+    expect(result.statusCode).toBe(401);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
+  });
+
+  it('includes CORS headers on a 404 response', async () => {
+    const result = await handler(buildEvent('/v0/waits/walt-disney-world'));
+    expect(result.statusCode).toBe(404);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
+  });
+
+  it('includes CORS headers on an upstream-failure 502 response', async () => {
+    const realUpstreamError = jest.requireActual('./themeparksClient').UpstreamError;
+    mockedClient.fetchLiveData.mockRejectedValue(new realUpstreamError(502, 'upstream down'));
+    const result = await handler(buildEvent('/v0/waits/disneyland'));
+    expect(result.statusCode).toBe(502);
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
+  });
+
+  it('falls back to "*" when CORS_ORIGIN env var is unset', async () => {
+    delete process.env.CORS_ORIGIN;
+    const result = await handler(buildEvent('/v0/waits/disneyland'));
+    expect(result.headers?.['Access-Control-Allow-Origin']).toBe('*');
+  });
 });
 
 // ----- API key check -----

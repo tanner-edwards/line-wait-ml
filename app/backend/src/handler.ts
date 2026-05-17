@@ -38,13 +38,22 @@ async function fetchPark(parkSlug: ParkSlug): Promise<ParkData> {
   return data;
 }
 
+function corsHeaders(): Record<string, string> {
+  const origin = process.env.CORS_ORIGIN ?? '*';
+  return {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Headers': 'x-api-key, content-type',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+  };
+}
+
 function jsonResponse(
   statusCode: number,
   body: object
 ): APIGatewayProxyResult {
   return {
     statusCode,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...corsHeaders() },
     body: JSON.stringify(body),
   };
 }

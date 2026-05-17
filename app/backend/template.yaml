@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Club 32 wait-times Lambda backend (v0)
+Description: Club 32 — wait-times Lambda backend (v0) + PWA hosting (v0.5)
 
 Parameters:
   ApiKeyValue:
@@ -12,6 +12,14 @@ Parameters:
       API key value that clients must send as the x-api-key header.
       Used for both API Gateway's key check AND the Lambda's defensive check.
 
+  CorsOrigin:
+    Type: String
+    Default: '*'
+    Description: >
+      Value of the Access-Control-Allow-Origin header. During v0.5 bootstrap
+      this stays '*'; once CloudFront is deployed, redeploy with the pinned
+      CloudFront URL (e.g. https://d1abc234.cloudfront.net).
+
 Resources:
   # --- API Gateway ---
 
@@ -19,8 +27,10 @@ Resources:
     Type: AWS::Serverless::Api
     Properties:
       StageName: prod
-      Auth:
-        ApiKeyRequired: true
+      Cors:
+        AllowOrigin: !Sub "'${CorsOrigin}'"
+        AllowHeaders: "'x-api-key, content-type'"
+        AllowMethods: "'GET, OPTIONS'"
 
   WaitsApiKey:
     Type: AWS::ApiGateway::ApiKey
@@ -60,6 +70,7 @@ Resources:
       Environment:
         Variables:
           API_KEY: !Ref ApiKeyValue
+          CORS_ORIGIN: !Ref CorsOrigin
       Events:
         Combined:
           Type: Api
@@ -67,18 +78,24 @@ Resources:
             RestApiId: !Ref WaitsApi
             Path: /v0/waits
             Method: get
+            Auth:
+              ApiKeyRequired: true
         Disneyland:
           Type: Api
           Properties:
             RestApiId: !Ref WaitsApi
             Path: /v0/waits/disneyland
             Method: get
+            Auth:
+              ApiKeyRequired: true
         CaliforniaAdventure:
           Type: Api
           Properties:
             RestApiId: !Ref WaitsApi
             Path: /v0/waits/california-adventure
             Method: get
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -88,6 +105,95 @@ Resources:
         EntryPoints:
           - src/handler.ts
 
+  # --- PWA hosting (v0.5) ---
+
+  # S3 bucket holding the exported Expo web bundle. Private — only the
+  # CloudFront distribution (via OAC) can read it.
+  WebBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "club32-pwa-${AWS::AccountId}-${AWS::Region}"
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  # Origin Access Control (OAC) — the modern replacement for OAI. Lets
+  # CloudFront sign its requests to S3 so the bucket can stay fully private.
+  WebOAC:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "club32-pwa-oac-${AWS::AccountId}"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # The CloudFront distribution. Defaults:
+  # - HTTPS-only (redirect HTTP → HTTPS).
+  # - 5-minute cache TTL so deploys propagate without manual invalidation
+  #   (deploy-web.sh also invalidates, for instant propagation when needed).
+  # - SPA fallback: 403/404 from S3 → return /index.html with 200, so any
+  #   future client-side routing keeps working.
+  WebDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Club 32 PWA
+        DefaultRootObject: index.html
+        PriceClass: PriceClass_100
+        HttpVersion: http2
+        Origins:
+          - Id: S3Origin
+            DomainName: !GetAtt WebBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt WebOAC.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ''
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # AWS-managed cache policy: CachingOptimized (1d default, 1y max,
+          # respects Cache-Control headers). We override the *minimum* via
+          # invalidation in deploy-web.sh; for v0.5 this is plenty.
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+        CustomErrorResponses:
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+            ErrorCachingMinTTL: 60
+
+  # Bucket policy: grant s3:GetObject to the CloudFront distribution via
+  # OAC's SourceArn condition. Without this, CloudFront's signed requests
+  # to S3 would be denied.
+  WebBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCloudFrontReadAccess
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${WebBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${WebDistribution}"
+
 Outputs:
   ApiUrl:
     Description: Base URL of the API Gateway endpoint (combine with /v0/waits[...] for full paths)
@@ -95,3 +201,15 @@ Outputs:
   ApiKeyId:
     Description: Logical ID of the API Gateway API key (for AWS Console reference; clients use the Value, not the ID)
     Value: !Ref WaitsApiKey
+  WebBucketName:
+    Description: S3 bucket name for the PWA static files (used by deploy-web.sh)
+    Value: !Ref WebBucket
+  WebDistributionId:
+    Description: CloudFront distribution ID (used by deploy-web.sh for cache invalidation)
+    Value: !Ref WebDistribution
+  WebDistributionDomain:
+    Description: CloudFront distribution domain (the URL users actually visit)
+    Value: !GetAtt WebDistribution.DomainName
+  WebDistributionUrl:
+    Description: Full HTTPS URL of the PWA (use this as the CorsOrigin in subsequent deploys)
+    Value: !Sub "https://${WebDistribution.DomainName}"

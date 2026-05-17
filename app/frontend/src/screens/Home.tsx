@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  Pressable,
   RefreshControl,
   SafeAreaView,
   StyleSheet,
@@ -78,10 +79,29 @@ export function Home() {
         </View>
       )}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Live Waits</Text>
-        <Text style={styles.headerSubtitle} testID="last-update">
-          Last update: {lastUpdate}
-        </Text>
+        <View style={styles.headerLeft}>
+          <Text style={styles.headerTitle}>Live Waits</Text>
+          <Text style={styles.headerSubtitle} testID="last-update">
+            Last update: {lastUpdate}
+          </Text>
+        </View>
+        <Pressable
+          accessibilityRole="button"
+          onPress={onRefresh}
+          disabled={refreshing}
+          testID="refresh-button"
+          style={({ pressed }) => [
+            styles.refreshButton,
+            refreshing && styles.refreshButtonDisabled,
+            pressed && styles.refreshButtonPressed,
+          ]}
+        >
+          {refreshing ? (
+            <ActivityIndicator size="small" />
+          ) : (
+            <Text style={styles.refreshButtonText}>Refresh</Text>
+          )}
+        </Pressable>
       </View>
       <FlatList
         data={items}
@@ -156,9 +176,25 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomColor: '#eee',
     borderBottomWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
+  headerLeft: { flex: 1 },
   headerTitle: { fontSize: 22, fontWeight: '700' },
   headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
+  refreshButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#222',
+    minWidth: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  refreshButtonDisabled: { backgroundColor: '#999' },
+  refreshButtonPressed: { opacity: 0.7 },
+  refreshButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   parkHeader: {
     backgroundColor: '#f4f4f7',
     paddingHorizontal: 16,
