@@ -7,7 +7,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",
-    "build": "tsc"
+    "build": "tsc",
+    "deploy": "./deploy.sh"
   },
   "license": "UNLICENSED",
   "devDependencies": {

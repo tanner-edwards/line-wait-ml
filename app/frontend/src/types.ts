@@ -1,0 +1,37 @@
+// Mirrors the Lambda's response shape. If the backend contract changes,
+// update both this and the backend's src/types.ts together.
+
+export interface Ride {
+  id: string;
+  name: string;
+  land: string;
+  status: string;
+  currentWait: number | null;
+}
+
+export interface ParkData {
+  park: string;
+  lastUpdated: string;
+  rides: Ride[];
+}
+
+export interface ParkError {
+  park: string;
+  lastUpdated: null;
+  rides: [];
+  error: string;
+}
+
+export interface CombinedResponse {
+  parks: (ParkData | ParkError)[];
+}
+
+export interface ErrorResponse {
+  error: string;
+  message: string;
+  lastUpdated: null;
+}
+
+export function isParkError(entry: ParkData | ParkError): entry is ParkError {
+  return 'error' in entry;
+}
