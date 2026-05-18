@@ -20,6 +20,16 @@ Parameters:
       this stays '*'; once CloudFront is deployed, redeploy with the pinned
       CloudFront URL (e.g. https://d1abc234.cloudfront.net).
 
+  FirebaseServiceAccountJson:
+    Type: String
+    NoEcho: true
+    MinLength: 100
+    Description: >
+      Single-line JSON content of the Firebase service-account key. Pasted
+      via deploy.sh on each deploy; never stored on disk in this repo.
+      Used by the waits handler (read historical_averages) and the averages
+      cron (read wait_times, write historical_averages).
+
 Resources:
   # --- API Gateway ---
 
@@ -71,6 +81,7 @@ Resources:
         Variables:
           API_KEY: !Ref ApiKeyValue
           CORS_ORIGIN: !Ref CorsOrigin
+          FIREBASE_SERVICE_ACCOUNT_JSON: !Ref FirebaseServiceAccountJson
       Events:
         Combined:
           Type: Api

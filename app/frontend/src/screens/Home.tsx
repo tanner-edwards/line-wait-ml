@@ -19,6 +19,8 @@ import {
   rideWaitLabel,
 } from '../grouping';
 import { formatHHMM, olderLastUpdated } from '../timestamp';
+import { TrendArrow } from '../components/TrendArrow';
+import { BelowNormalBadge } from '../components/BelowNormalBadge';
 
 export function Home() {
   const [data, setData] = useState<CombinedResponse | null>(null);
@@ -147,12 +149,43 @@ function ListRow({ item }: { item: ListItem }) {
       </View>
     );
   }
+  const ride = item.ride;
+  const isOperating = ride.status === 'OPERATING';
+  const ha = ride.historicalAverage;
+  // Show indicators only when the ride is operating AND we have historical
+  // averages to compare against. Closed rides + new-attraction rides render
+  // exactly the v0 layout.
+  const showIndicators = isOperating && ha !== null;
+  const bucket0 = showIndicators && ha ? ha.buckets[0] : null;
+  const bucket2 = showIndicators && ha ? ha.buckets[2] : null;
+  // Low confidence when the t+0 bucket has thin data. Treat a missing
+  // bucket as low confidence too (sampleCount 0 < 20). Safe default
+  // when historicalAverage is null.
+  const lowConfidence = (bucket0?.sampleCount ?? 0) < 20;
   return (
-    <View style={styles.rideRow} testID={`ride-${item.ride.id}`}>
+    <View style={styles.rideRow} testID={`ride-${ride.id}`}>
       <Text style={styles.rideName} numberOfLines={1}>
-        {item.ride.name}
+        {ride.name}
       </Text>
-      <Text style={styles.rideWait}>{rideWaitLabel(item.ride)}</Text>
+      <View style={styles.rideRight}>
+        <View style={styles.waitRow}>
+          <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
+          {showIndicators && bucket0 && bucket2 ? (
+            <TrendArrow
+              bucket0Wait={bucket0.wait}
+              bucket2Wait={bucket2.wait}
+              lowConfidence={lowConfidence}
+            />
+          ) : null}
+        </View>
+        {showIndicators && bucket0 ? (
+          <BelowNormalBadge
+            currentWait={ride.currentWait}
+            bucket0Wait={bucket0.wait}
+            sampleCount={bucket0.sampleCount}
+          />
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -218,6 +251,13 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   rideName: { flex: 1, fontSize: 15, marginRight: 12 },
+  rideRight: {
+    alignItems: 'flex-end',
+  },
+  waitRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   rideWait: {
     fontSize: 15,
     fontVariant: ['tabular-nums'],

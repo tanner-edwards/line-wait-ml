@@ -1,6 +1,8 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   ErrorResponse,
+  HistoricalAverage,
+  HistoricalBucket,
   ParkData,
   ParkError,
   ParkSlug,
@@ -12,28 +14,79 @@ import { filterToRides } from './rideFilter';
 import { resolveLand } from './landResolver';
 import { TTLCache } from './cache';
 import { shapeCombined, shapeParkData, shapeParkError } from './responseShape';
+import { classifyDayType } from './dayType';
+import { bucketsAroundNow } from './bucketing';
+import {
+  bucketEntry,
+  ensureLoaded,
+  lookupAverage,
+} from './historicalAverages';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
+
+async function buildHistoricalAverage(
+  parkSlug: ParkSlug,
+  rideId: string,
+  now: Date
+): Promise<HistoricalAverage | null> {
+  // historical_averages reads can fail (Firestore down, bad credentials).
+  // We swallow here so a missing averages dataset doesn't take down the
+  // entire /v0/waits response — the rider still gets live data; the
+  // ride simply renders without the historical comparison.
+  let averages;
+  try {
+    averages = await ensureLoaded();
+  } catch (err) {
+    console.warn('historical_averages load failed; serving without averages', err);
+    return null;
+  }
+
+  const dayType = classifyDayType(now);
+  const [b0, b30, b60] = bucketsAroundNow(now);
+  const v0 = lookupAverage(averages, parkSlug, rideId, b0, dayType);
+  const v30 = lookupAverage(averages, parkSlug, rideId, b30, dayType);
+  const v60 = lookupAverage(averages, parkSlug, rideId, b60, dayType);
+
+  // Spec: historicalAverage is null when no average exists for the ride's
+  // CURRENT bucket on the current day type. (We still return the t+30/+60
+  // entries inside the buckets array even if individually missing.)
+  if (v0 === null) return null;
+
+  const buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket] = [
+    bucketEntry(0, b0, v0),
+    bucketEntry(30, b30, v30),
+    bucketEntry(60, b60, v60),
+  ];
+  return { dayType, buckets };
+}
 
 async function fetchPark(parkSlug: ParkSlug): Promise<ParkData> {
   const cached = parkCache.get(parkSlug);
   if (cached) return cached;
 
   const live = await fetchLiveData(parkSlug);
+  const now = new Date();
 
-  const rides: Ride[] = filterToRides(live.liveData).map(entity => ({
-    id: entity.id,
-    name: entity.name,
-    land: resolveLand(entity.id, parkSlug),
-    status: entity.status ?? 'UNKNOWN',
-    currentWait:
-      entity.status === 'OPERATING'
-        ? entity.queue?.STANDBY?.waitTime ?? null
-        : null,
-  }));
+  const rides: Ride[] = await Promise.all(
+    filterToRides(live.liveData).map(async entity => {
+      const isOperating = entity.status === 'OPERATING';
+      const historicalAverage = isOperating
+        ? await buildHistoricalAverage(parkSlug, entity.id, now)
+        : null;
+      return {
+        id: entity.id,
+        name: entity.name,
+        land: resolveLand(entity.id, parkSlug),
+        status: entity.status ?? 'UNKNOWN',
+        currentWait: isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null,
+        historicalAverage,
+        prediction: null,
+      };
+    })
+  );
 
-  const data = shapeParkData(parkSlug, rides, new Date().toISOString());
+  const data = shapeParkData(parkSlug, rides, now.toISOString());
   parkCache.set(parkSlug, data);
   return data;
 }

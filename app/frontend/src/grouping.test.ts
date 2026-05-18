@@ -8,6 +8,8 @@ function makeRide(over: Partial<Ride> = {}): Ride {
     land: 'Fantasyland',
     status: 'OPERATING',
     currentWait: 10,
+    historicalAverage: null,
+    prediction: null,
   };
   return { ...base, ...over };
 }

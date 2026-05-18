@@ -10,6 +10,8 @@ describe('shapeParkData', () => {
         land: 'Tomorrowland',
         status: 'OPERATING',
         currentWait: 55,
+        historicalAverage: null,
+        prediction: null,
       },
     ];
 

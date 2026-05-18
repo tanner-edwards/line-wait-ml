@@ -1,12 +1,31 @@
 // Mirrors the Lambda's response shape. If the backend contract changes,
 // update both this and the backend's src/types.ts together.
 
+export type DayType = 'weekday' | 'weekend' | 'holiday';
+
+export interface HistoricalBucket {
+  offsetMinutes: 0 | 30 | 60;
+  timeSlot: string; // e.g. "10:30-11:00"
+  wait: number | null; // null when no data for that bucket
+  sampleCount: number; // 0 when no data
+}
+
+export interface HistoricalAverage {
+  dayType: DayType;
+  buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket]; // [t+0, t+30, t+60]
+}
+
+// Always null in v1; shape reserved for vAnytime when the ML model lands.
+export type Prediction = null;
+
 export interface Ride {
   id: string;
   name: string;
   land: string;
   status: string;
   currentWait: number | null;
+  historicalAverage: HistoricalAverage | null;
+  prediction: Prediction | null;
 }
 
 export interface ParkData {

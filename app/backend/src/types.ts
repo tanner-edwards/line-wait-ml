@@ -37,7 +37,25 @@ export interface ThemeparksLiveResponse {
   liveData: ThemeparksLiveEntity[];
 }
 
-// --- Outgoing response shapes (the v0 contract) ---
+// --- Outgoing response shapes ---
+
+// v1 historical-average shape — gets attached to each operating ride.
+export type DayType = 'weekday' | 'weekend' | 'holiday';
+
+export interface HistoricalBucket {
+  offsetMinutes: 0 | 30 | 60;
+  timeSlot: string;            // e.g. "10:30-11:00"
+  wait: number | null;         // null when no average doc exists for this bucket
+  sampleCount: number;         // 0 when no doc exists
+}
+
+export interface HistoricalAverage {
+  dayType: DayType;
+  buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket]; // [t+0, t+30, t+60]
+}
+
+// Reserved for vAnytime ML predictions. Always null in v1.
+export type Prediction = null;
 
 export interface Ride {
   id: string;
@@ -45,6 +63,8 @@ export interface Ride {
   land: string;
   status: string;
   currentWait: number | null;
+  historicalAverage: HistoricalAverage | null;
+  prediction: Prediction | null;
 }
 
 export interface ParkData {

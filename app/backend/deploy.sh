@@ -35,6 +35,40 @@ if [[ ${#API_KEY} -lt 20 ]]; then
   exit 1
 fi
 
+# Firebase service-account credential. Loaded from firebase-key.json at the
+# repo root (gitignored, same file the collector uses). We bypass shell paste
+# entirely because the JSON is ~2.3KB minified, which exceeds many terminals'
+# silent paste limits. Override the path with FIREBASE_KEY_PATH if you keep
+# the file elsewhere.
+FIREBASE_KEY_PATH="${FIREBASE_KEY_PATH:-../../firebase-key.json}"
+
+if [[ ! -f "$FIREBASE_KEY_PATH" ]]; then
+  echo "Error: Firebase service-account file not found at $FIREBASE_KEY_PATH" >&2
+  echo "       Set FIREBASE_KEY_PATH or place firebase-key.json at the repo root." >&2
+  exit 1
+fi
+
+# Base64-encode so SAM CLI's --parameter-overrides parser doesn't choke on
+# the inner quotes / equals signs / etc in the JSON. The Lambda's
+# firestoreClient.ts decodes it on read. base64 keeps the value shell-safe
+# at the cost of ~33% length inflation (still well under SAM's limits).
+FIREBASE_JSON_B64=$(python3 -c "
+import json, base64
+with open('$FIREBASE_KEY_PATH') as f:
+    minified = json.dumps(json.load(f))
+print(base64.b64encode(minified.encode('utf-8')).decode('ascii'))
+" 2>/dev/null) || {
+  echo "Error: $FIREBASE_KEY_PATH did not parse as JSON. Aborting." >&2
+  exit 1
+}
+
+if [[ -z "$FIREBASE_JSON_B64" || ${#FIREBASE_JSON_B64} -lt 100 ]]; then
+  echo "Error: base64-encoded Firebase JSON is empty or implausibly short. Aborting." >&2
+  exit 1
+fi
+
+echo "==> Loaded Firebase service-account from $FIREBASE_KEY_PATH (${#FIREBASE_JSON_B64} chars base64)"
+
 # Look up the current stack's CloudFront URL so CORS pins to it.
 # Returns "None" if the stack doesn't exist yet or the output isn't present.
 CORS_ORIGIN=$(aws cloudformation describe-stacks \
@@ -54,7 +88,10 @@ sam build
 
 echo "==> sam deploy"
 sam deploy \
-  --parameter-overrides "ApiKeyValue=$API_KEY" "CorsOrigin=$CORS_ORIGIN" \
+  --parameter-overrides \
+    "ApiKeyValue=$API_KEY" \
+    "CorsOrigin=$CORS_ORIGIN" \
+    "FirebaseServiceAccountJson=$FIREBASE_JSON_B64" \
   --no-confirm-changeset
 
 echo "==> Done."
