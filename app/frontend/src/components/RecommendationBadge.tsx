@@ -9,6 +9,14 @@ interface RecommendationBadgeProps {
 export function RecommendationBadge({ badge }: RecommendationBadgeProps): React.ReactElement | null {
   if (badge === null) return null;
 
+  if (badge === 'star') {
+    return (
+      <View style={styles.starCircle} testID="badge-star">
+        <Text style={styles.starText}>★</Text>
+      </View>
+    );
+  }
+
   if (badge === 'go') {
     return (
       <View style={styles.goCircle} testID="badge-go">
@@ -32,6 +40,21 @@ const SIZE = 20;
 const HALF = SIZE / 2;
 
 const styles = StyleSheet.create({
+  starCircle: {
+    width: SIZE,
+    height: SIZE,
+    borderRadius: HALF,
+    backgroundColor: '#d4af37',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  starText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: SIZE,
+  },
   goCircle: {
     width: SIZE,
     height: SIZE,

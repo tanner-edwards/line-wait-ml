@@ -43,10 +43,18 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
   const rs = ride.rideStats;
   const { factors, score, badge } = result;
 
-  const trendGlyph = factors.trend.direction === 'up' ? '↗' : factors.trend.direction === 'down' ? '↘' : '→';
+  const projectedChangeValue = factors.projectedChange !== null
+    ? (() => {
+        const pct = Math.round(factors.projectedChange.delta * 100);
+        const sign = pct > 0 ? '+' : '';
+        const glyph = factors.projectedChange.delta > 0.001 ? '↗' : factors.projectedChange.delta < -0.001 ? '↘' : '→';
+        return `${glyph} ${sign}${pct}% over 2hr`;
+      })()
+    : 'no projection';
 
+  const avgWait = ha?.buckets[0].wait;
   const vsAvgValue = factors.vsAvg !== null
-    ? `${Math.round(factors.vsAvg.delta * 100) > 0 ? '+' : ''}${Math.round(factors.vsAvg.delta * 100)}% vs avg`
+    ? `${avgWait ?? '?'} avg → ${ride.currentWait} now (${Math.round(factors.vsAvg.delta * 100) > 0 ? '+' : ''}${Math.round(factors.vsAvg.delta * 100)}%)`
     : 'bucket avg = 0';
 
   const vsRangeValue = factors.vsRange !== null
@@ -67,11 +75,13 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
       {/* Bucket columns */}
       {ha ? (
         <View style={styles.bucketsRow}>
-          <BucketCol label="now" wait={ha.buckets[0].wait} n={ha.buckets[0].sampleCount} />
+          <BucketCol label="+30"  wait={ha.buckets[1].wait} n={ha.buckets[1].sampleCount} />
           <View style={styles.bucketDivider} />
-          <BucketCol label="+30 min" wait={ha.buckets[1].wait} n={ha.buckets[1].sampleCount} />
+          <BucketCol label="+60"  wait={ha.buckets[2].wait} n={ha.buckets[2].sampleCount} />
           <View style={styles.bucketDivider} />
-          <BucketCol label="+60 min" wait={ha.buckets[2].wait} n={ha.buckets[2].sampleCount} />
+          <BucketCol label="+90"  wait={ha.buckets[3].wait} n={ha.buckets[3].sampleCount} />
+          <View style={styles.bucketDivider} />
+          <BucketCol label="+120" wait={ha.buckets[4].wait} n={ha.buckets[4].sampleCount} />
         </View>
       ) : (
         <Text style={styles.noData}>No historical data</Text>
@@ -105,8 +115,9 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
       />
       <FactorRow
         label="trend"
-        value={trendGlyph}
-        points={factors.trend.points}
+        value={projectedChangeValue}
+        points={factors.projectedChange?.points ?? 0}
+        skipped={factors.projectedChange === null}
       />
 
       <View style={styles.divider} />

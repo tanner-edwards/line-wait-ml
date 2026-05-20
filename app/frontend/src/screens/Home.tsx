@@ -229,7 +229,7 @@ function ListRow({
   const ha = ride.historicalAverage;
   const showIndicators = isOperating && ha !== null;
   const bucket0 = showIndicators && ha ? ha.buckets[0] : null;
-  const bucket2 = showIndicators && ha ? ha.buckets[2] : null;
+  const bucket4 = showIndicators && ha ? ha.buckets[4] : null;
   const lowConfidence = (bucket0?.sampleCount ?? 0) < 20;
   const scoreResult = scoreRide(ride);
   const isExpanded = expandedRideId === ride.id;
@@ -248,10 +248,10 @@ function ListRow({
           <View style={styles.rideRight}>
             <View style={styles.waitRow}>
               <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
-              {showIndicators && bucket0 && bucket2 ? (
+              {showIndicators && bucket0 && bucket4 ? (
                 <TrendArrow
                   bucket0Wait={bucket0.wait}
-                  bucket2Wait={bucket2.wait}
+                  bucket2Wait={bucket4.wait}
                   lowConfidence={lowConfidence}
                 />
               ) : null}

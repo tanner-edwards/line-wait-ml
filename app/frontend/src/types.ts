@@ -4,7 +4,7 @@
 export type DayType = 'weekday' | 'weekend' | 'holiday';
 
 export interface HistoricalBucket {
-  offsetMinutes: 0 | 30 | 60;
+  offsetMinutes: 0 | 30 | 60 | 90 | 120;
   timeSlot: string; // e.g. "10:30-11:00"
   wait: number | null; // null when no data for that bucket
   sampleCount: number; // 0 when no data
@@ -12,7 +12,7 @@ export interface HistoricalBucket {
 
 export interface HistoricalAverage {
   dayType: DayType;
-  buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket]; // [t+0, t+30, t+60]
+  buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket]; // [t+0, t+30, t+60, t+90, t+120]
 }
 
 // Always null in v1; shape reserved for vAnytime when the ML model lands.

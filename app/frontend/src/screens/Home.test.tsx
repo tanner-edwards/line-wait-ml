@@ -18,15 +18,19 @@ const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWai
 // buckets via partials for clarity in tests.
 function makeHistoricalAverage(
   bucket0: { wait: number | null; sampleCount: number },
-  bucket2: { wait: number | null; sampleCount: number },
-  bucket1: { wait: number | null; sampleCount: number } = { wait: 30, sampleCount: 100 }
+  bucket4: { wait: number | null; sampleCount: number },
+  bucket1: { wait: number | null; sampleCount: number } = { wait: 30, sampleCount: 100 },
+  bucket2: { wait: number | null; sampleCount: number } = { wait: 30, sampleCount: 100 },
+  bucket3: { wait: number | null; sampleCount: number } = { wait: 30, sampleCount: 100 }
 ): HistoricalAverage {
   return {
     dayType: 'weekday',
     buckets: [
-      { offsetMinutes: 0, timeSlot: '10:00-10:30', wait: bucket0.wait, sampleCount: bucket0.sampleCount },
-      { offsetMinutes: 30, timeSlot: '10:30-11:00', wait: bucket1.wait, sampleCount: bucket1.sampleCount },
-      { offsetMinutes: 60, timeSlot: '11:00-11:30', wait: bucket2.wait, sampleCount: bucket2.sampleCount },
+      { offsetMinutes: 0,   timeSlot: '10:00-10:30', wait: bucket0.wait, sampleCount: bucket0.sampleCount },
+      { offsetMinutes: 30,  timeSlot: '10:30-11:00', wait: bucket1.wait, sampleCount: bucket1.sampleCount },
+      { offsetMinutes: 60,  timeSlot: '11:00-11:30', wait: bucket2.wait, sampleCount: bucket2.sampleCount },
+      { offsetMinutes: 90,  timeSlot: '11:30-12:00', wait: bucket3.wait, sampleCount: bucket3.sampleCount },
+      { offsetMinutes: 120, timeSlot: '12:00-12:30', wait: bucket4.wait, sampleCount: bucket4.sampleCount },
     ],
   };
 }
