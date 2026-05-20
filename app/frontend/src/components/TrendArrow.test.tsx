@@ -24,16 +24,16 @@ describe('TrendArrow', () => {
     expect(toJSON()).toBeNull();
   });
 
-  it('renders a green ↓ when bucket2 is materially less than bucket0', () => {
+  it('renders a green ↘ when bucket2 is materially less than bucket0', () => {
     render(<TrendArrow bucket0Wait={50} bucket2Wait={25} lowConfidence={false} />);
     expect(screen.getByTestId('trend-arrow-down')).toBeTruthy();
-    expect(screen.getByText('↓')).toBeTruthy();
+    expect(screen.getByText('↘')).toBeTruthy();
   });
 
-  it('renders a red ↑ when bucket2 is materially greater than bucket0', () => {
+  it('renders a red ↗ when bucket2 is materially greater than bucket0', () => {
     render(<TrendArrow bucket0Wait={30} bucket2Wait={60} lowConfidence={false} />);
     expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
-    expect(screen.getByText('↑')).toBeTruthy();
+    expect(screen.getByText('↗')).toBeTruthy();
   });
 
   it('renders a gray → when within ±10%', () => {

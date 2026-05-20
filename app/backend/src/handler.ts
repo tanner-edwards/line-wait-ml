@@ -21,6 +21,7 @@ import {
   ensureLoaded,
   lookupAverage,
 } from './historicalAverages';
+import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
@@ -61,19 +62,41 @@ async function buildHistoricalAverage(
   return { dayType, buckets };
 }
 
-async function fetchPark(parkSlug: ParkSlug): Promise<ParkData> {
-  const cached = parkCache.get(parkSlug);
-  if (cached) return cached;
+async function buildRideStats(
+  parkSlug: ParkSlug,
+  rideId: string,
+  dayType: ReturnType<typeof classifyDayType>
+): Promise<import('./types').RideStats | null> {
+  let statsMap;
+  try {
+    statsMap = await ensureRideStatsLoaded();
+  } catch (err) {
+    console.warn('ride_stats load failed; serving without ride stats', err);
+    return null;
+  }
+  return lookupRideStats(statsMap, parkSlug, rideId, dayType);
+}
+
+async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
+  // Skip cache for time-travel requests so historical data isn't served stale.
+  if (!referenceDate) {
+    const cached = parkCache.get(parkSlug);
+    if (cached) return cached;
+  }
 
   const live = await fetchLiveData(parkSlug);
-  const now = new Date();
+  const now = referenceDate ?? new Date();
+  const dayType = classifyDayType(now);
 
   const rides: Ride[] = await Promise.all(
     filterToRides(live.liveData).map(async entity => {
       const isOperating = entity.status === 'OPERATING';
-      const historicalAverage = isOperating
-        ? await buildHistoricalAverage(parkSlug, entity.id, now)
-        : null;
+      const [historicalAverage, rideStats] = isOperating
+        ? await Promise.all([
+            buildHistoricalAverage(parkSlug, entity.id, now),
+            buildRideStats(parkSlug, entity.id, dayType),
+          ])
+        : [null, null];
       return {
         id: entity.id,
         name: entity.name,
@@ -81,13 +104,14 @@ async function fetchPark(parkSlug: ParkSlug): Promise<ParkData> {
         status: entity.status ?? 'UNKNOWN',
         currentWait: isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null,
         historicalAverage,
+        rideStats,
         prediction: null,
       };
     })
   );
 
   const data = shapeParkData(parkSlug, rides, now.toISOString());
-  parkCache.set(parkSlug, data);
+  if (!referenceDate) parkCache.set(parkSlug, data);
   return data;
 }
 
@@ -159,9 +183,18 @@ export async function handler(
     );
   }
 
+  const atParam = event.queryStringParameters?.at;
+  let referenceDate: Date | undefined;
+  if (atParam) {
+    referenceDate = new Date(atParam);
+    if (isNaN(referenceDate.getTime())) {
+      return jsonResponse(400, errorBody('BAD_REQUEST', 'Invalid ?at= parameter — must be a valid ISO 8601 date string'));
+    }
+  }
+
   if (route.kind === 'park') {
     try {
-      const data = await fetchPark(route.slug);
+      const data = await fetchPark(route.slug, referenceDate);
       return jsonResponse(200, data);
     } catch (err) {
       const status = err instanceof UpstreamError ? err.statusCode : 502;
@@ -174,7 +207,7 @@ export async function handler(
   const entries: (ParkData | ParkError)[] = await Promise.all(
     PARK_ORDER.map(async (slug): Promise<ParkData | ParkError> => {
       try {
-        return await fetchPark(slug);
+        return await fetchPark(slug, referenceDate);
       } catch {
         return shapeParkError(slug, 'UPSTREAM_UNAVAILABLE');
       }

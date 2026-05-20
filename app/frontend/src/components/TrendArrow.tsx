@@ -47,15 +47,15 @@ export function TrendArrow({
     return null;
   }
 
-  let glyph: '↓' | '↑' | '→';
+  let glyph: '↘' | '↗' | '→';
   let colorStyle;
   let direction: 'down' | 'up' | 'stable';
   if (bucket2Wait < bucket0Wait * 0.9) {
-    glyph = '↓';
+    glyph = '↘';
     colorStyle = styles.down;
     direction = 'down';
   } else if (bucket2Wait > bucket0Wait * 1.1) {
-    glyph = '↑';
+    glyph = '↗';
     colorStyle = styles.up;
     direction = 'up';
   } else {

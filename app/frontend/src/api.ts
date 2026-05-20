@@ -10,14 +10,18 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchWaits(): Promise<CombinedResponse> {
+export async function fetchWaits(at?: string): Promise<CombinedResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
   }
 
+  const url = at
+    ? `${BASE_URL}/v0/waits?at=${encodeURIComponent(at)}`
+    : `${BASE_URL}/v0/waits`;
+
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/v0/waits`, {
+    res = await fetch(url, {
       headers: { 'x-api-key': API_KEY },
     });
   } catch (err) {

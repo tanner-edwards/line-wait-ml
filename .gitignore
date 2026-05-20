@@ -11,3 +11,4 @@ CLAUDE.md
 .aws-sam/
 .expo/
 samconfig.toml
+__pycache__/

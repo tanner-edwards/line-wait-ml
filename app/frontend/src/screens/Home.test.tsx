@@ -44,6 +44,7 @@ const happyResponse: CombinedResponse = {
           status: 'OPERATING',
           currentWait: 55,
           historicalAverage: null,
+          rideStats: null,
           prediction: null,
         },
         {
@@ -53,6 +54,7 @@ const happyResponse: CombinedResponse = {
           status: 'CLOSED',
           currentWait: null,
           historicalAverage: null,
+          rideStats: null,
           prediction: null,
         },
         {
@@ -62,6 +64,7 @@ const happyResponse: CombinedResponse = {
           status: 'OPERATING',
           currentWait: null,
           historicalAverage: null,
+          rideStats: null,
           prediction: null,
         },
       ],
@@ -77,6 +80,7 @@ const happyResponse: CombinedResponse = {
           status: 'OPERATING',
           currentWait: 80,
           historicalAverage: null,
+          rideStats: null,
           prediction: null,
         },
       ],
@@ -139,7 +143,7 @@ describe('Home — initial successful load', () => {
 
     // Just assert format — exact hours depend on test TZ.
     const header = screen.getByTestId('last-update');
-    expect(header).toHaveTextContent(/^Last update: \d{2}:\d{2}$/);
+    expect(header).toHaveTextContent(/^Last update: \d{1,2}:\d{2} (AM|PM)$/);
   });
 });
 

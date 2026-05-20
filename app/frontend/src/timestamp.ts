@@ -15,14 +15,15 @@ export function olderLastUpdated(response: CombinedResponse): string | null {
 }
 
 /**
- * Formats an ISO timestamp as "HH:MM" in the user's local time zone.
+ * Formats an ISO timestamp as "h:MM AM/PM" in the user's local time zone.
  * Returns "—" if the input is null or unparseable.
  */
 export function formatHHMM(iso: string | null): string {
   if (!iso) return '—';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
-  const hh = String(date.getHours()).padStart(2, '0');
+  const h = date.getHours() % 12 || 12;
   const mm = String(date.getMinutes()).padStart(2, '0');
-  return `${hh}:${mm}`;
+  const ampm = date.getHours() < 12 ? 'AM' : 'PM';
+  return `${h}:${mm} ${ampm}`;
 }

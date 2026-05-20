@@ -18,6 +18,12 @@ export interface HistoricalAverage {
 // Always null in v1; shape reserved for vAnytime when the ML model lands.
 export type Prediction = null;
 
+export interface RideStats {
+  p10: number;
+  p90: number;
+  sampleCount: number;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -25,6 +31,7 @@ export interface Ride {
   status: string;
   currentWait: number | null;
   historicalAverage: HistoricalAverage | null;
+  rideStats: RideStats | null;
   prediction: Prediction | null;
 }
 

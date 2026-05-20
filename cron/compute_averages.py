@@ -21,7 +21,7 @@ from firebase_admin import credentials, firestore
 # the container's working dir is /app.
 sys.path.insert(0, str(Path(__file__).parent))
 
-from aggregation import aggregate, doc_id  # noqa: E402
+from aggregation import aggregate, compute_ride_stats, doc_id, doc_id_stats  # noqa: E402
 
 LOOKBACK_DAYS = 30
 BATCH_SIZE = 500  # Firestore batched-write limit
@@ -109,18 +109,65 @@ def _write_averages(db: firestore.Client, averages: pd.DataFrame) -> int:
     return written
 
 
+def _write_ride_stats(db: firestore.Client, stats: pd.DataFrame) -> int:
+    """Overwrite ride_stats with the new p10/p90 data.
+
+    Returns the number of docs written.
+    """
+    if stats.empty:
+        log.warning("No ride_stats to write")
+        return 0
+
+    coll = db.collection("ride_stats")
+    written = 0
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    for chunk_start in range(0, len(stats), BATCH_SIZE):
+        chunk = stats.iloc[chunk_start : chunk_start + BATCH_SIZE]
+        batch = db.batch()
+        for _, row in chunk.iterrows():
+            doc_ref = coll.document(
+                doc_id_stats(row["parkId"], row["rideId"], row["dayType"])
+            )
+            batch.set(
+                doc_ref,
+                {
+                    "parkId": row["parkId"],
+                    "rideId": row["rideId"],
+                    "dayType": row["dayType"],
+                    "p10": int(row["p10"]),
+                    "p90": int(row["p90"]),
+                    "sampleCount": int(row["sampleCount"]),
+                    "updatedAt": now_iso,
+                },
+            )
+        batch.commit()
+        written += len(chunk)
+        log.info("ride_stats: wrote %d / %d", written, len(stats))
+
+    return written
+
+
 def main() -> int:
     start = time.monotonic()
     db = _init_firestore()
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=LOOKBACK_DAYS)
     df = _read_wait_times(db, cutoff)
+
     averages = aggregate(df)
     log.info("Aggregated into %d buckets", len(averages))
-
     written = _write_averages(db, averages)
+
+    stats = compute_ride_stats(df)
+    log.info("Computed ride_stats for %d (ride, dayType) pairs", len(stats))
+    stats_written = _write_ride_stats(db, stats)
+
     elapsed = time.monotonic() - start
-    log.info("Done in %.1fs — wrote %d docs", elapsed, written)
+    log.info(
+        "Done in %.1fs — wrote %d historical_averages + %d ride_stats docs",
+        elapsed, written, stats_written,
+    )
     return 0
 
 

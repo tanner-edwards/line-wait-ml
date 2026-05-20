@@ -71,6 +71,51 @@ def doc_id(park_id: str, ride_id: str, bucket: str, day_type: str) -> str:
     return f"{park_id}__{ride_id}__{bucket}__{day_type}"
 
 
+def doc_id_stats(park_id: str, ride_id: str, day_type: str) -> str:
+    """Composite document id for the ride_stats collection (no bucket dimension)."""
+    return f"{park_id}__{ride_id}__{day_type}"
+
+
+def compute_ride_stats(df: pd.DataFrame) -> pd.DataFrame:
+    """Compute p10/p90 per (parkId, rideId, dayType) from raw observations.
+
+    Groups across ALL time buckets — gives the overall floor/ceiling for a
+    ride on a given day type, not a per-hour view. Used by the frontend to
+    contextualise how the current wait compares to the ride's historic range.
+
+    Output schema:
+        parkId       str
+        rideId       str
+        dayType      str   "weekday" | "weekend" | "holiday"
+        p10          int   10th percentile of raw wait_minutes
+        p90          int   90th percentile of raw wait_minutes
+        sampleCount  int   number of raw observations used
+    """
+    if df.empty:
+        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p90", "sampleCount"])
+
+    filtered = df[(df["status"] == "OPERATING") & df["wait_minutes"].notna()].copy()
+    if filtered.empty:
+        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p90", "sampleCount"])
+
+    filtered["dayType"] = filtered["timestamp_utc"].apply(classify_day_type)
+
+    grouped = (
+        filtered.groupby(["park_id", "ride_id", "dayType"], sort=False)
+        .agg(
+            p10=("wait_minutes", lambda x: x.quantile(0.1)),
+            p90=("wait_minutes", lambda x: x.quantile(0.9)),
+            sampleCount=("wait_minutes", "count"),
+        )
+        .reset_index()
+    )
+    grouped["p10"] = grouped["p10"].round().astype(int)
+    grouped["p90"] = grouped["p90"].round().astype(int)
+    grouped["sampleCount"] = grouped["sampleCount"].astype(int)
+
+    return grouped.rename(columns={"park_id": "parkId", "ride_id": "rideId"})
+
+
 def _empty_result() -> pd.DataFrame:
     return pd.DataFrame(
         columns=["parkId", "rideId", "rideName", "bucket", "dayType", "mean", "sampleCount"]

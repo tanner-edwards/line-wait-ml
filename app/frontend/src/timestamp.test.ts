@@ -44,9 +44,9 @@ describe('olderLastUpdated', () => {
 });
 
 describe('formatHHMM', () => {
-  it('formats a valid ISO timestamp as HH:MM', () => {
+  it('formats a valid ISO timestamp as h:MM AM/PM', () => {
     // Just assert the shape — actual hours/minutes depend on the test runner's timezone.
-    expect(formatHHMM('2026-05-15T20:00:00Z')).toMatch(/^\d{2}:\d{2}$/);
+    expect(formatHHMM('2026-05-15T20:00:00Z')).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
   });
 
   it('returns "—" for null input', () => {

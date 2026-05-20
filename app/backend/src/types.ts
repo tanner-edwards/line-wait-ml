@@ -57,6 +57,15 @@ export interface HistoricalAverage {
 // Reserved for vAnytime ML predictions. Always null in v1.
 export type Prediction = null;
 
+// p10/p90 floor/ceiling for a ride on a given dayType. Used by the frontend
+// scoring function to contextualise the current wait against the ride's
+// historic range. Null for closed rides and rides with insufficient data.
+export interface RideStats {
+  p10: number;
+  p90: number;
+  sampleCount: number;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -64,6 +73,7 @@ export interface Ride {
   status: string;
   currentWait: number | null;
   historicalAverage: HistoricalAverage | null;
+  rideStats: RideStats | null;
   prediction: Prediction | null;
 }
 
