@@ -2,6 +2,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Ride } from '../types';
 import { ScoreResult } from '../utils/score';
+import { formatBucketTimeSlot } from '../timestamp';
 
 interface DebugCardProps {
   ride: Ride;
@@ -66,8 +67,16 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
     : (rs === null ? 'no range data' : 'range < 5 min');
 
   const scoreSign = score > 0 ? '+' : '';
-  const badgeLabel = badge === 'go' ? '✓ GO' : badge === 'skip' ? '✕ SKIP' : 'no badge';
-  const badgeColor = badge === 'go' ? '#1a7f37' : badge === 'skip' ? '#c41e3a' : '#888';
+  const badgeLabel =
+    badge === 'star' ? '★ STAR' :
+    badge === 'go'   ? '✓ GO'   :
+    badge === 'skip' ? '✕ SKIP' :
+                       'no badge';
+  const badgeColor =
+    badge === 'star' ? '#d4af37' :
+    badge === 'go'   ? '#1a7f37' :
+    badge === 'skip' ? '#c41e3a' :
+                       '#888';
 
   return (
     <View style={styles.card} testID={`debug-card-${ride.id}`}>
@@ -75,13 +84,13 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
       {/* Bucket columns */}
       {ha ? (
         <View style={styles.bucketsRow}>
-          <BucketCol label="+30"  wait={ha.buckets[1].wait} n={ha.buckets[1].sampleCount} />
+          <BucketCol label={formatBucketTimeSlot(ha.buckets[1].timeSlot)} wait={ha.buckets[1].wait} n={ha.buckets[1].sampleCount} />
           <View style={styles.bucketDivider} />
-          <BucketCol label="+60"  wait={ha.buckets[2].wait} n={ha.buckets[2].sampleCount} />
+          <BucketCol label={formatBucketTimeSlot(ha.buckets[2].timeSlot)} wait={ha.buckets[2].wait} n={ha.buckets[2].sampleCount} />
           <View style={styles.bucketDivider} />
-          <BucketCol label="+90"  wait={ha.buckets[3].wait} n={ha.buckets[3].sampleCount} />
+          <BucketCol label={formatBucketTimeSlot(ha.buckets[3].timeSlot)} wait={ha.buckets[3].wait} n={ha.buckets[3].sampleCount} />
           <View style={styles.bucketDivider} />
-          <BucketCol label="+120" wait={ha.buckets[4].wait} n={ha.buckets[4].sampleCount} />
+          <BucketCol label={formatBucketTimeSlot(ha.buckets[4].timeSlot)} wait={ha.buckets[4].wait} n={ha.buckets[4].sampleCount} />
         </View>
       ) : (
         <Text style={styles.noData}>No historical data</Text>

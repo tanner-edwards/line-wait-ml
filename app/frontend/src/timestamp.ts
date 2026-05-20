@@ -27,3 +27,20 @@ export function formatHHMM(iso: string | null): string {
   const ampm = date.getHours() < 12 ? 'AM' : 'PM';
   return `${h}:${mm} ${ampm}`;
 }
+
+/**
+ * Formats a bucket's `timeSlot` (e.g. "10:30-11:00") as a 12-hour start time
+ * (e.g. "10:30 AM"). The timeSlot is already in California (America/Los_Angeles)
+ * wall-clock time. Returns "—" if the input is empty or malformed.
+ */
+export function formatBucketTimeSlot(timeSlot: string): string {
+  if (!timeSlot) return '—';
+  const start = timeSlot.split('-')[0];
+  const [hStr, mStr] = start.split(':');
+  const h = parseInt(hStr, 10);
+  if (Number.isNaN(h) || !mStr) return '—';
+  const mm = mStr.padStart(2, '0');
+  const h12 = h % 12 || 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  return `${h12}:${mm} ${ampm}`;
+}

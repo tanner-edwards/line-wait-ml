@@ -1,4 +1,4 @@
-import { formatHHMM, olderLastUpdated } from './timestamp';
+import { formatBucketTimeSlot, formatHHMM, olderLastUpdated } from './timestamp';
 import { CombinedResponse } from './types';
 
 describe('olderLastUpdated', () => {
@@ -55,5 +55,31 @@ describe('formatHHMM', () => {
 
   it('returns "—" for an unparseable string', () => {
     expect(formatHHMM('not-a-date')).toBe('—');
+  });
+});
+
+describe('formatBucketTimeSlot', () => {
+  it('formats morning slots as AM', () => {
+    expect(formatBucketTimeSlot('10:00-10:30')).toBe('10:00 AM');
+    expect(formatBucketTimeSlot('10:30-11:00')).toBe('10:30 AM');
+  });
+
+  it('formats noon as 12 PM', () => {
+    expect(formatBucketTimeSlot('12:00-12:30')).toBe('12:00 PM');
+  });
+
+  it('formats afternoon and evening slots as PM', () => {
+    expect(formatBucketTimeSlot('13:30-14:00')).toBe('1:30 PM');
+    expect(formatBucketTimeSlot('20:30-21:00')).toBe('8:30 PM');
+  });
+
+  it('formats midnight as 12 AM', () => {
+    expect(formatBucketTimeSlot('00:00-00:30')).toBe('12:00 AM');
+  });
+
+  it('returns "—" for empty or malformed input', () => {
+    expect(formatBucketTimeSlot('')).toBe('—');
+    expect(formatBucketTimeSlot('not-a-time')).toBe('—');
+    expect(formatBucketTimeSlot('25')).toBe('—');
   });
 });
