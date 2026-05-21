@@ -84,7 +84,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-west-2
 
-      - name: Resolve S3 bucket and CloudFront distribution
+      - name: Resolve S3 bucket, CloudFront distribution, and API URL
         id: stack
         run: |
           BUCKET=$(aws cloudformation describe-stacks \
@@ -95,11 +95,19 @@ jobs:
             --stack-name club32-backend \
             --query "Stacks[0].Outputs[?OutputKey=='WebDistributionId'].OutputValue | [0]" \
             --output text)
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name club32-backend \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \
+            --output text)
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "dist_id=$DIST_ID" >> "$GITHUB_OUTPUT"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
       - name: Export web build
         working-directory: app/frontend
+        env:
+          EXPO_PUBLIC_API_BASE_URL: ${{ steps.stack.outputs.api_url }}
+          EXPO_PUBLIC_API_KEY: ${{ secrets.CLUB32_API_KEY }}
         run: |
           rm -rf dist
           npx expo export --platform web
