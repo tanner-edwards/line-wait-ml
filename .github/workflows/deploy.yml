@@ -50,6 +50,11 @@ jobs:
         run: |
           FIREBASE_JSON_B64=$(echo "$FIREBASE_JSON" | base64 -w 0)
           sam deploy \
+            --stack-name club32-backend \
+            --region us-west-2 \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --s3-prefix club32-backend \
             --parameter-overrides \
               "ApiKeyValue=${{ secrets.CLUB32_API_KEY }}" \
               "CorsOrigin=${{ steps.cors.outputs.origin }}" \
