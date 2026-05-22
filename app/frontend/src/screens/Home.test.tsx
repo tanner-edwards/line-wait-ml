@@ -381,11 +381,15 @@ describe('Home — v1 historical-context indicators', () => {
     // Badge must NOT render despite the >25% gap — sample count below threshold.
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
-    // Arrow still renders, but with the low-confidence variant testID.
-    expect(screen.getByTestId('trend-arrow-down-low-conf')).toBeTruthy();
+    // Arrow still renders with low-confidence variant. TrendArrow is now anchored to currentWait=10;
+    // bucket4.wait=25 is higher → shows up-low-conf (not down).
+    expect(screen.getByTestId('trend-arrow-up-low-conf')).toBeTruthy();
   });
 
-  it('bucket[0].wait === 0: neither indicator renders (zero-division guard)', async () => {
+  it('bucket[0].wait === 0: TrendArrow uses currentWait as anchor (still renders), below-normal badge suppressed', async () => {
+    // TrendArrow is now anchored to currentWait=25, not bucket0.wait=0.
+    // currentWait=25 vs bucket4.wait=25 → stable arrow renders.
+    // BelowNormalBadge still guards against bucket0.wait=0 → no badge.
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space',
@@ -403,10 +407,108 @@ describe('Home — v1 historical-context indicators', () => {
     render(<Home />);
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.queryByTestId('trend-arrow-down')).toBeNull();
-    expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
-    expect(screen.queryByTestId('trend-arrow-stable')).toBeNull();
+    expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
+  });
+});
+
+describe('Home — walk-on indicator', () => {
+  it('shows 🚶 and hides recommendation badge when currentWait is 5 (default floor)', async () => {
+    mockFetchWaits.mockResolvedValue(
+      singleRideResponse({
+        id: 'carousel',
+        name: 'King Arthur Carrousel',
+        land: 'Fantasyland',
+        status: 'OPERATING',
+        currentWait: 5,
+        historicalAverage: null,
+        rideStats: null,
+        prediction: null,
+      })
+    );
+    render(<Home />);
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.getByTestId('badge-walk-on')).toBeTruthy();
+    expect(screen.queryByTestId('badge-go')).toBeNull();
+    expect(screen.queryByTestId('badge-skip')).toBeNull();
+    expect(screen.queryByTestId('badge-star')).toBeNull();
+  });
+
+  it('does NOT show 🚶 when currentWait is 6 (above default floor)', async () => {
+    mockFetchWaits.mockResolvedValue(
+      singleRideResponse({
+        id: 'carousel',
+        name: 'King Arthur Carrousel',
+        land: 'Fantasyland',
+        status: 'OPERATING',
+        currentWait: 6,
+        historicalAverage: null,
+        rideStats: null,
+        prediction: null,
+      })
+    );
+    render(<Home />);
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.queryByTestId('badge-walk-on')).toBeNull();
+  });
+
+  it('shows 🚶 for Haunted Mansion at 13 min (custom floor)', async () => {
+    mockFetchWaits.mockResolvedValue(
+      singleRideResponse({
+        id: 'ff52cb64-c1d5-4feb-9d43-5dbd429bac81',
+        name: 'Haunted Mansion',
+        land: 'New Orleans Square',
+        status: 'OPERATING',
+        currentWait: 13,
+        historicalAverage: null,
+        rideStats: null,
+        prediction: null,
+      })
+    );
+    render(<Home />);
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.getByTestId('badge-walk-on')).toBeTruthy();
+  });
+
+  it('does NOT show 🚶 for Haunted Mansion at 14 min (above custom floor)', async () => {
+    mockFetchWaits.mockResolvedValue(
+      singleRideResponse({
+        id: 'ff52cb64-c1d5-4feb-9d43-5dbd429bac81',
+        name: 'Haunted Mansion',
+        land: 'New Orleans Square',
+        status: 'OPERATING',
+        currentWait: 14,
+        historicalAverage: null,
+        rideStats: null,
+        prediction: null,
+      })
+    );
+    render(<Home />);
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.queryByTestId('badge-walk-on')).toBeNull();
+  });
+
+  it('does NOT show 🚶 for a closed ride', async () => {
+    mockFetchWaits.mockResolvedValue(
+      singleRideResponse({
+        id: 'carousel',
+        name: 'King Arthur Carrousel',
+        land: 'Fantasyland',
+        status: 'CLOSED',
+        currentWait: null,
+        historicalAverage: null,
+        rideStats: null,
+        prediction: null,
+      })
+    );
+    render(<Home />);
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.queryByTestId('badge-walk-on')).toBeNull();
   });
 });

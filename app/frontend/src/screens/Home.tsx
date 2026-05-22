@@ -26,6 +26,7 @@ import { RecommendationBadge } from '../components/RecommendationBadge';
 import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { scoreRide } from '../utils/score';
+import { isWalkOnRide } from '../utils/walkOn';
 
 export function Home() {
   const [data, setData] = useState<CombinedResponse | null>(null);
@@ -232,6 +233,7 @@ function ListRow({
   const bucket4 = showIndicators && ha ? ha.buckets[4] : null;
   const lowConfidence = (bucket0?.sampleCount ?? 0) < 20;
   const scoreResult = scoreRide(ride);
+  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const isExpanded = expandedRideId === ride.id;
 
   return (
@@ -241,16 +243,21 @@ function ListRow({
         testID={`ride-${ride.id}`}
       >
         <View style={styles.rideRow}>
-          <RecommendationBadge badge={scoreResult.badge} />
+          {scoreResult.badge === 'star'
+            ? <RecommendationBadge badge="star" />
+            : walkOn
+            ? <Text style={styles.walkOnEmoji} testID="badge-walk-on">🚶</Text>
+            : <RecommendationBadge badge={scoreResult.badge} />
+          }
           <Text style={styles.rideName} numberOfLines={1}>
             {ride.name}
           </Text>
           <View style={styles.rideRight}>
             <View style={styles.waitRow}>
               <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
-              {showIndicators && bucket0 && bucket4 ? (
+              {showIndicators && bucket4 ? (
                 <TrendArrow
-                  bucket0Wait={bucket0.wait}
+                  bucket0Wait={ride.currentWait}
                   bucket2Wait={bucket4.wait}
                   lowConfidence={lowConfidence}
                 />
@@ -350,4 +357,11 @@ const styles = StyleSheet.create({
   empty: { padding: 32, alignItems: 'center' },
   emptyText: { color: '#666', textAlign: 'center', fontSize: 14 },
   emptyContent: { flexGrow: 1, justifyContent: 'center' },
+  walkOnEmoji: {
+    width: 20,
+    height: 20,
+    marginRight: 8,
+    fontSize: 14,
+    textAlign: 'center',
+  },
 });

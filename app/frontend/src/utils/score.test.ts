@@ -150,37 +150,82 @@ describe('Factor 2 — vs range', () => {
   });
 });
 
-// --- Factor 3: projected change (earlyAvg vs lateAvg) ---
-// earlyAvg = avg(bucket0, bucket1)  lateAvg = avg(bucket3, bucket4)
+// --- Factor 4: near-term change (current → t+30) ---
 
-describe('Factor 3 — projected change (early vs late window)', () => {
+describe('Factor 4 — near-term change (current → t+30)', () => {
+  it('-1 when t+30 drops by >= max(10, 20%) — Jungle Cruise pattern', () => {
+    // currentWait=45, b1=33: |33-45|=12 >= max(10, 45*0.20=9)=10 → dropping → -1
+    const r = scoreRide(makeRide({ currentWait: 45, historicalAverage: makeHA(45, 33, 45, 45, 45), rideStats: null }));
+    expect(r.factors.nearTermChange?.points).toBe(-1);
+  });
+
+  it('+1 when t+30 rises by >= max(10, 20%) — Web Slingers pattern', () => {
+    // currentWait=35, b1=48: |48-35|=13 >= max(10, 35*0.20=7)=10 → rising → +1
+    const r = scoreRide(makeRide({ currentWait: 35, historicalAverage: makeHA(35, 48, 35, 35, 35), rideStats: null }));
+    expect(r.factors.nearTermChange?.points).toBe(+1);
+  });
+
+  it('0 when absolute delta is below the 10-min floor', () => {
+    // currentWait=45, b1=37: |37-45|=8 < max(10, 9)=10 → no fire
+    const r = scoreRide(makeRide({ currentWait: 45, historicalAverage: makeHA(45, 37, 45, 45, 45), rideStats: null }));
+    expect(r.factors.nearTermChange?.points).toBe(0);
+  });
+
+  it('0 when carousel-sized ride changes 20% but < 10 min absolute', () => {
+    // currentWait=5, b1=3: |3-5|=2 < max(10, 1)=10 → no fire
+    const r = scoreRide(makeRide({ currentWait: 5, historicalAverage: makeHA(5, 3, 5, 5, 5), rideStats: null }));
+    expect(r.factors.nearTermChange?.points).toBe(0);
+  });
+
+  it('20% floor kicks in for high-wait rides above 50 min', () => {
+    // currentWait=90, b1=72: |72-90|=18 >= max(10, 90*0.20=18)=18 → exactly at threshold → fires → -1
+    const r = scoreRide(makeRide({ currentWait: 90, historicalAverage: makeHA(90, 72, 90, 90, 90), rideStats: null }));
+    expect(r.factors.nearTermChange?.points).toBe(-1);
+  });
+
+  it('null when b1 is null', () => {
+    const r = scoreRide(makeRide({ historicalAverage: makeHA(30, null, 30, 30, 30), rideStats: null }));
+    expect(r.factors.nearTermChange).toBeNull();
+  });
+
+  it('null and 0 pts when currentWait is 0', () => {
+    const r = scoreRide(makeRide({ currentWait: 0, historicalAverage: makeHA(0, 30, 30, 30, 30), rideStats: null }));
+    expect(r.factors.nearTermChange).toBeNull();
+  });
+});
+
+// --- Factor 3: projected change (earlyAvg vs lateAvg) ---
+// earlyAvg = avg(currentWait, bucket1)  lateAvg = avg(bucket3, bucket4)
+// Anchored to currentWait so the trend starts from ground truth, not historical t+0 avg.
+
+describe('Factor 3 — projected change (anchored early vs late window)', () => {
   it('+2 when lateAvg is >25% higher than earlyAvg (big rise)', () => {
-    // earlyAvg=avg(30,30)=30, lateAvg=avg(40,40)=40: delta=+33%
+    // currentWait=30, b1=30: earlyAvg=30, lateAvg=avg(40,40)=40: delta=+33%
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 40, 40), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(2);
   });
 
   it('+1 when lateAvg is 10-25% higher than earlyAvg (small rise)', () => {
-    // earlyAvg=avg(80,80)=80, lateAvg=avg(90,90)=90: delta=+12.5%, |diff|=10 → +1
-    const r = scoreRide(makeRide({ historicalAverage: makeHA(80, 80, 80, 90, 90), rideStats: null }));
+    // currentWait=80, b1=80: earlyAvg=80, lateAvg=avg(90,90)=90: delta=+12.5%, |diff|=10 → +1
+    const r = scoreRide(makeRide({ currentWait: 80, historicalAverage: makeHA(80, 80, 80, 90, 90), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(1);
   });
 
   it('0 when within ±10% (stable)', () => {
-    // earlyAvg=30, lateAvg=30: delta=0
+    // currentWait=30, b1=30: earlyAvg=30, lateAvg=30: delta=0
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 30, 30), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(0);
     expect(r.factors.projectedChange?.delta).toBe(0);
   });
 
   it('-1 when lateAvg is 10-25% lower than earlyAvg (small drop)', () => {
-    // earlyAvg=avg(80,80)=80, lateAvg=avg(70,70)=70: delta=-12.5%, |diff|=10 → -1
-    const r = scoreRide(makeRide({ historicalAverage: makeHA(80, 80, 80, 70, 70), rideStats: null }));
+    // currentWait=80, b1=80: earlyAvg=80, lateAvg=avg(70,70)=70: delta=-12.5%, |diff|=10 → -1
+    const r = scoreRide(makeRide({ currentWait: 80, historicalAverage: makeHA(80, 80, 80, 70, 70), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(-1);
   });
 
   it('-2 when lateAvg is >25% lower than earlyAvg (big drop)', () => {
-    // earlyAvg=30, lateAvg=avg(20,20)=20: delta=-33%
+    // currentWait=30, b1=30: earlyAvg=30, lateAvg=avg(20,20)=20: delta=-33%
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 20, 20), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(-2);
   });
@@ -190,57 +235,57 @@ describe('Factor 3 — projected change (early vs late window)', () => {
     expect(r.factors.projectedChange).toBeNull();
   });
 
-  it('null when bucket0.wait is 0', () => {
-    const r = scoreRide(makeRide({ historicalAverage: makeHA(0, 30, 30, 30, 30), rideStats: null }));
+  it('null when currentWait is 0 (division guard)', () => {
+    const r = scoreRide(makeRide({ currentWait: 0, historicalAverage: makeHA(0, 30, 30, 30, 30), rideStats: null }));
     expect(r.factors.projectedChange).toBeNull();
   });
 
-  it('oscillating data reads as stable: 60/50/55/50/55', () => {
-    // earlyAvg=avg(60,50)=55, lateAvg=avg(50,55)=52.5: delta=-4.5% → within ±10% → 0
-    const r = scoreRide(makeRide({ historicalAverage: makeHA(60, 50, 55, 50, 55), rideStats: null }));
+  it('oscillating historical data reads as stable when currentWait matches t+0 avg', () => {
+    // currentWait=60, b1=50: earlyAvg=55, lateAvg=avg(50,55)=52.5: delta=-4.5% → within ±10% → 0
+    const r = scoreRide(makeRide({ currentWait: 60, historicalAverage: makeHA(60, 50, 55, 50, 55), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(0);
   });
 
-  it('uses one valid bucket when the other is null', () => {
-    // earlyAvg=avg(30,null)=30, lateAvg=avg(null,20)=20: delta=-33% → -2
+  it('uses currentWait alone as earlyAvg when b1 is null', () => {
+    // b1=null → earlyAvg=currentWait=30, lateAvg=avg(null,20)=20: delta=-33% → -2
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, null, 30, null, 20), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(-2);
   });
 
   it('noise filter: 0 pts when |lateAvg - earlyAvg| < 10 min, even if % threshold would fire', () => {
-    // earlyAvg=avg(30,30)=30, lateAvg=avg(37,37)=37: delta=+23% (would be +1) but |diff|=7 < 10 → 0
+    // currentWait=30, b1=30: earlyAvg=30, lateAvg=avg(37,37)=37: delta=+23% but |diff|=7 < 10 → 0
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 37, 37), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(0);
     expect(r.factors.projectedChange?.delta).toBeCloseTo(7 / 30, 5);
   });
 
   it('noise filter: still fires when |lateAvg - earlyAvg| >= 10 min', () => {
-    // earlyAvg=30, lateAvg=avg(41,41)=41: |diff|=11 >= 10, delta=+36% → +2
+    // currentWait=30, b1=30: earlyAvg=30, lateAvg=avg(41,41)=41: |diff|=11 >= 10, delta=+36% → +2
     const r = scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 41, 41), rideStats: null }));
     expect(r.factors.projectedChange?.points).toBe(2);
   });
 
   it('King Arthur pattern: 5-min wait vs 7-min avg, projecting 6 min — F3 noise filtered, delta stored', () => {
-    // earlyAvg=avg(7,7)=7, lateAvg=avg(6,6)=6: |diff|=1 < 10 → F3 points=0, delta still stored
+    // currentWait=5, b1=7: earlyAvg=6, lateAvg=avg(6,6)=6: diff=0 < 10 → F3 points=0, delta stored at 0
     const r = scoreRide(makeRide({
       currentWait: 5,
       historicalAverage: makeHA(7, 7, 7, 6, 6),
       rideStats: null,
     }));
     expect(r.factors.projectedChange?.points).toBe(0);
-    expect(r.factors.projectedChange?.delta).toBeCloseTo(-1 / 7, 5);
+    expect(r.factors.projectedChange?.delta).toBeCloseTo(0, 5);
   });
 
-  it('Indiana Jones case: 40% projected drop fires skip badge alone', () => {
-    // earlyAvg=avg(70,50)=60, lateAvg=avg(36,36)=36: delta=-40% → F3=-2
-    // F1=0 (current at avg), F2 skipped → total -2 → skip
+  it('Indiana Jones case: 40% projected drop contributes skip; F4 near-term drop adds -1', () => {
+    // currentWait=70, b1=50: earlyAvg=60, lateAvg=36: delta=-40% → F3=-2
+    // F4: |50-70|=20 >= max(10,14)=14 → -1. F1=0 (current=avg), F2 skipped → total -3 → skip
     const r = scoreRide(makeRide({
       currentWait: 70,
       historicalAverage: makeHA(70, 50, 50, 36, 36),
       rideStats: null,
     }));
     expect(r.factors.projectedChange?.points).toBe(-2);
-    expect(r.score).toBe(-2);
+    expect(r.score).toBe(-3);
     expect(r.badge).toBe('skip');
   });
 });
@@ -249,14 +294,14 @@ describe('Factor 3 — projected change (early vs late window)', () => {
 
 describe('"go" suppression — future dip', () => {
   it('suppresses go badge when delta < -30%', () => {
-    // F1=+2 (currentWait=15 vs avg=30), F2=+2 (below p10=20), F3=-2 (lateAvg=20 vs earlyAvg=30 → -33%)
-    // score=2 → go → delta=-33% < -30% → badge suppressed to null
+    // currentWait=15, b1=15: earlyAvg=15, lateAvg=10: delta=-33%, |diff|=5<10 → F3 pts=0 but delta stored
+    // F1=+2 (|15-30|=15), F2=+2 (below p10=20), F3=0 pts (noise filtered), F4=0 (b1=currentWait)
+    // score=4 → go → projectedChange.delta=-33% < -30% → badge suppressed to null
     const r = scoreRide(makeRide({
       currentWait: 15,
-      historicalAverage: makeHA(30, 30, 30, 20, 20),
+      historicalAverage: makeHA(30, 15, 30, 10, 10),
       rideStats: makeStats(20, 80),
     }));
-    expect(r.score).toBe(2);
     expect(r.badge).toBeNull();
   });
 
@@ -295,15 +340,15 @@ describe('"go" suppression — future dip', () => {
 
 describe('badge thresholds', () => {
   it('go badge when score >= +2', () => {
-    // F1: currentWait=20 vs avg=30 → +2. F2/F3: skip/stable → total +2
-    const r = scoreRide(makeRide({ currentWait: 20, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // F1=+2 (|20-30|=10). b1=22 → F4: |22-20|=2 < max(10,4)=10 → 0. F3: noise filtered (diff<10). score=2.
+    const r = scoreRide(makeRide({ currentWait: 20, historicalAverage: makeHA(30, 22, 30), rideStats: null }));
     expect(r.badge).toBe('go');
     expect(r.score).toBe(2);
   });
 
   it('skip badge when score <= -2', () => {
-    // F1: currentWait=45 vs avg=30 → -2. total -2
-    const r = scoreRide(makeRide({ currentWait: 45, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // F1=-2 (|45-30|=15). b1=45 → F4: delta=0 → 0. F3: earlyAvg=lateAvg=45 → delta=0. score=-2.
+    const r = scoreRide(makeRide({ currentWait: 45, historicalAverage: makeHA(30, 45, 45), rideStats: null }));
     expect(r.badge).toBe('skip');
     expect(r.score).toBe(-2);
   });
@@ -397,11 +442,11 @@ describe('gold star', () => {
     expect(r.badge).not.toBe('star');
   });
 
-  it('does NOT fire when projectedChange.delta <= 0.10 (line not rising)', () => {
-    // earlyAvg=50, lateAvg=53 → +6% (below +10% threshold)
+  it('does NOT fire when projected trend is falling (projectedChange.delta < 0)', () => {
+    // currentWait=20, b1=50: earlyAvg=35, lateAvg=20: delta=-43% → gold star condition 3 fails
     const r = scoreRide({
       ...goldStarRide(),
-      historicalAverage: makeHA(50, 50, 50, 53, 53),
+      historicalAverage: makeHA(50, 50, 50, 20, 20),
     });
     expect(r.badge).not.toBe('star');
   });

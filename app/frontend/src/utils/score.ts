@@ -5,7 +5,8 @@ export type Badge = 'star' | 'go' | 'skip' | null;
 export interface FactorBreakdown {
   vsAvg:           { delta: number; points: number } | null; // null = skipped (bucket0.wait === 0)
   vsRange:         { pct: number;  points: number } | null;  // null = skipped (no rideStats or range < 5)
-  projectedChange: { delta: number; points: number } | null; // null = skipped (bucket0 or bucket2 missing)
+  projectedChange: { delta: number; points: number } | null; // null = skipped (currentWait is 0 or lateAvg missing)
+  nearTermChange:  { delta: number; points: number } | null; // null = skipped (bucket1 missing or currentWait is 0)
 }
 
 export interface ScoreResult {
@@ -21,6 +22,7 @@ const SUPPRESSED: ScoreResult = {
     vsAvg: null,
     vsRange: null,
     projectedChange: null,
+    nearTermChange: null,
   },
 };
 
@@ -77,17 +79,18 @@ export function scoreRide(ride: Ride): ScoreResult {
   }
   // rideStats === null — skip Factor 2
 
-  // --- Factor 3: projected change, early window vs late window (max ±2) ---
-  // earlyAvg = avg(t+0, t+30)  lateAvg = avg(t+90, t+120)
+  // --- Factor 3: projected change, anchored early window vs late window (max ±2) ---
+  // earlyAvg = avg(currentWait, t+30)  lateAvg = avg(t+90, t+120)
+  // Anchoring to currentWait (not t+0 historical avg) ensures the forecast starts from ground truth.
   // Positive delta (rising) → go now before it gets worse.
   // Negative delta (dropping) → skip / wait for it to improve.
   let projectedChange: FactorBreakdown['projectedChange'] = null;
   let f3 = 0;
-  const b0w = bucket0.wait, b1w = bucket1.wait;
+  const b1w = bucket1.wait;
   const b3w = bucket3.wait, b4w = bucket4.wait;
-  const earlyAvg = (b0w !== null && b1w !== null) ? (b0w + b1w) / 2 : (b0w ?? b1w);
+  const earlyAvg = b1w !== null ? (currentWait + b1w) / 2 : currentWait;
   const lateAvg  = (b3w !== null && b4w !== null) ? (b3w + b4w) / 2 : (b3w ?? b4w);
-  if (b0w !== null && b0w !== 0 && earlyAvg !== null && lateAvg !== null) {
+  if (currentWait !== 0 && lateAvg !== null) {
     const delta = (lateAvg - earlyAvg) / earlyAvg;
     // Require ≥10 min absolute change to avoid noise on low-wait rides (e.g. carousels at 5→6 min)
     if (Math.abs(lateAvg - earlyAvg) >= 10) {
@@ -99,7 +102,21 @@ export function scoreRide(ride: Ride): ScoreResult {
     projectedChange = { delta, points: f3 };
   }
 
-  const score = f1 + f2 + f3;
+  // --- Factor 4: near-term change, current → t+30 (max ±1) ---
+  // Rising at t+30 → go now before it gets worse. Dropping → skip, improving soon.
+  // Threshold: max(10 min, 20% of current wait) — avoids noise on short-wait rides.
+  let nearTermChange: FactorBreakdown['nearTermChange'] = null;
+  let f4 = 0;
+  if (b1w !== null && currentWait > 0) {
+    const minuteDelta = b1w - currentWait; // positive = rising, negative = dropping
+    const threshold = Math.max(10, currentWait * 0.20);
+    if (Math.abs(minuteDelta) >= threshold) {
+      f4 = minuteDelta > 0 ? +1 : -1;
+    }
+    nearTermChange = { delta: minuteDelta / currentWait, points: f4 };
+  }
+
+  const score = f1 + f2 + f3 + f4;
 
   // Gold star: rare exceptional opportunity. All three conditions must hold.
   // Overrides the score-based badge; bypasses the "go" suppression rule.
@@ -131,6 +148,7 @@ export function scoreRide(ride: Ride): ScoreResult {
       vsAvg,
       vsRange,
       projectedChange,
+      nearTermChange,
     },
   };
 }

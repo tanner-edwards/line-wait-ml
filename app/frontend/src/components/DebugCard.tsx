@@ -44,6 +44,14 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
   const rs = ride.rideStats;
   const { factors, score, badge } = result;
 
+  const nearTermValue = factors.nearTermChange !== null
+    ? (() => {
+        const pct = Math.round(factors.nearTermChange.delta * 100);
+        const sign = pct > 0 ? '+' : '';
+        return `${sign}${pct}% at t+30`;
+      })()
+    : 'no t+30 data';
+
   const projectedChangeValue = factors.projectedChange !== null
     ? (() => {
         const pct = Math.round(factors.projectedChange.delta * 100);
@@ -121,6 +129,12 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
         value={vsRangeValue}
         points={factors.vsRange?.points ?? 0}
         skipped={factors.vsRange === null}
+      />
+      <FactorRow
+        label="t+30"
+        value={nearTermValue}
+        points={factors.nearTermChange?.points ?? 0}
+        skipped={factors.nearTermChange === null}
       />
       <FactorRow
         label="trend"
