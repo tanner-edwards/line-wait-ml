@@ -1,6 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Badge } from '../utils/score';
+import { Badge } from '../types';
 
 interface RecommendationBadgeProps {
   badge: Badge;

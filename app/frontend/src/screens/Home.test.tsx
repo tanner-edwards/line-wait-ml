@@ -359,17 +359,19 @@ describe('Home — v1 historical-context indicators', () => {
     expect(screen.getByText('Above normal')).toBeTruthy();
   });
 
-  it('low-confidence (bucket[0].sampleCount < 20): badge suppressed, arrow uses low-conf styling', async () => {
+  it('low-confidence (bucket[0].sampleCount=0): badge suppressed, arrow uses low-conf styling', async () => {
+    // Confidence threshold is currently 1 (lowered from 20 while wait_times
+    // is still accumulating history — see Home.tsx + BelowNormalBadge.tsx
+    // comments). Only sampleCount=0 triggers suppression.
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space',
         name: 'Hyperspace Mountain',
         land: 'Tomorrowland',
-        // Would be "Below normal" on confident data — must be suppressed here.
         currentWait: 10,
         historicalAverage: makeHistoricalAverage(
-          { wait: 50, sampleCount: 5 }, // thin data
-          { wait: 25, sampleCount: 5 } // still down-trend
+          { wait: 50, sampleCount: 0 },
+          { wait: 25, sampleCount: 0 }
         ),
         status: 'OPERATING',
         prediction: null,
@@ -378,11 +380,10 @@ describe('Home — v1 historical-context indicators', () => {
     render(<Home />);
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    // Badge must NOT render despite the >25% gap — sample count below threshold.
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
-    // Arrow still renders with low-confidence variant. TrendArrow is now anchored to currentWait=10;
-    // bucket4.wait=25 is higher → shows up-low-conf (not down).
+    // Arrow still renders with low-confidence variant. TrendArrow is anchored
+    // to currentWait=10; bucket4.wait=25 is higher → up-low-conf.
     expect(screen.getByTestId('trend-arrow-up-low-conf')).toBeTruthy();
   });
 

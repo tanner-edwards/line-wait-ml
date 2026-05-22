@@ -57,13 +57,30 @@ export interface HistoricalAverage {
 // Reserved for vAnytime ML predictions. Always null in v1.
 export type Prediction = null;
 
-// p10/p90 floor/ceiling for a ride on a given dayType. Used by the frontend
-// scoring function to contextualise the current wait against the ride's
-// historic range. Null for closed rides and rides with insufficient data.
+// p10/p90 floor/ceiling for a ride on a given dayType. Used by the scoring
+// function to contextualise the current wait against the ride's historic
+// range. Null for closed rides and rides with insufficient data.
 export interface RideStats {
   p10: number;
   p90: number;
   sampleCount: number;
+}
+
+// --- Scoring (moved server-side as of v2; single source of truth for UI + LLM) ---
+
+export type Badge = 'star' | 'go' | 'skip' | null;
+
+export interface FactorBreakdown {
+  vsAvg:           { delta: number; points: number } | null;
+  vsRange:         { pct: number;  points: number } | null;
+  projectedChange: { delta: number; points: number } | null;
+  nearTermChange:  { delta: number; points: number } | null;
+}
+
+export interface ScoreResult {
+  score:   number;
+  badge:   Badge;
+  factors: FactorBreakdown;
 }
 
 export interface Ride {
@@ -75,6 +92,10 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  // Always present on the wire response; optional in the type to allow
+  // the pre-scoring assembly stage in handler.ts to build a Ride and
+  // then attach the score result.
+  score?: ScoreResult;
 }
 
 export interface ParkData {
@@ -92,6 +113,17 @@ export interface ParkError {
 
 export interface CombinedResponse {
   parks: (ParkData | ParkError)[];
+}
+
+// Ride lat/lng + park keyed by ride UUID. Seeded by the cron
+// populate_ride_metadata.py script from ride_metadata.json at the repo root.
+export interface RideMetadata {
+  rideId: string;
+  parkId: string;
+  name: string;
+  lat: number | null;
+  lng: number | null;
+  source: 'manual' | 'themeparks.wiki';
 }
 
 export interface ErrorResponse {

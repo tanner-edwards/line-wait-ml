@@ -1,7 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { Ride } from '../types';
-import { ScoreResult } from '../utils/score';
+import { Ride, ScoreResult } from '../types';
 import { formatBucketTimeSlot } from '../timestamp';
 
 interface DebugCardProps {

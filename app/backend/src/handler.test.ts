@@ -200,6 +200,17 @@ describe('handler — per-park endpoint', () => {
     });
   });
 
+  it('attaches a well-formed score object to every ride (Slice A — scoring moved to backend)', async () => {
+    const result = await handler(buildEvent('/v0/waits/disneyland'));
+    const body = JSON.parse(result.body) as ParkData;
+    for (const ride of body.rides) {
+      expect(ride.score).toBeDefined();
+      expect(typeof ride.score!.score).toBe('number');
+      expect(ride.score!.factors).toBeDefined();
+      expect(['star', 'go', 'skip', null]).toContain(ride.score!.badge);
+    }
+  });
+
   it('always sets prediction: null on every ride (operating and closed alike)', async () => {
     const result = await handler(buildEvent('/v0/waits/disneyland'));
     const body = JSON.parse(result.body) as ParkData;
@@ -242,10 +253,12 @@ describe('handler — per-park endpoint', () => {
     const body = JSON.parse(result.body) as ParkData;
     const space = body.rides.find(r => r.name === 'Hyperspace Mountain')!;
     expect(space.historicalAverage).not.toBeNull();
-    expect(space.historicalAverage!.buckets).toHaveLength(3);
+    expect(space.historicalAverage!.buckets).toHaveLength(5);
     expect(space.historicalAverage!.buckets[0].offsetMinutes).toBe(0);
     expect(space.historicalAverage!.buckets[1].offsetMinutes).toBe(30);
     expect(space.historicalAverage!.buckets[2].offsetMinutes).toBe(60);
+    expect(space.historicalAverage!.buckets[3].offsetMinutes).toBe(90);
+    expect(space.historicalAverage!.buckets[4].offsetMinutes).toBe(120);
     expect(['weekday','weekend','holiday']).toContain(space.historicalAverage!.dayType);
   });
 

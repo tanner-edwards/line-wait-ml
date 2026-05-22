@@ -24,6 +24,23 @@ export interface RideStats {
   sampleCount: number;
 }
 
+// --- Scoring (computed server-side as of v2; UI is a pure renderer) ---
+
+export type Badge = 'star' | 'go' | 'skip' | null;
+
+export interface FactorBreakdown {
+  vsAvg:           { delta: number; points: number } | null;
+  vsRange:         { pct: number;  points: number } | null;
+  projectedChange: { delta: number; points: number } | null;
+  nearTermChange:  { delta: number; points: number } | null;
+}
+
+export interface ScoreResult {
+  score:   number;
+  badge:   Badge;
+  factors: FactorBreakdown;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -33,6 +50,9 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  // Optional in the type because closed/legacy fixtures may not carry it;
+  // the live backend always emits it on every ride.
+  score?: ScoreResult;
 }
 
 export interface ParkData {

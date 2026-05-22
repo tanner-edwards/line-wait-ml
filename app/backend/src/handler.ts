@@ -22,6 +22,7 @@ import {
   lookupAverage,
 } from './historicalAverages';
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
+import { scoreRide } from './scoring/score';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
@@ -101,7 +102,7 @@ async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<Park
             buildRideStats(parkSlug, entity.id, dayType),
           ])
         : [null, null];
-      return {
+      const ride: Ride = {
         id: entity.id,
         name: entity.name,
         land: resolveLand(entity.id, parkSlug),
@@ -111,6 +112,8 @@ async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<Park
         rideStats,
         prediction: null,
       };
+      ride.score = scoreRide(ride);
+      return ride;
     })
   );
 

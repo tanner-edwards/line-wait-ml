@@ -31,11 +31,17 @@ export function BelowNormalBadge({
   bucket0Wait,
   sampleCount,
 }: BelowNormalBadgeProps): React.ReactElement | null {
+  // The `sampleCount < N` gate exists so we don't claim "below normal" off
+  // thin historical data. Production target is N=20, matching the score-
+  // suppression and TrendArrow thresholds. Currently set to 1 because data
+  // collection started 2026-05-02 — weekend cells only have ~18 samples max,
+  // so the 20-cap hid the pill on every weekend ride. Raise back toward 20
+  // once wait_times has several months of history.
   if (
     currentWait === null ||
     bucket0Wait === null ||
     bucket0Wait === 0 ||
-    sampleCount < 20
+    sampleCount < 1
   ) {
     return null;
   }

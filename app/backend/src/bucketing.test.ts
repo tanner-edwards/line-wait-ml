@@ -40,30 +40,35 @@ describe('bucketOf', () => {
 });
 
 describe('bucketsAroundNow', () => {
-  it('returns [t+0, t+30, t+60] buckets in order', () => {
-    // 10:15 PT → buckets are 10:00-10:30, 10:30-11:00, 11:00-11:30
+  it('returns [t+0, t+30, t+60, t+90, t+120] buckets in order', () => {
+    // 10:15 PT → buckets at 10:00, 10:30, 11:00, 11:30, 12:00
     expect(bucketsAroundNow(laTime(10, 15))).toEqual([
       '10:00-10:30',
       '10:30-11:00',
       '11:00-11:30',
+      '11:30-12:00',
+      '12:00-12:30',
     ]);
   });
 
-  it('handles wraparound when the +60 bucket crosses midnight', () => {
-    // 23:15 PT → buckets are 23:00-23:30, 23:30-00:00, 00:00-00:30
+  it('handles wraparound when later buckets cross midnight', () => {
+    // 23:15 PT → 23:00, 23:30, 00:00, 00:30, 01:00
     expect(bucketsAroundNow(laTime(23, 15))).toEqual([
       '23:00-23:30',
       '23:30-00:00',
       '00:00-00:30',
+      '00:30-01:00',
+      '01:00-01:30',
     ]);
   });
 
   it('handles a t+0 that starts exactly on a bucket boundary', () => {
-    // 10:00 PT → 10:00-10:30, 10:30-11:00, 11:00-11:30
     expect(bucketsAroundNow(laTime(10, 0))).toEqual([
       '10:00-10:30',
       '10:30-11:00',
       '11:00-11:30',
+      '11:30-12:00',
+      '12:00-12:30',
     ]);
   });
 });

@@ -24,9 +24,11 @@ describe('BelowNormalBadge', () => {
     expect(toJSON()).toBeNull();
   });
 
-  it('renders nothing when sampleCount is below the 20 confidence threshold', () => {
+  it('renders nothing when sampleCount is below the confidence threshold', () => {
+    // Threshold is currently 1 (lowered from 20 while wait_times accumulates
+    // history — see component comment). 0 is the only value that suppresses.
     const { toJSON } = render(
-      <BelowNormalBadge currentWait={5} bucket0Wait={40} sampleCount={19} />
+      <BelowNormalBadge currentWait={5} bucket0Wait={40} sampleCount={0} />
     );
     expect(toJSON()).toBeNull();
   });

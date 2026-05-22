@@ -1,4 +1,4 @@
-import { scoreRide, ScoreResult } from './score';
+import { scoreRide } from './score';
 import { Ride, HistoricalAverage, RideStats } from '../types';
 
 function makeRide(overrides: Partial<Ride> = {}): Ride {
@@ -56,10 +56,19 @@ describe('suppression', () => {
     expect(scoreRide(makeRide({ historicalAverage: null })).badge).toBeNull();
   });
 
-  it('returns no badge when bucket0.sampleCount < 20', () => {
-    expect(
-      scoreRide(makeRide({ historicalAverage: makeHA(30, 30, 30, 30, 30, 5) })).badge
-    ).toBeNull();
+  it('SUPPRESSES the score when bucket0.sampleCount is below the confidence gate', () => {
+    // Threshold is currently 1 (lowered from 20 while wait_times is still
+    // accumulating history — see score.ts for the rationale). sampleCount=0
+    // is the only value that suppresses. Fixture is built to fire +2 on
+    // Factor 1 (-50% below avg) so we can prove suppression actually fires.
+    const r = scoreRide(makeRide({
+      currentWait: 15,
+      historicalAverage: makeHA(30, 30, 30, 30, 30, 0),
+      rideStats: null,
+    }));
+    expect(r.badge).toBeNull();
+    expect(r.score).toBe(0);
+    expect(r.factors.vsAvg).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ describe('shapeParkData', () => {
         status: 'OPERATING',
         currentWait: 55,
         historicalAverage: null,
+        rideStats: null,
         prediction: null,
       },
     ];

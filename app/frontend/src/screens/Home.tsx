@@ -25,8 +25,19 @@ import { BelowNormalBadge } from '../components/BelowNormalBadge';
 import { RecommendationBadge } from '../components/RecommendationBadge';
 import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
-import { scoreRide } from '../utils/score';
 import { isWalkOnRide } from '../utils/walkOn';
+import type { ScoreResult } from '../types';
+
+const SUPPRESSED_SCORE: ScoreResult = {
+  score: 0,
+  badge: null,
+  factors: {
+    vsAvg: null,
+    vsRange: null,
+    projectedChange: null,
+    nearTermChange: null,
+  },
+};
 
 export function Home() {
   const [data, setData] = useState<CombinedResponse | null>(null);
@@ -231,8 +242,14 @@ function ListRow({
   const showIndicators = isOperating && ha !== null;
   const bucket0 = showIndicators && ha ? ha.buckets[0] : null;
   const bucket4 = showIndicators && ha ? ha.buckets[4] : null;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < 20;
-  const scoreResult = scoreRide(ride);
+  // When the bucket0 sample count is low, the TrendArrow renders with a
+  // dashed "low confidence" border. Production target is ~20, matching the
+  // score and below-normal-badge gates. Currently set to 1 because data
+  // collection started 2026-05-02 — every cell would otherwise render as
+  // low-confidence on weekends. Raise back toward 20 with the other gates
+  // once wait_times has several months of history.
+  const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
+  const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const isExpanded = expandedRideId === ride.id;
 
