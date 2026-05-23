@@ -81,3 +81,30 @@ export interface ErrorResponse {
 export function isParkError(entry: ParkData | ParkError): entry is ParkError {
   return 'error' in entry;
 }
+
+// --- v2 recommendations contract (mirror of the backend's types.ts) ---
+
+export type ParkSlug = 'disneyland' | 'california-adventure';
+
+export interface Recommendation {
+  rideId: string;
+  oneLiner: string;
+  paragraph: string;
+  walkMinutes: number | null;
+}
+
+export interface CurrentRideRef {
+  id: string;
+  name: string;
+  park: ParkSlug;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface RecommendationsResponse {
+  currentRide: CurrentRideRef;
+  park: ParkSlug;
+  lastUpdated: string;
+  degraded: boolean;
+  recommendations: Recommendation[];
+}

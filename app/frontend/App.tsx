@@ -1,5 +1,16 @@
-import { Home } from './src/screens/Home';
+import { NavigationContainer } from '@react-navigation/native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { RideProvider } from './src/context/RideContext';
+import { AppNavigator } from './src/navigation/AppNavigator';
 
 export default function App() {
-  return <Home />;
+  return (
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <RideProvider>
+          <AppNavigator />
+        </RideProvider>
+      </NavigationContainer>
+    </SafeAreaProvider>
+  );
 }

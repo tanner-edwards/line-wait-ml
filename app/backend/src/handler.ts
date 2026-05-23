@@ -23,9 +23,17 @@ import {
 } from './historicalAverages';
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { scoreRide } from './scoring/score';
+import { buildRecommendations } from './recommendations/handler';
+import { RecommendationsResponse } from './types';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
+
+// Recommendations cache: same response for the same (park, currentRideId)
+// within a 5-minute window. Catches rapid re-taps and back-button navigation
+// without re-hitting Bedrock.
+const RECS_TTL_MS = 300_000;
+const recsCache = new TTLCache<string, RecommendationsResponse>(RECS_TTL_MS);
 
 async function buildHistoricalAverage(
   parkSlug: ParkSlug,
@@ -82,7 +90,7 @@ async function buildRideStats(
   return lookupRideStats(statsMap, parkSlug, rideId, dayType);
 }
 
-async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
+export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
     const cached = parkCache.get(parkSlug);
@@ -157,10 +165,17 @@ function isValidApiKey(event: APIGatewayProxyEvent): boolean {
 type RouteKind =
   | { kind: 'combined' }
   | { kind: 'park'; slug: ParkSlug }
+  | { kind: 'recommendations' }
   | { kind: 'unknown' };
 
-function routeFromPath(path: string | null | undefined): RouteKind {
+function routeFromPath(
+  path: string | null | undefined,
+  method: string | null | undefined
+): RouteKind {
   if (!path) return { kind: 'unknown' };
+  if (path.endsWith('/v2/recommendations') && method === 'POST') {
+    return { kind: 'recommendations' };
+  }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
   }
@@ -181,13 +196,17 @@ export async function handler(
     );
   }
 
-  const route = routeFromPath(event.path);
+  const route = routeFromPath(event.path, event.httpMethod);
 
   if (route.kind === 'unknown') {
     return jsonResponse(
       404,
       errorBody('NOT_FOUND', `Unknown path: ${event.path}`)
     );
+  }
+
+  if (route.kind === 'recommendations') {
+    return handleRecommendations(event);
   }
 
   const atParam = event.queryStringParameters?.at;
@@ -232,7 +251,57 @@ export async function handler(
   return jsonResponse(200, shapeCombined(entries));
 }
 
-// Test helper — clears the module-level cache between tests.
+async function handleRecommendations(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  let body: { park?: unknown; currentRideId?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const park = body.park;
+  const currentRideId = body.currentRideId;
+  if (park !== 'disneyland' && park !== 'california-adventure') {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'park must be "disneyland" or "california-adventure"'));
+  }
+  if (typeof currentRideId !== 'string' || currentRideId.length === 0) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'currentRideId is required'));
+  }
+
+  // Optional ?at=<iso> for time-travel testing — same param as /v0/waits.
+  // When set we bypass the recs cache to avoid mixing live/time-travel results.
+  const atParam = event.queryStringParameters?.at;
+  let at: Date | undefined;
+  if (atParam) {
+    at = new Date(atParam);
+    if (isNaN(at.getTime())) {
+      return jsonResponse(400, errorBody('BAD_REQUEST', 'Invalid ?at= parameter'));
+    }
+  }
+
+  const cacheKey = `${park}__${currentRideId}`;
+  if (!at) {
+    const cached = recsCache.get(cacheKey);
+    if (cached) {
+      return jsonResponse(200, cached);
+    }
+  }
+
+  try {
+    const result = await buildRecommendations({ park, currentRideId, at });
+    if (!at) recsCache.set(cacheKey, result);
+    return jsonResponse(200, result);
+  } catch (err) {
+    const status = err instanceof UpstreamError ? err.statusCode : 502;
+    const message = err instanceof Error ? err.message : 'Unknown upstream error';
+    return jsonResponse(status, errorBody('UPSTREAM_UNAVAILABLE', message));
+  }
+}
+
+// Test helper — clears the module-level caches between tests.
 export function _resetCacheForTests(): void {
   parkCache.clear();
+  recsCache.clear();
 }

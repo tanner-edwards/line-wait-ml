@@ -9,6 +9,7 @@ function makeRide(over: Partial<Ride> = {}): Ride {
     status: 'OPERATING',
     currentWait: 10,
     historicalAverage: null,
+    rideStats: null,
     prediction: null,
   };
   return { ...base, ...over };

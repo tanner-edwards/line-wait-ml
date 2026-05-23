@@ -30,6 +30,35 @@ Parameters:
       Used by the waits handler (read historical_averages) and the averages
       cron (read wait_times, write historical_averages).
 
+  BedrockModelId:
+    Type: String
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
+    Description: >
+      Inference profile ID for the Bedrock model invoked by /v2/recommendations.
+      Default is Claude Haiku 4.5 — the launch model for v2. Swap to Sonnet 4.6
+      (us.anthropic.claude-sonnet-4-...) by redeploying with a different value;
+      no code change needed.
+
+  BedrockRegion:
+    Type: String
+    Default: us-west-2
+    Description: >
+      AWS region the Bedrock SDK calls. Should match the region where you
+      enabled the model (model access propagated 2026-05 — see Slice C.0
+      walkthrough). Doesn't have to be the same region as this CloudFormation
+      stack but using us-west-2 across the board keeps latency lowest.
+
+  BedrockBudgetAlarmEmail:
+    Type: String
+    Default: ''
+    Description: >
+      Email address subscribed to the Bedrock-spend CloudWatch alarm topic.
+      Leave blank to skip the alarm + SNS topic entirely. Confirms via AWS
+      verification email after first deploy.
+
+Conditions:
+  HasBudgetEmail: !Not [!Equals [!Ref BedrockBudgetAlarmEmail, '']]
+
 Resources:
   # --- API Gateway ---
 
@@ -40,7 +69,7 @@ Resources:
       Cors:
         AllowOrigin: !Sub "'${CorsOrigin}'"
         AllowHeaders: "'x-api-key, content-type'"
-        AllowMethods: "'GET, OPTIONS'"
+        AllowMethods: "'GET, POST, OPTIONS'"
 
   WaitsApiKey:
     Type: AWS::ApiGateway::ApiKey
@@ -75,13 +104,43 @@ Resources:
       Runtime: nodejs22.x
       Handler: handler.handler
       Architectures: [arm64]
-      MemorySize: 256
-      Timeout: 15
+      # Bumped 256 → 1024 in Slice C: cold start was pegging CPU at the
+      # 256MB tier and timing out on the 29s API Gateway cap while loading
+      # ~6.5k historical_averages docs + ride_stats + ride_metadata before
+      # the Bedrock invoke. 1024MB gives ~4x the CPU and lets cold start
+      # land in the 8-12s range. Lambda bills by GB-ms so cost roughly
+      # doubles per call, but each call is ~3-5x faster — net win.
+      MemorySize: 1024
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: bedrock:InvokeModel
+              # Cross-region inference profiles (the `us.*` model IDs) route
+              # the actual InvokeModel call to a foundation-model ARN in
+              # whatever region has capacity — us-east-1, us-west-2, etc.
+              # The inference-profile resource is account-scoped, but the
+              # downstream foundation-model resource has to cover any region.
+              Resource:
+                - !Sub arn:aws:bedrock:*::foundation-model/anthropic.*
+                - !Sub arn:aws:bedrock:*:${AWS::AccountId}:inference-profile/*
+            # AWS Marketplace requires these on the calling principal for
+            # newer Anthropic models distributed via Marketplace (Haiku 4.5
+            # is one). Without them, InvokeModel returns AccessDeniedException
+            # with "aws-marketplace:ViewSubscriptions / Subscribe" in the
+            # message. Resource: * because Marketplace actions are global.
+            - Effect: Allow
+              Action:
+                - aws-marketplace:ViewSubscriptions
+                - aws-marketplace:Subscribe
+              Resource: '*'
       Environment:
         Variables:
           API_KEY: !Ref ApiKeyValue
           CORS_ORIGIN: !Ref CorsOrigin
           FIREBASE_SERVICE_ACCOUNT_JSON: !Ref FirebaseServiceAccountJson
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          BEDROCK_REGION: !Ref BedrockRegion
       Events:
         Combined:
           Type: Api
@@ -107,6 +166,14 @@ Resources:
             Method: get
             Auth:
               ApiKeyRequired: true
+        Recommendations:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v2/recommendations
+            Method: post
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
@@ -115,6 +182,45 @@ Resources:
         Sourcemap: true
         EntryPoints:
           - src/handler.ts
+
+  # --- Bedrock budget alarm (optional; only created when BedrockBudgetAlarmEmail is set) ---
+
+  BedrockBudgetTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasBudgetEmail
+    Properties:
+      TopicName: club32-bedrock-budget-alarm
+      DisplayName: Club 32 Bedrock spend alarm
+
+  BedrockBudgetSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasBudgetEmail
+    Properties:
+      Protocol: email
+      TopicArn: !Ref BedrockBudgetTopic
+      Endpoint: !Ref BedrockBudgetAlarmEmail
+
+  BedrockBudgetAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasBudgetEmail
+    Properties:
+      AlarmName: club32-bedrock-spend-over-10
+      AlarmDescription: Triggers when estimated Bedrock charges exceed $10 in a month.
+      Namespace: AWS/Billing
+      MetricName: EstimatedCharges
+      Dimensions:
+        - Name: ServiceName
+          Value: AmazonBedrock
+        - Name: Currency
+          Value: USD
+      Statistic: Maximum
+      Period: 21600       # 6 hours; AWS/Billing only updates every 6h or so
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        - !Ref BedrockBudgetTopic
+      TreatMissingData: notBreaching
 
   # --- PWA hosting (v0.5) ---
 

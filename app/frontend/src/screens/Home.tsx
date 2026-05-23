@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  AppState,
   FlatList,
   Pressable,
   RefreshControl,
@@ -11,11 +10,8 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { ApiError, fetchWaits } from '../api';
-import { CombinedResponse } from '../types';
 import {
   ListItem,
-  erroredParks,
   flattenForList,
   rideWaitLabel,
 } from '../grouping';
@@ -26,6 +22,7 @@ import { RecommendationBadge } from '../components/RecommendationBadge';
 import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { isWalkOnRide } from '../utils/walkOn';
+import { useRides } from '../context/RideContext';
 import type { ScoreResult } from '../types';
 
 const SUPPRESSED_SCORE: ScoreResult = {
@@ -40,82 +37,32 @@ const SUPPRESSED_SCORE: ScoreResult = {
 };
 
 export function Home() {
-  const [data, setData] = useState<CombinedResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
+  // Shared ride state lives in RideProvider; the Browse screen owns only
+  // its own UI state (expanded debug rows + time-travel modal). The auto-
+  // refresh and foreground-refresh effects moved to the provider too.
+  const { data, error, loading, refreshing, lastRefreshedAt, refresh } = useRides();
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
-  const lastFetchedAtMs = useRef<number>(0);
-
-  const load = useCallback(async (mode: 'initial' | 'user' | 'auto', at?: string) => {
-    if (mode === 'initial') setLoading(true);
-    if (mode === 'user') setRefreshing(true);
-    const fetchedAt = new Date().toISOString();
-    try {
-      const fresh = await fetchWaits(at);
-      setData(fresh);
-      lastFetchedAtMs.current = Date.now();
-      if (mode !== 'initial') setLastRefreshedAt(fetchedAt);
-      const failedParks = erroredParks(fresh);
-      if (failedParks.length > 0) {
-        setError(
-          `Couldn't fetch live data for: ${failedParks.map(p => p.park).join(', ')}`
-        );
-      } else {
-        setError(null);
-      }
-    } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Unknown error';
-      setError(message);
-      // Keep `data` and `lastRefreshedAt` as-is — failed fetch doesn't update the timestamp.
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void load('initial');
-  }, [load]);
-
-  // Auto-refresh every 10 minutes while the app is open.
-  useEffect(() => {
-    const id = setInterval(() => void load('auto'), 10 * 60 * 1000);
-    return () => clearInterval(id);
-  }, [load]);
-
-  // Auto-refresh when foregrounded after > 10 minutes of inactivity.
-  useEffect(() => {
-    const sub = AppState.addEventListener('change', nextState => {
-      if (nextState === 'active') {
-        const staleMs = Date.now() - lastFetchedAtMs.current;
-        if (staleMs > 10 * 60 * 1000) void load('auto');
-      }
-    });
-    return () => sub.remove();
-  }, [load]);
 
   const onRefresh = useCallback(() => {
-    void load('user');
-  }, [load]);
+    void refresh('user');
+  }, [refresh]);
 
   const handleTimeTravelSet = useCallback((at: string, label: string) => {
     setTimeTravelAt(at);
     setTimeTravelLabel(label);
     setShowTimeTravelModal(false);
-    void load('auto', at);
-  }, [load]);
+    void refresh('auto', at);
+  }, [refresh]);
 
   const handleResume = useCallback(() => {
     setTimeTravelAt(null);
     setTimeTravelLabel(null);
     setShowTimeTravelModal(false);
-    void load('user');
-  }, [load]);
+    void refresh('user');
+  }, [refresh]);
 
   if (loading && !data) {
     return (

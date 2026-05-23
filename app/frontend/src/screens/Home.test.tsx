@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import { Home } from './Home';
 import * as api from '../api';
 import { CombinedResponse, HistoricalAverage, Ride } from '../types';
+import { RideProvider } from '../context/RideContext';
 
 jest.mock('../api', () => {
   const actual = jest.requireActual<typeof import('../api')>('../api');
@@ -13,6 +14,17 @@ jest.mock('../api', () => {
 });
 
 const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWaits>;
+
+// As of Slice D1, Home reads from RideContext instead of fetching directly.
+// Wrap every render in <RideProvider> so the provider's effect fires the
+// (mocked) fetchWaits call and pushes data down to Home.
+function renderHome() {
+  return render(
+    <RideProvider>
+      <Home />
+    </RideProvider>
+  );
+}
 
 // Helper: build a HistoricalAverage with sane defaults. Override individual
 // buckets via partials for clarity in tests.
@@ -93,7 +105,17 @@ const happyResponse: CombinedResponse = {
 };
 
 // Helper: build a single-ride response for v1 indicator tests.
-function singleRideResponse(ride: Ride): CombinedResponse {
+// Test fixtures only spell out the fields each test cares about; pad missing
+// ones with null so they satisfy the `Ride` type without each call site
+// repeating the same defaults.
+function singleRideResponse(partial: Partial<Ride> & Pick<Ride, 'id' | 'name' | 'land' | 'status'>): CombinedResponse {
+  const ride: Ride = {
+    currentWait: null,
+    historicalAverage: null,
+    rideStats: null,
+    prediction: null,
+    ...partial,
+  };
   return {
     parks: [
       {
@@ -113,7 +135,7 @@ describe('Home — initial successful load', () => {
   it('renders both park headers in order, lands sorted, rides with waits', async () => {
     mockFetchWaits.mockResolvedValue(happyResponse);
 
-    render(<Home />);
+    renderHome();
 
     // After load, the loaded view appears
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
@@ -141,7 +163,7 @@ describe('Home — initial successful load', () => {
 
   it('shows the older of the two parks\' lastUpdated as HH:MM', async () => {
     mockFetchWaits.mockResolvedValue(happyResponse);
-    render(<Home />);
+    renderHome();
 
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
@@ -155,7 +177,7 @@ describe('Home — first-load failure', () => {
   it('renders the error banner and the empty state when the fetch throws and there is no prior data', async () => {
     mockFetchWaits.mockRejectedValue(new api.ApiError(502, 'upstream down'));
 
-    render(<Home />);
+    renderHome();
 
     await waitFor(() => expect(screen.queryByTestId('error-banner')).toBeTruthy());
     expect(screen.queryByTestId('empty-state')).toBeTruthy();
@@ -165,7 +187,7 @@ describe('Home — first-load failure', () => {
 describe('Home — refresh button', () => {
   it('re-fetches data when the Refresh button is pressed', async () => {
     mockFetchWaits.mockResolvedValue(happyResponse);
-    render(<Home />);
+    renderHome();
 
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
     expect(mockFetchWaits).toHaveBeenCalledTimes(1);
@@ -190,7 +212,7 @@ describe('Home — partial failure', () => {
       ],
     } as CombinedResponse);
 
-    render(<Home />);
+    renderHome();
 
     await waitFor(() => expect(screen.queryByTestId('error-banner')).toBeTruthy());
 
@@ -218,7 +240,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByText('Closed')).toBeTruthy();
@@ -241,7 +263,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByText('40 min')).toBeTruthy();
@@ -267,7 +289,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-down')).toBeTruthy();
@@ -288,7 +310,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
@@ -309,7 +331,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
@@ -330,7 +352,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('below-normal-badge')).toBeTruthy();
@@ -352,7 +374,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('above-normal-badge')).toBeTruthy();
@@ -377,7 +399,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
@@ -405,7 +427,7 @@ describe('Home — v1 historical-context indicators', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
@@ -428,7 +450,7 @@ describe('Home — walk-on indicator', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('badge-walk-on')).toBeTruthy();
@@ -450,7 +472,7 @@ describe('Home — walk-on indicator', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.queryByTestId('badge-walk-on')).toBeNull();
@@ -469,7 +491,7 @@ describe('Home — walk-on indicator', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('badge-walk-on')).toBeTruthy();
@@ -488,7 +510,7 @@ describe('Home — walk-on indicator', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.queryByTestId('badge-walk-on')).toBeNull();
@@ -507,7 +529,7 @@ describe('Home — walk-on indicator', () => {
         prediction: null,
       })
     );
-    render(<Home />);
+    renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.queryByTestId('badge-walk-on')).toBeNull();

@@ -1,4 +1,4 @@
-import { ParkSlug, PARKS, ThemeparksLiveResponse } from './types';
+import { ParkSlug, PARKS, ThemeparksLiveResponse, ThemeparksScheduleResponse } from './types';
 
 const API_BASE = 'https://api.themeparks.wiki/v1';
 
@@ -26,5 +26,14 @@ export async function fetchLiveData(
   const parkId = PARKS[parkSlug].id;
   return fetchJson<ThemeparksLiveResponse>(
     `${API_BASE}/entity/${parkId}/live`
+  );
+}
+
+export async function fetchSchedule(
+  parkSlug: ParkSlug
+): Promise<ThemeparksScheduleResponse> {
+  const parkId = PARKS[parkSlug].id;
+  return fetchJson<ThemeparksScheduleResponse>(
+    `${API_BASE}/entity/${parkId}/schedule`
   );
 }

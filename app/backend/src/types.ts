@@ -37,6 +37,24 @@ export interface ThemeparksLiveResponse {
   liveData: ThemeparksLiveEntity[];
 }
 
+// /entity/{parkId}/schedule — minimal shape we read. Each entry is a date
+// (e.g. "2026-05-23") with one or more windows; `type: 'OPERATING'` is the
+// regular park-open window we care about. openingTime/closingTime are full
+// ISO strings with timezone offset (e.g. "2026-05-23T08:00:00-07:00").
+export interface ThemeparksScheduleEntry {
+  date: string;            // "YYYY-MM-DD"
+  type: string;            // 'OPERATING' | 'TICKETED_EVENT' | 'CLOSED' | ...
+  openingTime: string;     // ISO with offset
+  closingTime: string;     // ISO with offset
+  description?: string;
+}
+
+export interface ThemeparksScheduleResponse {
+  id: string;
+  name: string;
+  schedule: ThemeparksScheduleEntry[];
+}
+
 // --- Outgoing response shapes ---
 
 // v1 historical-average shape — gets attached to each operating ride.
@@ -124,6 +142,31 @@ export interface RideMetadata {
   lat: number | null;
   lng: number | null;
   source: 'manual' | 'themeparks.wiki';
+}
+
+// --- v2 recommendations contract ---
+
+export interface Recommendation {
+  rideId: string;
+  oneLiner: string;          // shown on the card
+  paragraph: string;         // shown on the detail screen
+  walkMinutes: number | null; // null when either ride lacks lat/lng metadata
+}
+
+export interface CurrentRideRef {
+  id: string;
+  name: string;
+  park: ParkSlug;
+  lat: number | null;
+  lng: number | null;
+}
+
+export interface RecommendationsResponse {
+  currentRide: CurrentRideRef;
+  park: ParkSlug;
+  lastUpdated: string;        // ISO timestamp; matches the underlying live-data fetch
+  degraded: boolean;          // true when Bedrock failed and we returned deterministic fallback
+  recommendations: Recommendation[]; // 10 entries in priority order; app paginates 5+5
 }
 
 export interface ErrorResponse {

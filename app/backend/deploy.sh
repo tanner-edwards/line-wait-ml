@@ -86,12 +86,41 @@ fi
 echo "==> sam build"
 sam build
 
+# v2 Bedrock params. Override BEDROCK_MODEL_ID before running this script to
+# swap models without editing template.yaml. BEDROCK_BUDGET_ALARM_EMAIL is
+# optional — when set, the stack provisions an SNS topic + CloudWatch alarm
+# that triggers when monthly Bedrock spend exceeds $10. AWS sends a one-time
+# confirmation email the first time it's set; click the link or the alarm
+# won't route.
+BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:0}"
+BEDROCK_REGION="${BEDROCK_REGION:-us-west-2}"
+BEDROCK_BUDGET_ALARM_EMAIL="${BEDROCK_BUDGET_ALARM_EMAIL:-}"
+
+echo "==> Bedrock model: $BEDROCK_MODEL_ID (region $BEDROCK_REGION)"
+if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
+  echo "==> Budget alarm will notify: $BEDROCK_BUDGET_ALARM_EMAIL"
+else
+  echo "==> Budget alarm skipped (set BEDROCK_BUDGET_ALARM_EMAIL to enable)"
+fi
+
+# SAM's shorthand --parameter-overrides format rejects empty values
+# (`Key=` without a value), so only append the budget-email param when
+# it's actually set. When omitted, the template default ('') leaves the
+# alarm resources unprovisioned via the HasBudgetEmail condition.
+PARAMETER_OVERRIDES=(
+  "ApiKeyValue=$API_KEY"
+  "CorsOrigin=$CORS_ORIGIN"
+  "FirebaseServiceAccountJson=$FIREBASE_JSON_B64"
+  "BedrockModelId=$BEDROCK_MODEL_ID"
+  "BedrockRegion=$BEDROCK_REGION"
+)
+if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
+  PARAMETER_OVERRIDES+=("BedrockBudgetAlarmEmail=$BEDROCK_BUDGET_ALARM_EMAIL")
+fi
+
 echo "==> sam deploy"
 sam deploy \
-  --parameter-overrides \
-    "ApiKeyValue=$API_KEY" \
-    "CorsOrigin=$CORS_ORIGIN" \
-    "FirebaseServiceAccountJson=$FIREBASE_JSON_B64" \
+  --parameter-overrides "${PARAMETER_OVERRIDES[@]}" \
   --no-confirm-changeset
 
 echo "==> Done."
