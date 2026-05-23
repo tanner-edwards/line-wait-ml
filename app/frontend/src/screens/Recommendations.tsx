@@ -57,24 +57,6 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
   const inFlightAbort = useRef<AbortController | null>(null);
   const [initialized, setInitialized] = useState(false);
 
-  // 1. On mount, read persisted selection and decide whether to open the picker.
-  useEffect(() => {
-    (async () => {
-      const saved = await getLastSelection();
-      setSelection(saved);
-      if (!saved) {
-        setPickerOpen(true);
-      } else if (isStale(saved)) {
-        setPickerOpen(true);
-      } else {
-        // Fresh enough — auto-fetch with the saved selection.
-        void runFetch(saved.park, saved.currentRideId);
-      }
-      setInitialized(true);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   // ridesByPark: derive from RideContext.data for the picker.
   const ridesByPark = useMemo<Record<ParkSlug, Ride[]>>(() => {
     const out: Record<ParkSlug, Ride[]> = {
@@ -91,11 +73,28 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
     return out;
   }, [data]);
 
+  // A park is "open" when at least one ride is OPERATING with a non-null
+  // current wait. Pre-opening artifacts (Disney Gallery, walkthroughs) show
+  // up as OPERATING with null waits — they shouldn't count as "park open."
+  const isParkOpen = useCallback((park: ParkSlug): boolean => {
+    return ridesByPark[park].some(r => r.status === 'OPERATING' && r.currentWait !== null);
+  }, [ridesByPark]);
+
   const runFetch = useCallback(async (park: ParkSlug, currentRideId: string) => {
     // Cancel any prior in-flight call so a re-pick doesn't race the previous one.
     inFlightAbort.current?.abort();
     const controller = new AbortController();
     inFlightAbort.current = controller;
+
+    // Gate: don't fire the LLM request when the park is currently closed.
+    // (Time-travel mode — when added — should bypass this gate; today
+    // Recommendations has no time-travel UI so the gate is unconditional.)
+    if (!isParkOpen(park)) {
+      setRecs(null);
+      setRecsError(null);
+      setRecsLoading(false);
+      return;
+    }
 
     setRecsLoading(true);
     setRecsError(null);
@@ -111,6 +110,25 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
+  }, [isParkOpen]);
+
+  // 1. On mount, read persisted selection and decide whether to open the picker.
+  // (Placed after runFetch so the effect can call it.)
+  useEffect(() => {
+    (async () => {
+      const saved = await getLastSelection();
+      setSelection(saved);
+      if (!saved) {
+        setPickerOpen(true);
+      } else if (isStale(saved)) {
+        setPickerOpen(true);
+      } else {
+        // Fresh enough — auto-fetch with the saved selection.
+        void runFetch(saved.park, saved.currentRideId);
+      }
+      setInitialized(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handlePickerSubmit = useCallback(async (park: ParkSlug, currentRideId: string) => {
@@ -166,7 +184,17 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
         </Pressable>
       </View>
 
-      {recsLoading ? (
+      {selection && !isParkOpen(selection.park) ? (
+        <View style={styles.errorContainer} testID="recs-park-closed">
+          <Text style={styles.errorTitle}>{parkDisplayName(selection.park)} is closed</Text>
+          <Text style={styles.errorBody}>
+            We don't recommend rides when the park isn't open — wait times aren't available yet.
+          </Text>
+          <Text style={styles.errorHint}>
+            Check back after the park opens (typically 8 AM PT). You can change locations in the meantime.
+          </Text>
+        </View>
+      ) : recsLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" />
           <Text style={styles.loadingHint}>Picking 10 rides for you…</Text>
