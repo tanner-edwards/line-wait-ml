@@ -20,11 +20,13 @@ async function loadAll(): Promise<Map<string, RideStats>> {
       rideId: string;
       dayType: DayType;
       p10: number;
+      p50: number;
       p90: number;
       sampleCount: number;
     };
     map.set(key(d.parkId, d.rideId, d.dayType), {
       p10: d.p10,
+      p50: d.p50 ?? Math.round((d.p10 + d.p90) / 2),
       p90: d.p90,
       sampleCount: d.sampleCount,
     });

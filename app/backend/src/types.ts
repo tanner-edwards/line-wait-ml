@@ -80,6 +80,7 @@ export type Prediction = null;
 // range. Null for closed rides and rides with insufficient data.
 export interface RideStats {
   p10: number;
+  p50: number;
   p90: number;
   sampleCount: number;
 }
@@ -151,6 +152,7 @@ export interface Recommendation {
   oneLiner: string;          // shown on the card
   paragraph: string;         // shown on the detail screen
   walkMinutes: number | null; // null when either ride lacks lat/lng metadata
+  walkYards: number | null;   // null under the same conditions as walkMinutes
 }
 
 export interface CurrentRideRef {

@@ -20,6 +20,7 @@ export type Prediction = null;
 
 export interface RideStats {
   p10: number;
+  p50: number;
   p90: number;
   sampleCount: number;
 }
@@ -91,6 +92,7 @@ export interface Recommendation {
   oneLiner: string;
   paragraph: string;
   walkMinutes: number | null;
+  walkYards: number | null;
 }
 
 export interface CurrentRideRef {

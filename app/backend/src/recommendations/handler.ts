@@ -18,7 +18,7 @@ import {
   RecommendationsResponse,
 } from '../types';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
-import { walkingMinutes } from './walkingDistance';
+import { walkingMinutes, walkingYards } from './walkingDistance';
 import { invokeRecommendations } from './bedrockClient';
 import { buildUserMessage, SYSTEM_PROMPT, RideForPrompt } from './promptBuilder';
 import { getParkHours } from './parkHours';
@@ -62,16 +62,17 @@ export async function buildRecommendations(
   const currentRideEntity = park.rides.find(r => r.id === req.currentRideId);
 
   // Candidate set: operating rides in the same park, excluding the user's
-  // current ride. Carry walk minutes per candidate.
+  // current ride. Carry walk minutes + yards per candidate.
   const candidates: RideForPrompt[] = park.rides
     .filter(r => r.status === 'OPERATING' && r.id !== req.currentRideId)
-    .map(ride => ({
-      ride,
-      walkMinutes: walkingMinutes(
-        currentMeta,
-        lookupRideMetadata(metadataMap, ride.id)
-      ),
-    }));
+    .map(ride => {
+      const otherMeta = lookupRideMetadata(metadataMap, ride.id);
+      return {
+        ride,
+        walkMinutes: walkingMinutes(currentMeta, otherMeta),
+        walkYards: walkingYards(currentMeta, otherMeta),
+      };
+    });
 
   // Empty park (closed, weather, etc.) → return an empty list. Not degraded,
   // just no rides to recommend.
@@ -177,7 +178,9 @@ export function parseAndValidate(
   if (!Array.isArray(recs)) return null;
 
   const candidateIds = new Set(candidates.map(c => c.ride.id));
-  const walkLookup = new Map(candidates.map(c => [c.ride.id, c.walkMinutes]));
+  const walkLookup = new Map(
+    candidates.map(c => [c.ride.id, { minutes: c.walkMinutes, yards: c.walkYards }])
+  );
 
   const valid: Recommendation[] = [];
   for (const entry of recs) {
@@ -187,11 +190,13 @@ export function parseAndValidate(
     if (typeof e.oneLiner !== 'string') continue;
     if (typeof e.paragraph !== 'string') continue;
     if (!candidateIds.has(e.rideId)) continue;
+    const walk = walkLookup.get(e.rideId);
     valid.push({
       rideId: e.rideId,
       oneLiner: e.oneLiner,
       paragraph: e.paragraph,
-      walkMinutes: walkLookup.get(e.rideId) ?? null,
+      walkMinutes: walk?.minutes ?? null,
+      walkYards: walk?.yards ?? null,
     });
     if (valid.length >= TOTAL_RECS) break;
   }
@@ -217,10 +222,11 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
     const sb = b.ride.score?.score ?? 0;
     return sb - sa;
   });
-  return sorted.slice(0, TOTAL_RECS).map(({ ride, walkMinutes }) => ({
+  return sorted.slice(0, TOTAL_RECS).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,
     oneLiner: DEFAULT_FALLBACK_ONE_LINER,
     paragraph: DEFAULT_FALLBACK_PARAGRAPH,
     walkMinutes,
+    walkYards,
   }));
 }

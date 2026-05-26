@@ -11,6 +11,7 @@
 const PATH_MULTIPLIER = 1.3;
 const WALKING_METERS_PER_MIN = 80.5; // ~3 mph
 const EARTH_RADIUS_METERS = 6_371_000;
+const METERS_TO_YARDS = 1.09361;
 
 function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -45,6 +46,29 @@ export function walkingMinutes(
   from: { lat: number | null; lng: number | null } | null,
   to: { lat: number | null; lng: number | null } | null
 ): number | null {
+  const meters = pathMeters(from, to);
+  if (meters === null) return null;
+  return Math.max(1, Math.round(meters / WALKING_METERS_PER_MIN));
+}
+
+/**
+ * Estimated walking distance in YARDS between two points (path-adjusted, so
+ * not straight-line). Same null semantics as walkingMinutes — useful for
+ * the DebugCard, which wants a tangible "how far" alongside the time.
+ */
+export function walkingYards(
+  from: { lat: number | null; lng: number | null } | null,
+  to: { lat: number | null; lng: number | null } | null
+): number | null {
+  const meters = pathMeters(from, to);
+  if (meters === null) return null;
+  return Math.max(1, Math.round(meters * METERS_TO_YARDS));
+}
+
+function pathMeters(
+  from: { lat: number | null; lng: number | null } | null,
+  to: { lat: number | null; lng: number | null } | null
+): number | null {
   if (!from || !to) return null;
   if (
     from.lat === null || from.lng === null ||
@@ -52,7 +76,5 @@ export function walkingMinutes(
   ) {
     return null;
   }
-  const meters = haversineMeters(from.lat, from.lng, to.lat, to.lng) * PATH_MULTIPLIER;
-  const minutes = meters / WALKING_METERS_PER_MIN;
-  return Math.max(1, Math.round(minutes));
+  return haversineMeters(from.lat, from.lng, to.lat, to.lng) * PATH_MULTIPLIER;
 }

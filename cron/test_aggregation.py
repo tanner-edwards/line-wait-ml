@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import pytest
 
-from aggregation import aggregate, doc_id
+from aggregation import aggregate, compute_ride_stats, doc_id
 
 
 PT = ZoneInfo("America/Los_Angeles")
@@ -126,6 +126,37 @@ class TestAggregate:
         a = aggregate(df)
         b = aggregate(df.copy())
         pd.testing.assert_frame_equal(a, b)
+
+
+class TestComputeRideStats:
+    def test_empty_input_returns_empty_result(self):
+        result = compute_ride_stats(pd.DataFrame())
+        assert result.empty
+
+    def test_computes_p10_p50_p90(self):
+        # 10 rows: sorted waits [10,20,30,40,50,60,70,80,90,100]
+        rows = [_sample(wait_minutes=w) for w in range(10, 101, 10)]
+        result = compute_ride_stats(_df(*rows))
+        assert len(result) == 1
+        row = result.iloc[0]
+        assert row["p10"] == 19   # quantile(0.1) of [10..100] step 10
+        assert row["p50"] == 55   # median
+        assert row["p90"] == 91   # quantile(0.9)
+        assert row["sampleCount"] == 10
+
+    def test_p50_guard_threshold_visible_in_output(self):
+        # Verify a low-demand ride (all waits < 25) gets a low p50
+        rows = [_sample(wait_minutes=w) for w in [5, 8, 10, 12, 15]]
+        result = compute_ride_stats(_df(*rows))
+        assert result.iloc[0]["p50"] < 25
+
+    def test_filters_non_operating_and_null_waits(self):
+        result = compute_ride_stats(_df(
+            _sample(wait_minutes=30),
+            _sample(status="CLOSED", wait_minutes=100),
+            _sample(wait_minutes=None),
+        ))
+        assert result.iloc[0]["sampleCount"] == 1
 
 
 class TestDocId:

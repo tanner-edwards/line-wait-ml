@@ -6,6 +6,10 @@ import { formatBucketTimeSlot } from '../timestamp';
 interface DebugCardProps {
   ride: Ride;
   result: ScoreResult;
+  /** Optional walking distance from the user's current ride. Only the
+   *  Recommendations expanded view passes these — Browse renders without. */
+  walkYards?: number | null;
+  walkMinutes?: number | null;
 }
 
 function pts(n: number): string {
@@ -38,10 +42,16 @@ function FactorRow({ label, value, points, skipped }: {
   );
 }
 
-export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement {
+export function DebugCard({ ride, result, walkYards, walkMinutes }: DebugCardProps): React.ReactElement {
   const ha = ride.historicalAverage;
   const rs = ride.rideStats;
   const { factors, score, badge } = result;
+
+  // The card already shows minutes via the walk pill; the debug surface
+  // adds the raw distance in yards (the underlying calculated number).
+  // walkMinutes prop is accepted for parity with the wire shape but unused.
+  void walkMinutes;
+  const walkLabel = walkYards != null ? `${walkYards} yds` : null;
 
   const nearTermValue = factors.nearTermChange !== null
     ? (() => {
@@ -113,6 +123,16 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
         <Text style={styles.rangeLabel}>Max</Text>
         <Text style={styles.rangeValue}>{rs ? `${rs.p90} min` : '—'}</Text>
       </View>
+
+      {walkLabel ? (
+        <>
+          <View style={styles.divider} />
+          <View style={styles.rangeRow}>
+            <Text style={styles.rangeLabel}>Distance</Text>
+            <Text style={styles.rangeValue}>{walkLabel}</Text>
+          </View>
+        </>
+      ) : null}
 
       <View style={styles.divider} />
 

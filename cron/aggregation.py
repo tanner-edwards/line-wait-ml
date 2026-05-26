@@ -88,15 +88,16 @@ def compute_ride_stats(df: pd.DataFrame) -> pd.DataFrame:
         rideId       str
         dayType      str   "weekday" | "weekend" | "holiday"
         p10          int   10th percentile of raw wait_minutes
+        p50          int   50th percentile (median) of raw wait_minutes
         p90          int   90th percentile of raw wait_minutes
         sampleCount  int   number of raw observations used
     """
     if df.empty:
-        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p90", "sampleCount"])
+        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p50", "p90", "sampleCount"])
 
     filtered = df[(df["status"] == "OPERATING") & df["wait_minutes"].notna()].copy()
     if filtered.empty:
-        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p90", "sampleCount"])
+        return pd.DataFrame(columns=["parkId", "rideId", "dayType", "p10", "p50", "p90", "sampleCount"])
 
     filtered["dayType"] = filtered["timestamp_utc"].apply(classify_day_type)
 
@@ -104,12 +105,14 @@ def compute_ride_stats(df: pd.DataFrame) -> pd.DataFrame:
         filtered.groupby(["park_id", "ride_id", "dayType"], sort=False)
         .agg(
             p10=("wait_minutes", lambda x: x.quantile(0.1)),
+            p50=("wait_minutes", lambda x: x.quantile(0.5)),
             p90=("wait_minutes", lambda x: x.quantile(0.9)),
             sampleCount=("wait_minutes", "count"),
         )
         .reset_index()
     )
     grouped["p10"] = grouped["p10"].round().astype(int)
+    grouped["p50"] = grouped["p50"].round().astype(int)
     grouped["p90"] = grouped["p90"].round().astype(int)
     grouped["sampleCount"] = grouped["sampleCount"].astype(int)
 

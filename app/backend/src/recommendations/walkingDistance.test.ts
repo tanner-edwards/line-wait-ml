@@ -1,4 +1,4 @@
-import { haversineMeters, walkingMinutes } from './walkingDistance';
+import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
 
 // Reference: Indiana Jones (33.8108, -117.9215) and Big Thunder (33.8128, -117.9224)
 // are next door. Hyperspace Mountain (33.8125, -117.9176) is across the park.
@@ -68,5 +68,26 @@ describe('walkingMinutes', () => {
     const a = { lat: 33.8108, lng: -117.9215 };
     const b = { lat: 33.8125, lng: -117.9176 };
     expect(walkingMinutes(a, b)).toBe(walkingMinutes(b, a));
+  });
+});
+
+describe('walkingYards', () => {
+  it('returns null when coords are missing on either side', () => {
+    expect(walkingYards(null, { lat: 33.81, lng: -117.92 })).toBeNull();
+    expect(walkingYards({ lat: null, lng: -117.92 }, { lat: 33.81, lng: -117.92 })).toBeNull();
+  });
+
+  it('floors at 1 yard for identical coordinates', () => {
+    expect(walkingYards({ lat: 33.81, lng: -117.92 }, { lat: 33.81, lng: -117.92 })).toBe(1);
+  });
+
+  it('returns a reasonable yard count for nearby rides', () => {
+    // Indiana Jones → Big Thunder (~200-300m straight × 1.3 × 1.09yd/m)
+    const y = walkingYards(
+      { lat: 33.8108, lng: -117.9215 },
+      { lat: 33.8128, lng: -117.9224 }
+    )!;
+    expect(y).toBeGreaterThan(100);
+    expect(y).toBeLessThan(500);
   });
 });

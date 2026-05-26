@@ -1,4 +1,4 @@
-import { buildUserMessage, PromptContext, SYSTEM_PROMPT } from './promptBuilder';
+import { buildSystemPrompt, buildUserMessage, DEFAULT_PERSONA, PromptContext, SYSTEM_PROMPT } from './promptBuilder';
 import { Ride, HistoricalAverage, RideStats, ScoreResult } from '../types';
 
 function makeRide(overrides: Partial<Ride> = {}): Ride {
@@ -9,7 +9,7 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     status: 'OPERATING',
     currentWait: 45,
     historicalAverage: makeHA(),
-    rideStats: { p10: 20, p90: 80, sampleCount: 200 },
+    rideStats: { p10: 20, p50: 50, p90: 80, sampleCount: 200 },
     prediction: null,
     score: makeScore(),
     ...overrides,
@@ -48,7 +48,7 @@ function makeContext(overrides: Partial<PromptContext> = {}): PromptContext {
     currentRide: { id: 'curr-ride-uuid', name: 'Hyperspace Mountain' },
     currentLocalTime: 'Friday 11:32 AM',
     parkHours: { open: '08:00', close: '23:00' },
-    rides: [{ ride: makeRide(), walkMinutes: 5 }],
+    rides: [{ ride: makeRide(), walkMinutes: 5, walkYards: 400 }],
     ...overrides,
   };
 }
@@ -68,7 +68,28 @@ describe('SYSTEM_PROMPT', () => {
   });
 
   it('tells the model to never include the guest\'s current ride', () => {
-    expect(SYSTEM_PROMPT.toLowerCase()).toContain('never include it');
+    const lower = SYSTEM_PROMPT.toLowerCase();
+    expect(lower).toContain('never include the guest');
+  });
+
+  it('inlines DEFAULT_PERSONA inside a <persona> block', () => {
+    expect(SYSTEM_PROMPT).toContain('<persona>');
+    expect(SYSTEM_PROMPT).toContain('</persona>');
+    expect(SYSTEM_PROMPT).toContain('Club 32 Generic Guest');
+  });
+});
+
+describe('buildSystemPrompt', () => {
+  it('inlines a custom persona instead of the default', () => {
+    const custom = 'Custom guest: only loves carousels.';
+    const out = buildSystemPrompt(custom);
+    expect(out).toContain('<persona>');
+    expect(out).toContain('Custom guest: only loves carousels.');
+    expect(out).not.toContain('Club 32 Generic Guest');
+  });
+
+  it('SYSTEM_PROMPT equals buildSystemPrompt(DEFAULT_PERSONA)', () => {
+    expect(SYSTEM_PROMPT).toBe(buildSystemPrompt(DEFAULT_PERSONA));
   });
 });
 
@@ -106,7 +127,7 @@ describe('buildUserMessage', () => {
 
   it('emits walk=unknown when walkMinutes is null', () => {
     const msg = buildUserMessage(makeContext({
-      rides: [{ ride: makeRide(), walkMinutes: null }],
+      rides: [{ ride: makeRide(), walkMinutes: null, walkYards: null }],
     }));
     expect(msg).toContain('walk=unknown');
   });
@@ -117,7 +138,7 @@ describe('buildUserMessage', () => {
       rideStats: null,
       score: undefined,
     });
-    const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5 }] }));
+    const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5, walkYards: 400 }] }));
     expect(msg).toContain('buckets=null');
     expect(msg).toContain('range=null');
     expect(msg).toContain('score=unavailable');
@@ -125,9 +146,9 @@ describe('buildUserMessage', () => {
 
   it('renders the rides-count in the header so the model can sanity check', () => {
     const rides = [
-      { ride: makeRide({ id: 'a', name: 'A' }), walkMinutes: 1 },
-      { ride: makeRide({ id: 'b', name: 'B' }), walkMinutes: 2 },
-      { ride: makeRide({ id: 'c', name: 'C' }), walkMinutes: 3 },
+      { ride: makeRide({ id: 'a', name: 'A' }), walkMinutes: 1, walkYards: 80 },
+      { ride: makeRide({ id: 'b', name: 'B' }), walkMinutes: 2, walkYards: 160 },
+      { ride: makeRide({ id: 'c', name: 'C' }), walkMinutes: 3, walkYards: 240 },
     ];
     const msg = buildUserMessage(makeContext({ rides }));
     expect(msg).toContain('Operating rides (3):');

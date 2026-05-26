@@ -104,9 +104,12 @@ export function scoreRide(ride: Ride): ScoreResult {
 
   const score = f1 + f2 + f3 + f4;
 
-  // Gold star: rare exceptional opportunity. All three conditions must hold.
+  // Gold star: rare exceptional opportunity. All four conditions must hold.
+  // The p50 >= 25 guard prevents low-demand walk-on rides from earning a star
+  // just because their already-short wait dipped slightly lower than usual.
   const isGoldStar =
     rideStats != null &&
+    rideStats.p50 >= 25 &&
     currentWait <= rideStats.p10 * 1.15 &&
     vsAvg !== null && vsAvg.delta < -0.30 &&
     projectedChange !== null && projectedChange.delta > 0.10;

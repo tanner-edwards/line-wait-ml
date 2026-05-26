@@ -136,6 +136,7 @@ def _write_ride_stats(db: firestore.Client, stats: pd.DataFrame) -> int:
                     "rideId": row["rideId"],
                     "dayType": row["dayType"],
                     "p10": int(row["p10"]),
+                    "p50": int(row["p50"]),
                     "p90": int(row["p90"]),
                     "sampleCount": int(row["sampleCount"]),
                     "updatedAt": now_iso,

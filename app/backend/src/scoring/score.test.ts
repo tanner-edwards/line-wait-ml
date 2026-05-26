@@ -37,8 +37,8 @@ function makeHA(
   };
 }
 
-function makeStats(p10: number, p90: number, sampleCount = 200): RideStats {
-  return { p10, p90, sampleCount };
+function makeStats(p10: number, p90: number, sampleCount = 200, p50 = Math.round((p10 + p90) / 2)): RideStats {
+  return { p10, p50, p90, sampleCount };
 }
 
 // --- Suppression ---
@@ -466,6 +466,16 @@ describe('gold star', () => {
       historicalAverage: makeHA(50, 50, 50, null, null),
     });
     expect(r.factors.projectedChange).toBeNull();
+    expect(r.badge).not.toBe('star');
+  });
+
+  it('does NOT fire when ride median (p50) is below 25 min', () => {
+    // Low-demand walk-on rides should never earn a star even if momentarily
+    // at their floor and below their own average.
+    const r = scoreRide({
+      ...goldStarRide(),
+      rideStats: makeStats(10, 40, 200, 18),  // p50=18 < 25
+    });
     expect(r.badge).not.toBe('star');
   });
 });

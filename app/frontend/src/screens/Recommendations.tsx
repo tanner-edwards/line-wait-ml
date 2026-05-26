@@ -22,9 +22,8 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { ApiError, fetchRecommendations } from '../api';
-import { ParkSlug, Recommendation, RecommendationsResponse, Ride } from '../types';
+import { ParkSlug, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
 import {
   PersistedSelection,
@@ -34,13 +33,18 @@ import {
 } from '../utils/recommendationsStorage';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
-import type { RecommendationsStackParamList } from '../navigation/AppNavigator';
+import { formatHHMM } from '../timestamp';
 
 const PAGE_SIZE = 5;
 
-type Props = NativeStackScreenProps<RecommendationsStackParamList, 'RecommendationsList'>;
+const LOADING_LINES = [
+  'Looking around the park…',
+  'Reading the lines…',
+  'Picking your next move…',
+  'Checking who has elbow room…',
+];
 
-export function Recommendations({ navigation }: Props): React.ReactElement {
+export function Recommendations(): React.ReactElement {
   const {
     data,
     error: waitsError,
@@ -54,8 +58,15 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const inFlightAbort = useRef<AbortController | null>(null);
   const [initialized, setInitialized] = useState(false);
+  // Picked once when the loading state appears, so the wording feels fresh
+  // each fetch without re-rolling on every render mid-spinner.
+  const loadingLine = useMemo(
+    () => LOADING_LINES[Math.floor(Math.random() * LOADING_LINES.length)],
+    [recsLoading]
+  );
 
   // ridesByPark: derive from RideContext.data for the picker.
   const ridesByPark = useMemo<Record<ParkSlug, Ride[]>>(() => {
@@ -99,6 +110,7 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
     setRecsLoading(true);
     setRecsError(null);
     setVisibleCount(PAGE_SIZE);
+    setExpandedRideId(null);
     try {
       const res = await fetchRecommendations({ park, currentRideId, signal: controller.signal });
       if (controller.signal.aborted) return;
@@ -174,6 +186,11 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
               From {currentRideName} · {parkDisplayName(selection.park)}
             </Text>
           ) : null}
+          {recs ? (
+            <Text style={styles.headerAsOf} testID="recs-as-of">
+              as of {formatHHMM(recs.lastUpdated)}
+            </Text>
+          ) : null}
         </View>
         <Pressable
           onPress={() => setPickerOpen(true)}
@@ -197,7 +214,7 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
       ) : recsLoading ? (
         <View style={styles.center}>
           <ActivityIndicator size="large" />
-          <Text style={styles.loadingHint}>Picking 10 rides for you…</Text>
+          <Text style={styles.loadingHint}>{loadingLine}</Text>
         </View>
       ) : recsError ? (
         <View style={styles.errorContainer} testID="recs-error">
@@ -218,14 +235,10 @@ export function Recommendations({ navigation }: Props): React.ReactElement {
           recs={recs}
           ridesById={ridesById}
           visibleCount={visibleCount}
+          expandedRideId={expandedRideId}
           onShowMore={() => setVisibleCount(c => c + PAGE_SIZE)}
-          onPressRec={(rec) =>
-            navigation.navigate('RecommendationDetail', {
-              rideId: rec.rideId,
-              oneLiner: rec.oneLiner,
-              paragraph: rec.paragraph,
-              walkMinutes: rec.walkMinutes,
-            })
+          onToggleExpand={(rideId) =>
+            setExpandedRideId(prev => (prev === rideId ? null : rideId))
           }
         />
       ) : null}
@@ -251,14 +264,16 @@ function RecsList({
   recs,
   ridesById,
   visibleCount,
+  expandedRideId,
   onShowMore,
-  onPressRec,
+  onToggleExpand,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
   visibleCount: number;
+  expandedRideId: string | null;
   onShowMore: () => void;
-  onPressRec: (rec: Recommendation) => void;
+  onToggleExpand: (rideId: string) => void;
 }): React.ReactElement {
   if (recs.recommendations.length === 0) {
     return (
@@ -282,7 +297,8 @@ function RecsList({
         <RecommendationCard
           rec={item}
           ride={ridesById.get(item.rideId)}
-          onPress={() => onPressRec(item)}
+          expanded={expandedRideId === item.rideId}
+          onPress={() => onToggleExpand(item.rideId)}
         />
       )}
       ListHeaderComponent={
@@ -318,6 +334,7 @@ const styles = StyleSheet.create({
   headerLeft: { flex: 1, paddingRight: 12 },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' },
   headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 },
+  headerAsOf: { fontSize: 11, color: '#888', marginTop: 2, fontStyle: 'italic' },
   changeButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,

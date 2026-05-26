@@ -65,8 +65,8 @@ beforeEach(() => {
 
 describe('parseAndValidate', () => {
   const candidates = [
-    { ride: makeRide('r1', 'Ride 1', 10), walkMinutes: 3 },
-    { ride: makeRide('r2', 'Ride 2', 20), walkMinutes: 7 },
+    { ride: makeRide('r1', 'Ride 1', 10), walkMinutes: 3, walkYards: 240 },
+    { ride: makeRide('r2', 'Ride 2', 20), walkMinutes: 7, walkYards: 560 },
   ];
 
   it('parses a well-formed response and attaches walkMinutes', () => {
@@ -77,7 +77,7 @@ describe('parseAndValidate', () => {
     });
     const recs = parseAndValidate(text, candidates);
     expect(recs).toEqual([
-      { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', walkMinutes: 3 },
+      { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', walkMinutes: 3, walkYards: 240 },
     ]);
   });
 
@@ -137,9 +137,9 @@ describe('parseAndValidate', () => {
 describe('fallbackRecs', () => {
   it('returns top-10 by score descending', () => {
     const candidates = [
-      { ride: makeRide('low', 'Low', 60, -2), walkMinutes: 5 },
-      { ride: makeRide('high', 'High', 5, 5), walkMinutes: 3 },
-      { ride: makeRide('mid', 'Mid', 30, 1), walkMinutes: 4 },
+      { ride: makeRide('low', 'Low', 60, -2), walkMinutes: 5, walkYards: 400 },
+      { ride: makeRide('high', 'High', 5, 5), walkMinutes: 3, walkYards: 240 },
+      { ride: makeRide('mid', 'Mid', 30, 1), walkMinutes: 4, walkYards: 320 },
     ];
     const recs = fallbackRecs(candidates);
     expect(recs.map(r => r.rideId)).toEqual(['high', 'mid', 'low']);
@@ -150,14 +150,14 @@ describe('fallbackRecs', () => {
 
   it('caps at 10 even with more candidates', () => {
     const candidates = Array.from({ length: 15 }, (_, i) =>
-      ({ ride: makeRide(`r${i}`, `R${i}`, 10, i), walkMinutes: i })
+      ({ ride: makeRide(`r${i}`, `R${i}`, 10, i), walkMinutes: i, walkYards: i * 80 })
     );
     expect(fallbackRecs(candidates)).toHaveLength(10);
   });
 
   it('handles candidates without a score (treats as 0)', () => {
     const ride: Ride = { ...makeRide('a', 'A', 10), score: undefined };
-    const recs = fallbackRecs([{ ride, walkMinutes: 3 }]);
+    const recs = fallbackRecs([{ ride, walkMinutes: 3, walkYards: 240 }]);
     expect(recs).toHaveLength(1);
     expect(recs[0].rideId).toBe('a');
   });

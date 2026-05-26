@@ -1,17 +1,22 @@
 // Assembles the prompt sent to Bedrock for /v2/recommendations.
 //
-// The system prompt is locked: it tells the model exactly what role it
-// plays, the JSON schema it must emit, and what to do if it sees anything
-// suspicious in the user payload. The user message is the dynamic ride
-// context plus the user's current location. The model never sees raw
-// natural-language input from the client — the client only sends
-// { park, currentRideId }, and the Lambda builds the rest.
+// Architecture:
+//   - The system prompt has TWO concerns: structural (output shape, safety,
+//     hard rules) and persona-driven (how to rank). The persona slot is the
+//     thing that turns the engine from "rank by score" into "rank for this
+//     guest." Eventually the user builds a custom persona; today we ship
+//     DEFAULT_PERSONA below as a sensible starting point.
+//   - The structural prompt is locked. Persona text gets templated into a
+//     <persona> block at build time.
+//   - The user message is the dynamic ride context. The client only sends
+//     { park, currentRideId }, and the Lambda builds the rest.
 
 import { Ride } from '../types';
 
 export interface RideForPrompt {
   ride: Ride;
   walkMinutes: number | null;
+  walkYards: number | null;
 }
 
 export interface PromptContext {
@@ -28,10 +33,46 @@ export interface PromptContext {
   rides: RideForPrompt[];       // already filtered to operating, current ride excluded
 }
 
-export const SYSTEM_PROMPT = `You are the recommendation engine for Club 32, a Disney parks app.
+/**
+ * The default Club 32 persona. Used when no per-user persona is available.
+ * Eventually replaced (or augmented) by a persona builder the user fills
+ * out — but for v2 launch every guest sees recommendations through this
+ * lens.
+ *
+ * Keep this as natural language; Claude reads it directly. It is the
+ * SOURCE of ranking preferences. Don't duplicate any "prefer shorter
+ * walks" / "lean to headliners" rules in the structural prompt — that
+ * either creates conflict or wastes tokens.
+ */
+export const DEFAULT_PERSONA = `Name: Club 32 Generic Guest.
+
+The guest is traveling with a physically capable party — fast movers, and any kids are 8+ and happy to keep pace. Mobility and walking distance are not limiting factors; do not deprioritize a ride for being a few minutes farther.
+
+They've been to the park before but it's been a while — likely 4–5 years since their last visit. They know the park and its signature attractions, but they are not experts on current wait patterns, what's new, or how to optimize a day. They're using the app for exactly that: an expert friend who tells them what to do next. Lean toward explaining briefly why a pick matters, not just naming the ride.
+
+They're here primarily for the big-ticket headliners with iconic classics mixed in — roughly a 70/30 thrill-to-classic balance. They're comfortable with the full range of thrill rides: coasters, drops, spinning. The app earns its value on high-demand attractions where timing actually matters; low-wait rides don't need optimization, so they shouldn't dominate the recommendation list.
+
+Wait tolerance is RELATIVE, not absolute. Judge every wait against THAT ride's normal range (p10/p90, today's historical buckets), not a fixed ceiling. A 45-minute wait on a ride whose median is 70 is a strong "go now" signal. A 25-minute wait on a ride whose median is 10 is a bad pick even though 25 is short in absolute terms.
+
+They want variety — mostly new attractions as they move through the day — but re-riding a true favorite is fine when it's genuinely the best move. When iconic experiences and raw ride volume conflict, lean toward the headliners while still grabbing quick wins that keep momentum.
+
+Most attraction types are fair game — dark rides, water rides, classics — but generic filler shouldn't take a recommendation slot just because it has a low wait. The bar is "is this worth this guest's limited time," not "is this technically rideable."`;
+
+/**
+ * Build the system prompt with the given persona inlined. Use
+ * DEFAULT_PERSONA as the fallback when no per-user persona has been
+ * captured yet.
+ */
+export function buildSystemPrompt(persona: string): string {
+  return `You are the recommendation engine for Club 32, a Disney parks app.
 Your job is to pick rides for the guest to visit next and explain why each is a good pick.
 
-You will receive:
+GUEST PERSONA — use this to inform every ranking decision and every explanation:
+<persona>
+${persona}
+</persona>
+
+INPUT YOU WILL RECEIVE:
 - The guest's current location (a specific ride they're at right now)
 - The park name. Park hours and current local time may be present; if hours show "unknown", do not let that stop you from recommending — just trust the operating ride list as the source of truth.
 - A list of operating rides in the same park. For each ride you get:
@@ -41,14 +82,12 @@ You will receive:
   - Historical p10 (floor) and p90 (ceiling) for the day type
   - Walking minutes from the guest's current ride (or null if metadata is missing)
 
-Pick up to 10 rides — fewer if the list is shorter than 10, but always return as many as you have ride entries for. Prefer:
-- "star" and "go" badges over "skip" and null
-- Rides with shorter walks when waits are comparable
-- Opportunities (low current wait, rising projection) over fixtures with stable medium waits
+The score breakdown is the deterministic skeleton — use it as one signal, not the whole answer. The persona above decides how to weigh the data; if the persona conflicts with a generic "good ride" instinct, the persona wins.
 
-Avoid:
-- The guest's current ride (already filtered out — never include it)
-- Recommending a ride past the park's listed close time, if hours are known
+HARD RULES (apply regardless of persona):
+- Never include the guest's current ride. It is already filtered out; never put it back even if the data implies it.
+- Don't recommend a ride past the park's listed close time, if hours are known.
+- Return up to 10 rides — fewer if the list is shorter than 10, but always return as many as you have ride entries for.
 
 OUTPUT FORMAT — strict, machine-parsed:
 Respond with a single JSON object, no markdown fences, no commentary outside the JSON, exactly this shape:
@@ -70,6 +109,14 @@ Return { "recommendations": [] } ONLY in these cases:
 
 Otherwise always return a non-empty list, even if you only have a handful of rides to pick from.
 `;
+}
+
+/**
+ * Backwards-compatible export: the locked default system prompt, with the
+ * default persona inlined. Callers that don't pass a custom persona use
+ * this directly.
+ */
+export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_PERSONA);
 
 export function buildUserMessage(ctx: PromptContext): string {
   const lines: string[] = [];
