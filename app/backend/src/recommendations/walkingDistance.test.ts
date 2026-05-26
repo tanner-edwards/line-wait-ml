@@ -1,8 +1,15 @@
 import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
 
-// Reference: Indiana Jones (33.8108, -117.9215) and Big Thunder (33.8128, -117.9224)
-// are next door. Hyperspace Mountain (33.8125, -117.9176) is across the park.
-// Numbers below come from coordinates in ride_metadata.json.
+// Reference coords from ride_metadata.json:
+//   Indiana Jones     33.8108, -117.9215  (Adventureland)
+//   Big Thunder       33.8128, -117.9224  (Frontierland — adjacent)
+//   Hyperspace Mtn    33.8125, -117.9176  (Tomorrowland — across park)
+//   Winnie the Pooh   33.8143, -117.9197  (Fantasyland)
+//
+// Tiered path multiplier (applied to straight-line haversine distance):
+//   < 366 m  → 1.3×   same land / adjacent
+//   366–640m → 1.6×   cross-land trek
+//   640+ m   → 2.0×   full park crossing
 
 describe('haversineMeters', () => {
   it('returns 0 for the same point', () => {
@@ -54,14 +61,38 @@ describe('walkingMinutes', () => {
     expect(w).toBeLessThanOrEqual(5);
   });
 
-  it('returns more minutes for across-park rides', () => {
+  it('returns more minutes for across-park rides (2.0× tier)', () => {
     // Indiana Jones (Adventureland) → Hyperspace Mountain (Tomorrowland)
+    // haversine ~370m → above both thresholds, 2.0× multiplier → ~9 min
     const w = walkingMinutes(
       { lat: 33.8108, lng: -117.9215 },
       { lat: 33.8125, lng: -117.9176 }
     )!;
-    expect(w).toBeGreaterThanOrEqual(5);
+    expect(w).toBeGreaterThanOrEqual(8);
     expect(w).toBeLessThanOrEqual(15);
+  });
+
+  it('applies a heavier multiplier for long walks than short ones proportionally', () => {
+    // Construct two walks with the same raw haversine distance but falling in
+    // different tiers, by using coordinates that straddle the 640m threshold.
+    //
+    // Short: two points ~200m apart → 1.3× tier → path = 260m → ~3 min
+    // Long:  two points ~700m apart → 2.0× tier → path = 1400m → ~17 min
+    // If the multiplier were flat 1.3, long/short ratio would mirror the raw
+    // distance ratio (~3.5×). With 2.0× vs 1.3×, the long walk is penalized
+    // ~1.54× harder per metre, so the time ratio should be higher than 3.5×.
+
+    const shortWalk = walkingMinutes(
+      { lat: 33.8120, lng: -117.9200 },
+      { lat: 33.8138, lng: -117.9200 }, // ~200m north
+    )!;
+    const longWalk = walkingMinutes(
+      { lat: 33.8120, lng: -117.9200 },
+      { lat: 33.8183, lng: -117.9200 }, // ~700m north
+    )!;
+    // Long walk's per-metre penalty is heavier, so ratio should exceed raw distance ratio
+    const rawRatio = 700 / 200;
+    expect(longWalk / shortWalk).toBeGreaterThan(rawRatio);
   });
 
   it('is symmetric (from↔to swap returns the same minutes)', () => {

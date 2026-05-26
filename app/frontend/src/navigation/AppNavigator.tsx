@@ -56,6 +56,7 @@ const styles = StyleSheet.create({
   },
   tabBarItem: {
     paddingVertical: 4,
+    paddingBottom: 15,
   },
   icon: { fontSize: 22, lineHeight: 24 },
 });

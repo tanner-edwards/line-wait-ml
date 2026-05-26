@@ -1,17 +1,28 @@
 // Walking-distance estimate between two ride locations inside a Disney park.
 //
-// Approach: haversine straight-line distance × 1.3 path multiplier ÷ 3 mph
+// Approach: haversine straight-line distance × tiered path multiplier ÷ 3 mph
 // walking speed, floored at 1 minute.
 //
-// The 1.3 multiplier compensates for paths that wind around lands, walls,
-// and queue overflows — most paths in DLR/DCA come within 20-30% of the
-// straight line. Good enough for v2; we can switch to a hand-built path
-// graph later if the LLM starts making distance-sensitive bad calls.
+// The multiplier is tiered by straight-line distance to reflect that longer
+// cross-park walks involve more crowd navigation, land transitions, and
+// psychological cost than the raw haversine implies:
+//   < 366 m (~400 yd)  → 1.3×  same land or adjacent
+//   366–640 m           → 1.6×  cross-land trek
+//   640+ m              → 2.0×  full park crossing
 
-const PATH_MULTIPLIER = 1.3;
 const WALKING_METERS_PER_MIN = 80.5; // ~3 mph
 const EARTH_RADIUS_METERS = 6_371_000;
 const METERS_TO_YARDS = 1.09361;
+
+// Straight-line thresholds for multiplier tiers (meters)
+const MEDIUM_WALK_THRESHOLD = 366;  // ~400 yards
+const LONG_WALK_THRESHOLD   = 640;  // ~700 yards
+
+function pathMultiplier(haversine: number): number {
+  if (haversine >= LONG_WALK_THRESHOLD)   return 2.0;
+  if (haversine >= MEDIUM_WALK_THRESHOLD) return 1.6;
+  return 1.3;
+}
 
 function toRad(deg: number): number {
   return (deg * Math.PI) / 180;
@@ -76,5 +87,6 @@ function pathMeters(
   ) {
     return null;
   }
-  return haversineMeters(from.lat, from.lng, to.lat, to.lng) * PATH_MULTIPLIER;
+  const raw = haversineMeters(from.lat, from.lng, to.lat, to.lng);
+  return raw * pathMultiplier(raw);
 }
