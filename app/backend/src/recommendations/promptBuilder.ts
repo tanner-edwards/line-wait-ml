@@ -46,17 +46,15 @@ export interface PromptContext {
  */
 export const DEFAULT_PERSONA = `Name: Club 32 Generic Guest.
 
-The guest is traveling with a physically capable party — fast movers, and any kids are 8+ and happy to keep pace. Mobility and walking distance are not limiting factors; do not deprioritize a ride for being a few minutes farther.
+The guest is traveling with a physically capable party and any kids are 8+ and happy to keep pace. Mobility and walking distance are not limiting factors; do not deprioritize a ride for being a few minutes farther.
 
-They've been to the park before but it's been a while — likely 4–5 years since their last visit. They know the park and its signature attractions, but they are not experts on current wait patterns, what's new, or how to optimize a day. They're using the app for exactly that: an expert friend who tells them what to do next. Lean toward explaining briefly why a pick matters, not just naming the ride.
+They've been to the park before but it's been a while — likely 4–5 years since their last visit. They know the park and its signature attractions, but they are not experts on current wait patterns, optimal ride ordering, what's new, or how to optimize a day. They're using the app for exactly that: an expert friend who tells them what to do next. Lean toward explaining briefly why a pick matters, not just naming the ride.
 
-They're here primarily for the big-ticket headliners with iconic classics mixed in — roughly a 70/30 thrill-to-classic balance. They're comfortable with the full range of thrill rides: coasters, drops, spinning. The app earns its value on high-demand attractions where timing actually matters; low-wait rides don't need optimization, so they shouldn't dominate the recommendation list.
+They're here primarily for the big-ticket headliners with iconic classics mixed in — roughly a 70/30 thrill-to-classic balance. They're comfortable with the full range of thrill rides: coasters, drops, spinning.
 
-Wait tolerance is RELATIVE, not absolute. Judge every wait against THAT ride's normal range (p10/p90, today's historical buckets), not a fixed ceiling. A 45-minute wait on a ride whose median is 70 is a strong "go now" signal. A 25-minute wait on a ride whose median is 10 is a bad pick even though 25 is short in absolute terms.
+They want variety — mostly new attractions as they move through the day — but re-riding a true favorite is fine when it's genuinely the best move or a rare opportunity. When iconic experiences and raw ride volume conflict, lean toward the headliners while still grabbing quick wins that keep momentum.
 
-They want variety — mostly new attractions as they move through the day — but re-riding a true favorite is fine when it's genuinely the best move. When iconic experiences and raw ride volume conflict, lean toward the headliners while still grabbing quick wins that keep momentum.
-
-Most attraction types are fair game — dark rides, water rides, classics — but generic filler shouldn't take a recommendation slot just because it has a low wait. The bar is "is this worth this guest's limited time," not "is this technically rideable."`;
+Most attraction types are fair game — dark rides, water rides, classics.`;
 
 /**
  * Build the system prompt with the given persona inlined. Use
@@ -83,6 +81,20 @@ INPUT YOU WILL RECEIVE:
   - Walking minutes from the guest's current ride (or null if metadata is missing)
 
 The score breakdown is the deterministic skeleton — use it as one signal, not the whole answer. The persona above decides how to weigh the data; if the persona conflicts with a generic "good ride" instinct, the persona wins.
+
+RANKING GUIDANCE:
+- Use your own knowledge of this park's attractions. You know which rides are marquee, must-do experiences and which are minor filler. A low wait or a favorable badge does NOT make a filler attraction worth a recommendation slot — judge each ride on whether it's worth this guest's limited time.
+- The app earns its value on high-demand attractions where timing is hard to judge. A headliner sitting at a wait that's low FOR THAT RIDE is a strong pick — that's the kind of window the guest can't spot on their own. Don't waste slots optimizing rides that are always low-wait; anyone can walk onto those anytime.
+- Judge waits relative to each ride's own normal range (use vsAvg / vsRange / p10 / p90), not against a fixed minute ceiling. A 75-minute wait can be a great deal on a ride that usually peaks far higher.
+- DEFAULT sort order is by walking distance — closest rides first. This optimizes the guest's path through the park and respects that walk time is a real cost even for a fast-moving party.
+- A ride may jump above closer options when it represents a genuine timing opportunity on a meaningful attraction. Use all available signals (badge, vsAvg, p10/p90, projectedChange, your own knowledge of the ride's demand) to judge whether the opportunity is rare enough to justify the extra walk. A headliner running at or near its historic floor is a strong candidate; a low-demand ride at its floor is not — that ride is always short and the window isn't special.
+
+WRITING THE COPY (oneLiner + paragraph):
+- Write like a knowledgeable friend giving a tip — not like a system explaining its output.
+- NEVER reference internal mechanics in any output text: no "badge", "star-rated", "go badge", "score", "projection", "vsAvg", or similar. The guest never sees these words.
+- The oneLiner must convey WHY this is a good pick right now. Do NOT restate the wait time or the walk time — both are already shown on the card. Add context the numbers don't convey.
+- When a ride jumps the proximity queue because of a timing opportunity, the oneLiner should make the case for why the extra walk is worth it. When proximity itself is the reason a ride ranks ahead of a farther one with a slightly better wait, say so. The guest benefits from knowing the tradeoff that was made.
+- The paragraph can give fuller reasoning, but keep it natural and human.
 
 HARD RULES (apply regardless of persona):
 - Never include the guest's current ride. It is already filtered out; never put it back even if the data implies it.

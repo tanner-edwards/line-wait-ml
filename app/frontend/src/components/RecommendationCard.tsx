@@ -54,7 +54,9 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const badge = scoreResult.badge;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
-  const walkLabel = rec.walkMinutes !== null ? `~${rec.walkMinutes} min walk` : null;
+  const walkLabel = rec.walkMinutes !== null
+    ? `~${rec.walkMinutes} min walk${rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
+    : null;
 
   return (
     <View testID={`rec-card-${rec.rideId}`}>

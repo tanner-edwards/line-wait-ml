@@ -186,7 +186,7 @@ export function Recommendations(): React.ReactElement {
               From {currentRideName} · {parkDisplayName(selection.park)}
             </Text>
           ) : null}
-          {recs ? (
+          {recs && !recsLoading ? (
             <Text style={styles.headerAsOf} testID="recs-as-of">
               as of {formatHHMM(recs.lastUpdated)}
             </Text>
