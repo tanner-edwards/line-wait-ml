@@ -22,6 +22,7 @@ import {
   lookupAverage,
 } from './historicalAverages';
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
+import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
 import { buildRecommendations } from './recommendations/handler';
 import { RecommendationsResponse } from './types';
@@ -97,9 +98,12 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
     if (cached) return cached;
   }
 
-  const live = await fetchLiveData(parkSlug);
   const now = referenceDate ?? new Date();
   const dayType = classifyDayType(now);
+  const [live, recentHistoryMap] = await Promise.all([
+    fetchLiveData(parkSlug),
+    fetchRecentHistory(parkSlug, now),
+  ]);
 
   const rides: Ride[] = await Promise.all(
     filterToRides(live.liveData).map(async entity => {
@@ -119,6 +123,7 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         historicalAverage,
         rideStats,
         prediction: null,
+        recentHistory: recentHistoryMap.get(entity.id) ?? null,
       };
       ride.score = scoreRide(ride);
       return ride;

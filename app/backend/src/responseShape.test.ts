@@ -13,6 +13,7 @@ describe('shapeParkData', () => {
         historicalAverage: null,
         rideStats: null,
         prediction: null,
+        recentHistory: null,
       },
     ];
 

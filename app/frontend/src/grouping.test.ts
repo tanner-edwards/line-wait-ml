@@ -11,6 +11,7 @@ function makeRide(over: Partial<Ride> = {}): Ride {
     historicalAverage: null,
     rideStats: null,
     prediction: null,
+    recentHistory: null,
   };
   return { ...base, ...over };
 }

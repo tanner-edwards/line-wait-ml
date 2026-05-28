@@ -191,12 +191,16 @@ export function parseAndValidate(
     if (typeof e.paragraph !== 'string') continue;
     if (!candidateIds.has(e.rideId)) continue;
     const walk = walkLookup.get(e.rideId);
+    const arrivalWait = typeof e.arrivalWait === 'number' && Number.isFinite(e.arrivalWait)
+      ? Math.round(e.arrivalWait)
+      : null;
     valid.push({
       rideId: e.rideId,
       oneLiner: e.oneLiner,
       paragraph: e.paragraph,
       walkMinutes: walk?.minutes ?? null,
       walkYards: walk?.yards ?? null,
+      arrivalWait,
     });
     if (valid.length >= TOTAL_RECS) break;
   }
@@ -228,5 +232,6 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
     paragraph: DEFAULT_FALLBACK_PARAGRAPH,
     walkMinutes,
     walkYards,
+    arrivalWait: null,
   }));
 }

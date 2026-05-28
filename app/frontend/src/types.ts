@@ -42,6 +42,13 @@ export interface ScoreResult {
   factors: FactorBreakdown;
 }
 
+export interface RecentSnapshot {
+  timestamp: string;    // ISO 8601 UTC
+  minutesAgo: number;
+  wait: number | null;
+  status: string;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -51,6 +58,7 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  recentHistory: RecentSnapshot[] | null;
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;
@@ -93,6 +101,7 @@ export interface Recommendation {
   paragraph: string;
   walkMinutes: number | null;
   walkYards: number | null;
+  arrivalWait: number | null; // LLM-estimated wait when guest arrives; null when unavailable
 }
 
 export interface CurrentRideRef {

@@ -62,6 +62,7 @@ const happyResponse: CombinedResponse = {
           historicalAverage: null,
           rideStats: null,
           prediction: null,
+          recentHistory: null,
         },
         {
           id: 'pp',
@@ -72,6 +73,7 @@ const happyResponse: CombinedResponse = {
           historicalAverage: null,
           rideStats: null,
           prediction: null,
+          recentHistory: null,
         },
         {
           id: 'sw',
@@ -82,6 +84,7 @@ const happyResponse: CombinedResponse = {
           historicalAverage: null,
           rideStats: null,
           prediction: null,
+          recentHistory: null,
         },
       ],
     },
@@ -98,6 +101,7 @@ const happyResponse: CombinedResponse = {
           historicalAverage: null,
           rideStats: null,
           prediction: null,
+          recentHistory: null,
         },
       ],
     },
@@ -114,6 +118,7 @@ function singleRideResponse(partial: Partial<Ride> & Pick<Ride, 'id' | 'name' | 
     historicalAverage: null,
     rideStats: null,
     prediction: null,
+    recentHistory: null,
     ...partial,
   };
   return {

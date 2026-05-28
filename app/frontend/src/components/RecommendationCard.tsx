@@ -57,6 +57,9 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
   const walkLabel = rec.walkMinutes !== null
     ? `~${rec.walkMinutes} min walk${rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
     : null;
+  const waitLabel = rec.arrivalWait !== null
+    ? `~${rec.arrivalWait} min`
+    : rideWaitLabel(ride);
 
   return (
     <View testID={`rec-card-${rec.rideId}`}>
@@ -70,7 +73,7 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
           <Text style={styles.rideName} numberOfLines={1}>{ride.name}</Text>
           <View style={styles.rightCluster}>
             <View style={styles.waitRow}>
-              <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
+              <Text style={styles.rideWait}>{waitLabel}</Text>
               {showIndicators && bucket4 ? (
                 <TrendArrow
                   bucket0Wait={ride.currentWait}

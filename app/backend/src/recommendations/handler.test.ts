@@ -36,6 +36,7 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
     historicalAverage: null,
     rideStats: null,
     prediction: null,
+    recentHistory: null,
     score: {
       score: scoreValue,
       badge: scoreValue >= 2 ? 'go' : null,

@@ -11,6 +11,7 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     historicalAverage: makeHA(30, 30, 30, 30, 30),
     rideStats: makeStats(15, 60),
     prediction: null,
+    recentHistory: null,
     ...overrides,
   };
 }

@@ -51,7 +51,7 @@ function TabIcon({ glyph, color }: { glyph: string; color: string }) {
 // safe-area inset instead of crowding it.
 const styles = StyleSheet.create({
   tabBar: {
-    height: Platform.OS === 'ios' ? 92 : 72,
+    height: Platform.OS === 'ios' ? 107 : 87,
     paddingTop: 10,
   },
   tabBarItem: {

@@ -18,6 +18,10 @@ jest.mock('./historicalAverages', () => {
     ensureLoaded: jest.fn(),
   };
 });
+jest.mock('./recentHistory', () => ({
+  fetchRecentHistory: jest.fn().mockResolvedValue(new Map()),
+  _resetForTests: jest.fn(),
+}));
 
 const mockedClient = themeparksClient as jest.Mocked<typeof themeparksClient>;
 const mockedHistorical = historicalAverages as jest.Mocked<typeof historicalAverages>;
@@ -216,6 +220,14 @@ describe('handler — per-park endpoint', () => {
     const body = JSON.parse(result.body) as ParkData;
     for (const ride of body.rides) {
       expect(ride.prediction).toBeNull();
+    }
+  });
+
+  it('attaches recentHistory field to every ride (null when map returns no entry)', async () => {
+    const result = await handler(buildEvent('/v0/waits/disneyland'));
+    const body = JSON.parse(result.body) as ParkData;
+    for (const ride of body.rides) {
+      expect('recentHistory' in ride).toBe(true);
     }
   });
 

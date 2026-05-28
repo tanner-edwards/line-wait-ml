@@ -102,6 +102,13 @@ export interface ScoreResult {
   factors: FactorBreakdown;
 }
 
+export interface RecentSnapshot {
+  timestamp: string;    // ISO 8601 UTC
+  minutesAgo: number;   // Math.round((referenceDate − docTimestamp) / 60_000)
+  wait: number | null;  // wait_minutes from Firestore; null if ride was unavailable that run
+  status: string;       // "OPERATING", "CLOSED", etc.
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -111,6 +118,7 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  recentHistory: RecentSnapshot[] | null;
   // Always present on the wire response; optional in the type to allow
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.
@@ -153,6 +161,7 @@ export interface Recommendation {
   paragraph: string;         // shown on the detail screen
   walkMinutes: number | null; // null when either ride lacks lat/lng metadata
   walkYards: number | null;   // null under the same conditions as walkMinutes
+  arrivalWait: number | null; // LLM-estimated wait when guest arrives; null when unavailable
 }
 
 export interface CurrentRideRef {
