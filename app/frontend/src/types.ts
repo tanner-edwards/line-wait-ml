@@ -59,6 +59,8 @@ export interface Ride {
   rideStats: RideStats | null;
   prediction: Prediction | null;
   recentHistory: RecentSnapshot[] | null;
+  lat: number | null;
+  lng: number | null;
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;

@@ -119,6 +119,8 @@ export interface Ride {
   rideStats: RideStats | null;
   prediction: Prediction | null;
   recentHistory: RecentSnapshot[] | null;
+  lat: number | null;
+  lng: number | null;
   // Always present on the wire response; optional in the type to allow
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.

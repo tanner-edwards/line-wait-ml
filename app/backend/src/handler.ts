@@ -22,6 +22,7 @@ import {
   lookupAverage,
 } from './historicalAverages';
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
+import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
 import { buildRecommendations } from './recommendations/handler';
@@ -100,9 +101,10 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
 
   const now = referenceDate ?? new Date();
   const dayType = classifyDayType(now);
-  const [live, recentHistoryMap] = await Promise.all([
+  const [live, recentHistoryMap, metadataMap] = await Promise.all([
     fetchLiveData(parkSlug),
     fetchRecentHistory(parkSlug, now),
+    ensureRideMetadataLoaded().catch(() => new Map()),
   ]);
 
   const rides: Ride[] = await Promise.all(
@@ -114,6 +116,7 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
             buildRideStats(parkSlug, entity.id, dayType),
           ])
         : [null, null];
+      const meta = lookupRideMetadata(metadataMap, entity.id);
       const ride: Ride = {
         id: entity.id,
         name: entity.name,
@@ -124,6 +127,8 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         rideStats,
         prediction: null,
         recentHistory: recentHistoryMap.get(entity.id) ?? null,
+        lat: meta?.lat ?? null,
+        lng: meta?.lng ?? null,
       };
       ride.score = scoreRide(ride);
       return ride;

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { Ride, ScoreResult } from '../types';
-import { formatBucketTimeSlot } from '../timestamp';
+import { formatBucketTimeSlot, formatHHMM } from '../timestamp';
 
 interface DebugCardProps {
   ride: Ride;
@@ -178,9 +178,9 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
 
       {/* 7-column bucket row: t-40 | t-20 | now | +30 | +60 | +90 | +120 */}
       <View style={styles.bucketsRow}>
-        <BucketCol label="t-40" wait={tMinus40?.wait ?? null} showN={false} />
+        <BucketCol label={formatHHMM(tMinus40?.timestamp ?? null)} wait={tMinus40?.wait ?? null} showN={false} />
         <View style={styles.bucketDivider} />
-        <BucketCol label="t-20" wait={tMinus20?.wait ?? null} showN={false} />
+        <BucketCol label={formatHHMM(tMinus20?.timestamp ?? null)} wait={tMinus20?.wait ?? null} showN={false} />
         <View style={styles.bucketDivider} />
         <BucketCol label="now" wait={ride.currentWait} showN={false} />
         <View style={styles.bucketDivider} />

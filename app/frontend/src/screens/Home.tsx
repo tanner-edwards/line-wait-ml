@@ -12,7 +12,10 @@ import {
 import { StatusBar } from 'expo-status-bar';
 import {
   ListItem,
+  SortBy,
   flattenForList,
+  flattenSorted,
+  haversineMeters,
   rideWaitLabel,
 } from '../grouping';
 import { formatHHMM, olderLastUpdated } from '../timestamp';
@@ -21,9 +24,19 @@ import { BelowNormalBadge } from '../components/BelowNormalBadge';
 import { RecommendationBadge } from '../components/RecommendationBadge';
 import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
+import { SortMenu } from '../components/SortMenu';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
+import { useLocation } from '../context/LocationContext';
 import type { ScoreResult } from '../types';
+
+const WALK_SPEED_MPM = 83; // meters per minute (~5 km/h)
+function walkPathMultiplier(m: number) { return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3; }
+function walkMinsTo(origin: { lat: number; lng: number }, ride: { lat: number | null; lng: number | null }): number | null {
+  if (ride.lat == null || ride.lng == null) return null;
+  const raw = haversineMeters(origin.lat, origin.lng, ride.lat, ride.lng);
+  return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
+}
 
 const SUPPRESSED_SCORE: ScoreResult = {
   score: 0,
@@ -40,11 +53,14 @@ export function Home() {
   // Shared ride state lives in RideProvider; the Browse screen owns only
   // its own UI state (expanded debug rows + time-travel modal). The auto-
   // refresh and foreground-refresh effects moved to the provider too.
-  const { data, error, loading, refreshing, lastRefreshedAt, refresh } = useRides();
+  const { data, error, loading, refreshing, lastRefreshedAt, refresh, ridesById } = useRides();
+  const { selection: locationSelection } = useLocation();
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
+  const [sortBy, setSortBy] = useState<SortBy | null>(null);
+  const [showSortMenu, setShowSortMenu] = useState(false);
 
   const onRefresh = useCallback(() => {
     void refresh('user');
@@ -73,7 +89,19 @@ export function Home() {
     );
   }
 
-  const items: ListItem[] = data ? flattenForList(data) : [];
+  const originRide = locationSelection ? ridesById.get(locationSelection.currentRideId) : undefined;
+  const origin =
+    originRide?.lat != null && originRide?.lng != null
+      ? { lat: originRide.lat, lng: originRide.lng }
+      : null;
+
+  const walkOrigin = sortBy === 'distance' ? origin : null;
+
+  const items: ListItem[] = data
+    ? sortBy
+      ? flattenSorted(data, sortBy, origin)
+      : flattenForList(data)
+    : [];
   const lastUpdate = lastRefreshedAt
     ? formatHHMM(lastRefreshedAt)
     : data
@@ -102,6 +130,14 @@ export function Home() {
         </View>
         <Pressable
           accessibilityRole="button"
+          onPress={() => setShowSortMenu(true)}
+          testID="sort-button"
+          style={styles.sortButton}
+        >
+          <Text style={[styles.sortIcon, sortBy ? styles.sortIconActive : null]}>⇅</Text>
+        </Pressable>
+        <Pressable
+          accessibilityRole="button"
           onPress={onRefresh}
           disabled={refreshing}
           testID="refresh-button"
@@ -125,6 +161,7 @@ export function Home() {
           <ListRow
             item={item}
             expandedRideId={expandedRideId}
+            walkOrigin={walkOrigin}
             onToggleExpand={id =>
               setExpandedRideId(prev => (prev === id ? null : id))
             }
@@ -144,6 +181,13 @@ export function Home() {
         }
         contentContainerStyle={items.length === 0 ? styles.emptyContent : undefined}
       />
+      <SortMenu
+        visible={showSortMenu}
+        current={sortBy}
+        distanceAvailable={locationSelection !== null}
+        onSelect={setSortBy}
+        onClose={() => setShowSortMenu(false)}
+      />
       <TimeTravelModal
         visible={showTimeTravelModal}
         onSet={handleTimeTravelSet}
@@ -157,10 +201,12 @@ export function Home() {
 function ListRow({
   item,
   expandedRideId,
+  walkOrigin,
   onToggleExpand,
 }: {
   item: ListItem;
   expandedRideId: string | null;
+  walkOrigin: { lat: number; lng: number } | null;
   onToggleExpand: (id: string) => void;
 }) {
   if (item.kind === 'park-header') {
@@ -199,6 +245,7 @@ function ListRow({
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const isExpanded = expandedRideId === ride.id;
+  const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
   return (
     <>
@@ -233,6 +280,9 @@ function ListRow({
                 bucket0Wait={bucket0.wait}
                 sampleCount={bucket0.sampleCount}
               />
+            ) : null}
+            {walkMins != null ? (
+              <Text style={styles.walkLabel}>~{walkMins} min walk</Text>
             ) : null}
           </View>
         </View>
@@ -269,6 +319,18 @@ const styles = StyleSheet.create({
   headerTitle: { fontSize: 22, fontWeight: '700' },
   headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
   headerSubtitleTimeTravel: { color: '#6b6bf5' },
+  sortButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginRight: 8,
+  },
+  sortIcon: {
+    fontSize: 20,
+    color: '#999',
+  },
+  sortIconActive: {
+    color: '#4a4ec7',
+  },
   refreshButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,
@@ -321,6 +383,7 @@ const styles = StyleSheet.create({
   empty: { padding: 32, alignItems: 'center' },
   emptyText: { color: '#666', textAlign: 'center', fontSize: 14 },
   emptyContent: { flexGrow: 1, justifyContent: 'center' },
+  walkLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'right' },
   walkOnEmoji: {
     width: 20,
     height: 20,

@@ -25,6 +25,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ApiError, fetchRecommendations } from '../api';
 import { ParkSlug, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
+import { useLocation } from '../context/LocationContext';
 import {
   PersistedSelection,
   getLastSelection,
@@ -52,6 +53,7 @@ export function Recommendations(): React.ReactElement {
     ridesById,
   } = useRides();
 
+  const { setLocation } = useLocation();
   const [selection, setSelection] = useState<PersistedSelection | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
@@ -130,6 +132,7 @@ export function Recommendations(): React.ReactElement {
     (async () => {
       const saved = await getLastSelection();
       setSelection(saved);
+      if (saved) setLocation({ park: saved.park, currentRideId: saved.currentRideId });
       if (!saved) {
         setPickerOpen(true);
       } else if (isStale(saved)) {
@@ -147,6 +150,7 @@ export function Recommendations(): React.ReactElement {
     setPickerOpen(false);
     await setLastSelection(park, currentRideId);
     setSelection({ park, currentRideId, timestamp: Date.now() });
+    setLocation({ park, currentRideId });
     void runFetch(park, currentRideId);
   }, [runFetch]);
 

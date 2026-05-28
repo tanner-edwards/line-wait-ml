@@ -4,6 +4,7 @@ import { Home } from './Home';
 import * as api from '../api';
 import { CombinedResponse, HistoricalAverage, Ride } from '../types';
 import { RideProvider } from '../context/RideContext';
+import { LocationProvider } from '../context/LocationContext';
 
 jest.mock('../api', () => {
   const actual = jest.requireActual<typeof import('../api')>('../api');
@@ -20,9 +21,11 @@ const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWai
 // (mocked) fetchWaits call and pushes data down to Home.
 function renderHome() {
   return render(
-    <RideProvider>
-      <Home />
-    </RideProvider>
+    <LocationProvider>
+      <RideProvider>
+        <Home />
+      </RideProvider>
+    </LocationProvider>
   );
 }
 

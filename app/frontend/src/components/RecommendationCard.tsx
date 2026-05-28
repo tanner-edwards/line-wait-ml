@@ -106,12 +106,7 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
           <View style={styles.paragraphContainer}>
             <Text style={styles.paragraph}>{rec.paragraph}</Text>
           </View>
-          <DebugCard
-            ride={ride}
-            result={scoreResult}
-            walkYards={rec.walkYards}
-            walkMinutes={rec.walkMinutes}
-          />
+          <DebugCard ride={ride} result={scoreResult} />
         </View>
       ) : null}
     </View>
