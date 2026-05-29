@@ -14,6 +14,8 @@ describe('shapeParkData', () => {
         rideStats: null,
         prediction: null,
         recentHistory: null,
+        lat: null,
+        lng: null,
       },
     ];
 

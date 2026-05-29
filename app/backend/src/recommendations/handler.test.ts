@@ -37,6 +37,8 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
     rideStats: null,
     prediction: null,
     recentHistory: null,
+    lat: null,
+    lng: null,
     score: {
       score: scoreValue,
       badge: scoreValue >= 2 ? 'go' : null,
@@ -78,7 +80,7 @@ describe('parseAndValidate', () => {
     });
     const recs = parseAndValidate(text, candidates);
     expect(recs).toEqual([
-      { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', walkMinutes: 3, walkYards: 240 },
+      { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', walkMinutes: 3, walkYards: 240, arrivalWait: null },
     ]);
   });
 
@@ -125,18 +127,18 @@ describe('parseAndValidate', () => {
     expect(recs![0].rideId).toBe('r2');
   });
 
-  it('caps the list at 10 entries', () => {
+  it('caps the list at the batch size (5)', () => {
     const recs = parseAndValidate(JSON.stringify({
       recommendations: Array.from({ length: 15 }, () => ({
         rideId: 'r1', oneLiner: 'a', paragraph: 'b',
       })),
     }), candidates);
-    expect(recs).toHaveLength(10);
+    expect(recs).toHaveLength(5);
   });
 });
 
 describe('fallbackRecs', () => {
-  it('returns top-10 by score descending', () => {
+  it('returns top picks by score descending', () => {
     const candidates = [
       { ride: makeRide('low', 'Low', 60, -2), walkMinutes: 5, walkYards: 400 },
       { ride: makeRide('high', 'High', 5, 5), walkMinutes: 3, walkYards: 240 },
@@ -149,11 +151,11 @@ describe('fallbackRecs', () => {
     }
   });
 
-  it('caps at 10 even with more candidates', () => {
+  it('caps at the batch size (5) even with more candidates', () => {
     const candidates = Array.from({ length: 15 }, (_, i) =>
       ({ ride: makeRide(`r${i}`, `R${i}`, 10, i), walkMinutes: i, walkYards: i * 80 })
     );
-    expect(fallbackRecs(candidates)).toHaveLength(10);
+    expect(fallbackRecs(candidates)).toHaveLength(5);
   });
 
   it('handles candidates without a score (treats as 0)', () => {
@@ -275,5 +277,72 @@ describe('buildRecommendations — degraded paths', () => {
     const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
     expect(res.degraded).toBe(false);
     expect(res.recommendations[0].walkMinutes).toBeNull();
+  });
+});
+
+describe('buildRecommendations — persona injection', () => {
+  function setupHappyPark() {
+    const rides = [
+      makeRide('curr', 'Current', null),
+      makeRide('a', 'Ride A', 10, 3),
+    ];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(new Map());
+    mockInvoke.mockResolvedValue(JSON.stringify({
+      recommendations: [{ rideId: 'a', oneLiner: 'ok', paragraph: 'ok' }],
+    }));
+  }
+
+  it('uses the default persona when no persona is provided', async () => {
+    setupHappyPark();
+    await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const [systemPrompt] = mockInvoke.mock.calls[0];
+    expect(systemPrompt).toContain('Club 32 Generic Guest');
+  });
+
+  it('uses the default persona when persona is null', async () => {
+    setupHappyPark();
+    await buildRecommendations({ park: 'disneyland', currentRideId: 'curr', persona: null });
+    const [systemPrompt] = mockInvoke.mock.calls[0];
+    expect(systemPrompt).toContain('Club 32 Generic Guest');
+  });
+
+  it('threads custom persona signals into the system prompt', async () => {
+    setupHappyPark();
+    await buildRecommendations({
+      park: 'disneyland',
+      currentRideId: 'curr',
+      persona: {
+        tripDuration: '1-day',
+        youngestAge: 4,
+        ridePreferences: ['classics', 'first-time'],
+        mustDoRideIds: [],
+        accessibilityNeeds: ['stroller'],
+      },
+    });
+    const [systemPrompt] = mockInvoke.mock.calls[0];
+    expect(systemPrompt).toContain('Single-day');
+    expect(systemPrompt).toContain('age 4');
+    expect(systemPrompt).toContain('first visit');
+    expect(systemPrompt).toContain('classic Disney');
+    expect(systemPrompt).toContain('stroller');
+    expect(systemPrompt).not.toContain('Club 32 Generic Guest');
+  });
+
+  it('falls back to the default persona when every field is empty', async () => {
+    setupHappyPark();
+    await buildRecommendations({
+      park: 'disneyland',
+      currentRideId: 'curr',
+      persona: {
+        tripDuration: null,
+        youngestAge: null,
+        ridePreferences: [],
+        mustDoRideIds: [],
+        accessibilityNeeds: [],
+      },
+    });
+    const [systemPrompt] = mockInvoke.mock.calls[0];
+    expect(systemPrompt).toContain('Club 32 Generic Guest');
   });
 });

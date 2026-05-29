@@ -5,6 +5,13 @@ import * as api from '../api';
 import { CombinedResponse, HistoricalAverage, Ride } from '../types';
 import { RideProvider } from '../context/RideContext';
 import { LocationProvider } from '../context/LocationContext';
+import { DailyContextProvider } from '../context/DailyContextContext';
+
+// AsyncStorage's native module is unavailable in jest; use the library's
+// official in-memory mock per its testing docs.
+jest.mock('@react-native-async-storage/async-storage', () =>
+  require('@react-native-async-storage/async-storage/jest/async-storage-mock')
+);
 
 jest.mock('../api', () => {
   const actual = jest.requireActual<typeof import('../api')>('../api');
@@ -21,11 +28,13 @@ const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWai
 // (mocked) fetchWaits call and pushes data down to Home.
 function renderHome() {
   return render(
-    <LocationProvider>
-      <RideProvider>
-        <Home />
-      </RideProvider>
-    </LocationProvider>
+    <DailyContextProvider>
+      <LocationProvider>
+        <RideProvider>
+          <Home />
+        </RideProvider>
+      </LocationProvider>
+    </DailyContextProvider>
   );
 }
 
@@ -66,6 +75,8 @@ const happyResponse: CombinedResponse = {
           rideStats: null,
           prediction: null,
           recentHistory: null,
+          lat: null,
+          lng: null,
         },
         {
           id: 'pp',
@@ -77,6 +88,8 @@ const happyResponse: CombinedResponse = {
           rideStats: null,
           prediction: null,
           recentHistory: null,
+          lat: null,
+          lng: null,
         },
         {
           id: 'sw',
@@ -88,6 +101,8 @@ const happyResponse: CombinedResponse = {
           rideStats: null,
           prediction: null,
           recentHistory: null,
+          lat: null,
+          lng: null,
         },
       ],
     },
@@ -105,6 +120,8 @@ const happyResponse: CombinedResponse = {
           rideStats: null,
           prediction: null,
           recentHistory: null,
+          lat: null,
+          lng: null,
         },
       ],
     },
@@ -122,6 +139,8 @@ function singleRideResponse(partial: Partial<Ride> & Pick<Ride, 'id' | 'name' | 
     rideStats: null,
     prediction: null,
     recentHistory: null,
+    lat: null,
+    lng: null,
     ...partial,
   };
   return {

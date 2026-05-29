@@ -26,7 +26,14 @@ import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
 import { buildRecommendations } from './recommendations/handler';
-import { RecommendationsResponse } from './types';
+import { personaCacheKey } from './recommendations/persona';
+import {
+  AccessibilityNeed,
+  Persona,
+  RecommendationsResponse,
+  RideCategory,
+  TripDuration,
+} from './types';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
@@ -264,7 +271,12 @@ export async function handler(
 async function handleRecommendations(
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> {
-  let body: { park?: unknown; currentRideId?: unknown };
+  let body: {
+    park?: unknown;
+    currentRideId?: unknown;
+    persona?: unknown;
+    excludeRideIds?: unknown;
+  };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
@@ -280,6 +292,17 @@ async function handleRecommendations(
     return jsonResponse(400, errorBody('BAD_REQUEST', 'currentRideId is required'));
   }
 
+  // Optional persona — bad shapes are dropped silently (logged, not 400'd) so
+  // a client-side schema drift never bricks the recommendations endpoint.
+  const persona = parsePersona(body.persona);
+
+  // Optional excludeRideIds — used by the "show more" flow so the next
+  // batch doesn't repeat what's already on screen. Invalid shapes drop to
+  // an empty list rather than 400.
+  const excludeRideIds = Array.isArray(body.excludeRideIds)
+    ? body.excludeRideIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : [];
+
   // Optional ?at=<iso> for time-travel testing — same param as /v0/waits.
   // When set we bypass the recs cache to avoid mixing live/time-travel results.
   const atParam = event.queryStringParameters?.at;
@@ -291,7 +314,11 @@ async function handleRecommendations(
     }
   }
 
-  const cacheKey = `${park}__${currentRideId}`;
+  // Cache key includes a persona signature AND the (sorted) excludeRideIds
+  // so different batches don't collide.
+  const excludeKey =
+    excludeRideIds.length === 0 ? '' : '__ex' + [...excludeRideIds].sort().join(',');
+  const cacheKey = `${park}__${currentRideId}__${personaCacheKey(persona)}${excludeKey}`;
   if (!at) {
     const cached = recsCache.get(cacheKey);
     if (cached) {
@@ -300,7 +327,7 @@ async function handleRecommendations(
   }
 
   try {
-    const result = await buildRecommendations({ park, currentRideId, at });
+    const result = await buildRecommendations({ park, currentRideId, at, persona, excludeRideIds });
     if (!at) recsCache.set(cacheKey, result);
     return jsonResponse(200, result);
   } catch (err) {
@@ -308,6 +335,54 @@ async function handleRecommendations(
     const message = err instanceof Error ? err.message : 'Unknown upstream error';
     return jsonResponse(status, errorBody('UPSTREAM_UNAVAILABLE', message));
   }
+}
+
+const TRIP_DURATIONS: readonly TripDuration[] = ['1-day', '2-days', '3-4-days', '5-plus-days'];
+const RIDE_CATEGORIES: readonly RideCategory[] = [
+  'thrills', 'classics', 'immersive', 'kid-favorites', 'shows-characters', 'first-time',
+];
+const ACCESSIBILITY_NEEDS: readonly AccessibilityNeed[] = [
+  'stroller', 'wheelchair', 'pregnant', 'sensory', 'none',
+];
+
+function parsePersona(raw: unknown): Persona | null {
+  if (raw === null || raw === undefined) return null;
+  if (typeof raw !== 'object') {
+    console.warn('persona: not an object; ignoring');
+    return null;
+  }
+  const r = raw as Record<string, unknown>;
+
+  const tripDuration =
+    typeof r.tripDuration === 'string' && (TRIP_DURATIONS as readonly string[]).includes(r.tripDuration)
+      ? (r.tripDuration as TripDuration)
+      : null;
+
+  let youngestAge: number | null = null;
+  if (typeof r.youngestAge === 'number' && Number.isFinite(r.youngestAge)) {
+    const clamped = Math.max(0, Math.min(18, Math.round(r.youngestAge)));
+    youngestAge = clamped;
+  }
+
+  const ridePreferences: RideCategory[] = Array.isArray(r.ridePreferences)
+    ? r.ridePreferences.filter(
+        (x): x is RideCategory =>
+          typeof x === 'string' && (RIDE_CATEGORIES as readonly string[]).includes(x)
+      )
+    : [];
+
+  const mustDoRideIds: string[] = Array.isArray(r.mustDoRideIds)
+    ? r.mustDoRideIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : [];
+
+  const accessibilityNeeds: AccessibilityNeed[] = Array.isArray(r.accessibilityNeeds)
+    ? r.accessibilityNeeds.filter(
+        (x): x is AccessibilityNeed =>
+          typeof x === 'string' && (ACCESSIBILITY_NEEDS as readonly string[]).includes(x)
+      )
+    : [];
+
+  return { tripDuration, youngestAge, ridePreferences, mustDoRideIds, accessibilityNeeds };
 }
 
 // Test helper — clears the module-level caches between tests.

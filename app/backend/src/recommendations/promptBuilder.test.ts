@@ -12,6 +12,8 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     rideStats: { p10: 20, p50: 50, p90: 80, sampleCount: 200 },
     prediction: null,
     recentHistory: null,
+    lat: null,
+    lng: null,
     score: makeScore(),
     ...overrides,
   };
@@ -83,38 +85,38 @@ describe('SYSTEM_PROMPT', () => {
 describe('buildSystemPrompt', () => {
   it('inlines a custom persona instead of the default', () => {
     const custom = 'Custom guest: only loves carousels.';
-    const out = buildSystemPrompt(custom);
+    const out = buildSystemPrompt(custom, 5);
     expect(out).toContain('<persona>');
     expect(out).toContain('Custom guest: only loves carousels.');
     expect(out).not.toContain('Club 32 Generic Guest');
   });
 
   it('SYSTEM_PROMPT equals buildSystemPrompt(DEFAULT_PERSONA)', () => {
-    expect(SYSTEM_PROMPT).toBe(buildSystemPrompt(DEFAULT_PERSONA));
+    expect(SYSTEM_PROMPT).toBe(buildSystemPrompt(DEFAULT_PERSONA, 5));
   });
 });
 
 describe('buildUserMessage', () => {
   it('includes park, hours, and current local time', () => {
-    const msg = buildUserMessage(makeContext());
+    const msg = buildUserMessage(makeContext(), 5);
     expect(msg).toContain('Park: Disneyland');
     expect(msg).toContain("Today's hours: 08:00 - 23:00");
     expect(msg).toContain('Current local time: Friday 11:32 AM');
   });
 
   it('marks park hours as unknown when null', () => {
-    const msg = buildUserMessage(makeContext({ parkHours: null }));
+    const msg = buildUserMessage(makeContext({ parkHours: null }), 5);
     expect(msg).toContain("Today's hours: unknown");
   });
 
   it('identifies the guest\'s current ride by name and id', () => {
-    const msg = buildUserMessage(makeContext());
+    const msg = buildUserMessage(makeContext(), 5);
     expect(msg).toContain('Hyperspace Mountain');
     expect(msg).toContain('curr-ride-uuid');
   });
 
   it('emits one block per ride with wait, walk, score, range, and buckets', () => {
-    const msg = buildUserMessage(makeContext());
+    const msg = buildUserMessage(makeContext(), 5);
     expect(msg).toContain('Indiana Jones Adventure');
     expect(msg).toContain('ride-1');
     expect(msg).toContain('wait=45min');
@@ -129,7 +131,7 @@ describe('buildUserMessage', () => {
   it('emits walk=unknown when walkMinutes is null', () => {
     const msg = buildUserMessage(makeContext({
       rides: [{ ride: makeRide(), walkMinutes: null, walkYards: null }],
-    }));
+    }), 5);
     expect(msg).toContain('walk=unknown');
   });
 
@@ -139,7 +141,7 @@ describe('buildUserMessage', () => {
       rideStats: null,
       score: undefined,
     });
-    const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5, walkYards: 400 }] }));
+    const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5, walkYards: 400 }] }), 5);
     expect(msg).toContain('buckets=null');
     expect(msg).toContain('range=null');
     expect(msg).toContain('score=unavailable');
@@ -151,7 +153,7 @@ describe('buildUserMessage', () => {
       { ride: makeRide({ id: 'b', name: 'B' }), walkMinutes: 2, walkYards: 160 },
       { ride: makeRide({ id: 'c', name: 'C' }), walkMinutes: 3, walkYards: 240 },
     ];
-    const msg = buildUserMessage(makeContext({ rides }));
+    const msg = buildUserMessage(makeContext({ rides }), 5);
     expect(msg).toContain('Operating rides (3):');
   });
 });

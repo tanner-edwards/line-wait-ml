@@ -12,6 +12,8 @@ function makeRide(over: Partial<Ride> = {}): Ride {
     rideStats: null,
     prediction: null,
     recentHistory: null,
+    lat: null,
+    lng: null,
   };
   return { ...base, ...over };
 }

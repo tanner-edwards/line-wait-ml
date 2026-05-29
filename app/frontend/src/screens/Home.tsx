@@ -28,6 +28,9 @@ import { SortMenu } from '../components/SortMenu';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
+import { useDailyContext } from '../context/DailyContextContext';
+import { ParkTogglePill } from '../components/ParkTogglePill';
+import { filterByDailyParks } from '../utils/parkFilter';
 import type { ScoreResult } from '../types';
 
 const WALK_SPEED_MPM = 83; // meters per minute (~5 km/h)
@@ -55,6 +58,7 @@ export function Home() {
   // refresh and foreground-refresh effects moved to the provider too.
   const { data, error, loading, refreshing, lastRefreshedAt, refresh, ridesById } = useRides();
   const { selection: locationSelection } = useLocation();
+  const { context: dailyContext } = useDailyContext();
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
@@ -97,10 +101,16 @@ export function Home() {
 
   const walkOrigin = sortBy === 'distance' ? origin : null;
 
-  const items: ListItem[] = data
+  // Apply daily-park filter before flattening so the list (and any sort)
+  // only sees rides in the selected park scope.
+  const scopedData = data && dailyContext
+    ? filterByDailyParks(data, dailyContext.parks)
+    : data;
+
+  const items: ListItem[] = scopedData
     ? sortBy
-      ? flattenSorted(data, sortBy, origin)
-      : flattenForList(data)
+      ? flattenSorted(scopedData, sortBy, origin)
+      : flattenForList(scopedData)
     : [];
   const lastUpdate = lastRefreshedAt
     ? formatHHMM(lastRefreshedAt)
@@ -153,6 +163,9 @@ export function Home() {
             <Text style={styles.refreshButtonText}>Refresh</Text>
           )}
         </Pressable>
+      </View>
+      <View style={styles.toggleRow}>
+        <ParkTogglePill />
       </View>
       <FlatList
         data={items}
@@ -309,11 +322,15 @@ const styles = StyleSheet.create({
   errorBannerText: { color: '#7a1f1f', fontSize: 14 },
   header: {
     padding: 16,
-    borderBottomColor: '#eee',
-    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  toggleRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomColor: '#eee',
+    borderBottomWidth: 1,
   },
   headerLeft: { flex: 1 },
   headerTitle: { fontSize: 22, fontWeight: '700' },

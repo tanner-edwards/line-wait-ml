@@ -26,6 +26,9 @@ import { ApiError, fetchRecommendations } from '../api';
 import { ParkSlug, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
+import { usePersona } from '../context/PersonaContext';
+import { useDailyContext } from '../context/DailyContextContext';
+import { ParkTogglePill } from '../components/ParkTogglePill';
 import {
   PersistedSelection,
   getLastSelection,
@@ -36,7 +39,6 @@ import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { formatHHMM } from '../timestamp';
 
-const PAGE_SIZE = 5;
 
 const LOADING_LINES = [
   'Looking around the park…',
@@ -54,14 +56,18 @@ export function Recommendations(): React.ReactElement {
   } = useRides();
 
   const { setLocation } = useLocation();
+  const { persona } = usePersona();
+  const { context: dailyContext } = useDailyContext();
   const [selection, setSelection] = useState<PersistedSelection | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const inFlightAbort = useRef<AbortController | null>(null);
+  const loadMoreAbort = useRef<AbortController | null>(null);
   const [initialized, setInitialized] = useState(false);
   // Picked once when the loading state appears, so the wording feels fresh
   // each fetch without re-rolling on every render mid-spinner.
@@ -111,10 +117,13 @@ export function Recommendations(): React.ReactElement {
 
     setRecsLoading(true);
     setRecsError(null);
-    setVisibleCount(PAGE_SIZE);
+    setLoadMoreError(null);
     setExpandedRideId(null);
+    // Initial fetch — cancel any in-flight "show more" since the rec list
+    // is about to be replaced anyway.
+    loadMoreAbort.current?.abort();
     try {
-      const res = await fetchRecommendations({ park, currentRideId, signal: controller.signal });
+      const res = await fetchRecommendations({ park, currentRideId, persona, signal: controller.signal });
       if (controller.signal.aborted) return;
       setRecs(res);
     } catch (err) {
@@ -124,7 +133,50 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen]);
+  }, [isParkOpen, persona]);
+
+  // "Show more" — fetches the next batch from the backend, telling it which
+  // ride IDs we already have so it doesn't repeat them. New recs are
+  // appended to the existing list; `hasMore` on the new response decides
+  // whether the button stays visible.
+  const loadMore = useCallback(async () => {
+    if (!recs || !selection) return;
+    loadMoreAbort.current?.abort();
+    const controller = new AbortController();
+    loadMoreAbort.current = controller;
+
+    setLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const res = await fetchRecommendations({
+        park: selection.park,
+        currentRideId: selection.currentRideId,
+        persona,
+        excludeRideIds: recs.recommendations.map(r => r.rideId),
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setRecs(prev => prev
+        ? {
+            ...res,
+            // Keep the original currentRide/lastUpdated/degraded; only merge
+            // in the new picks. hasMore comes from the latest response.
+            currentRide: prev.currentRide,
+            lastUpdated: prev.lastUpdated,
+            degraded: prev.degraded,
+            recommendations: [...prev.recommendations, ...res.recommendations],
+            hasMore: res.hasMore,
+          }
+        : res
+      );
+    } catch (err) {
+      if (err instanceof Error && err.name === 'AbortError') return;
+      const message = err instanceof ApiError ? err.message : 'Unknown error';
+      setLoadMoreError(message);
+    } finally {
+      if (!controller.signal.aborted) setLoadingMore(false);
+    }
+  }, [recs, selection, persona]);
 
   // 1. On mount, read persisted selection and decide whether to open the picker.
   // (Placed after runFetch so the effect can call it.)
@@ -145,6 +197,16 @@ export function Recommendations(): React.ReactElement {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Re-fetch when the persona changes (e.g. user edited it on the Profile tab).
+  // Gated on `initialized` so the mount-time init effect drives the first call,
+  // not this one. Selection-less state (picker open) bypasses.
+  useEffect(() => {
+    if (!initialized) return;
+    if (!selection) return;
+    void runFetch(selection.park, selection.currentRideId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [persona]);
 
   const handlePickerSubmit = useCallback(async (park: ParkSlug, currentRideId: string) => {
     setPickerOpen(false);
@@ -204,6 +266,9 @@ export function Recommendations(): React.ReactElement {
           <Text style={styles.changeButtonText}>Change location</Text>
         </Pressable>
       </View>
+      <View style={styles.toggleRow}>
+        <ParkTogglePill />
+      </View>
 
       {selection && !isParkOpen(selection.park) ? (
         <View style={styles.errorContainer} testID="recs-park-closed">
@@ -238,9 +303,10 @@ export function Recommendations(): React.ReactElement {
         <RecsList
           recs={recs}
           ridesById={ridesById}
-          visibleCount={visibleCount}
           expandedRideId={expandedRideId}
-          onShowMore={() => setVisibleCount(c => c + PAGE_SIZE)}
+          loadingMore={loadingMore}
+          loadMoreError={loadMoreError}
+          onShowMore={() => void loadMore()}
           onToggleExpand={(rideId) =>
             setExpandedRideId(prev => (prev === rideId ? null : rideId))
           }
@@ -252,6 +318,7 @@ export function Recommendations(): React.ReactElement {
         initialPark={selection?.park ?? null}
         initialRideId={selection?.currentRideId ?? null}
         ridesByPark={ridesByPark}
+        restrictToParks={dailyContext?.parks ?? 'both'}
         onSubmit={handlePickerSubmit}
         onClose={() => {
           // Only allow dismissing without picking if a selection already exists.
@@ -267,15 +334,17 @@ export function Recommendations(): React.ReactElement {
 function RecsList({
   recs,
   ridesById,
-  visibleCount,
   expandedRideId,
+  loadingMore,
+  loadMoreError,
   onShowMore,
   onToggleExpand,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
-  visibleCount: number;
   expandedRideId: string | null;
+  loadingMore: boolean;
+  loadMoreError: string | null;
   onShowMore: () => void;
   onToggleExpand: (rideId: string) => void;
 }): React.ReactElement {
@@ -290,12 +359,9 @@ function RecsList({
     );
   }
 
-  const sliced = recs.recommendations.slice(0, visibleCount);
-  const moreAvailable = recs.recommendations.length > visibleCount;
-
   return (
     <FlatList
-      data={sliced}
+      data={recs.recommendations}
       keyExtractor={r => r.rideId}
       renderItem={({ item }) => (
         <RecommendationCard
@@ -315,9 +381,21 @@ function RecsList({
         ) : null
       }
       ListFooterComponent={
-        moreAvailable ? (
+        loadingMore ? (
+          <View style={styles.moreLoadingRow} testID="recs-loading-more">
+            <ActivityIndicator size="small" />
+            <Text style={styles.moreLoadingText}>Finding more picks…</Text>
+          </View>
+        ) : loadMoreError ? (
+          <View style={styles.moreErrorRow}>
+            <Text style={styles.moreErrorText}>{loadMoreError}</Text>
+            <Pressable style={styles.moreButton} onPress={onShowMore} testID="recs-show-more-retry">
+              <Text style={styles.moreButtonText}>Try again</Text>
+            </Pressable>
+          </View>
+        ) : recs.hasMore ? (
           <Pressable style={styles.moreButton} onPress={onShowMore} testID="recs-show-more">
-            <Text style={styles.moreButtonText}>More recommendations</Text>
+            <Text style={styles.moreButtonText}>Show more</Text>
           </Pressable>
         ) : null
       }
@@ -330,10 +408,14 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   header: {
     padding: 16,
-    borderBottomColor: '#eee',
-    borderBottomWidth: 1,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  toggleRow: {
+    paddingHorizontal: 16,
+    paddingBottom: 12,
+    borderBottomColor: '#eee',
+    borderBottomWidth: 1,
   },
   headerLeft: { flex: 1, paddingRight: 12 },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' },
@@ -383,4 +465,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   moreButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  moreLoadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: 16,
+    paddingVertical: 14,
+    gap: 8,
+  },
+  moreLoadingText: { fontSize: 13, color: '#666' },
+  moreErrorRow: {
+    margin: 16,
+    alignItems: 'center',
+  },
+  moreErrorText: {
+    fontSize: 13,
+    color: '#7a1f1f',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
 });

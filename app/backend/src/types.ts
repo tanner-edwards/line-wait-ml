@@ -179,7 +179,40 @@ export interface RecommendationsResponse {
   park: ParkSlug;
   lastUpdated: string;        // ISO timestamp; matches the underlying live-data fetch
   degraded: boolean;          // true when Bedrock failed and we returned deterministic fallback
-  recommendations: Recommendation[]; // 10 entries in priority order; app paginates 5+5
+  recommendations: Recommendation[]; // up to BATCH_SIZE entries per request
+  hasMore: boolean;           // true when more candidates exist beyond what's in `recommendations`
+}
+
+// --- v3 personalization ---
+
+export type TripDuration = '1-day' | '2-days' | '3-4-days' | '5-plus-days';
+
+export type RideCategory =
+  | 'thrills'
+  | 'classics'
+  | 'immersive'
+  | 'kid-favorites'
+  | 'shows-characters'
+  | 'first-time';
+
+export type AccessibilityNeed =
+  | 'stroller'
+  | 'wheelchair'
+  | 'pregnant'
+  | 'sensory'
+  | 'none';
+
+// Captured at first-launch onboarding, edited from the Profile tab. Every
+// field is independently skippable: null / empty array means "no signal" and
+// personaToText() emits no guidance for that field, falling back to the LLM's
+// default persona behavior. Sent on each /v2/recommendations call; not stored
+// server-side.
+export interface Persona {
+  tripDuration: TripDuration | null;
+  youngestAge: number | null;          // 0–18 inclusive; null = skipped
+  ridePreferences: RideCategory[];
+  mustDoRideIds: string[];             // ride UUIDs from ride_metadata
+  accessibilityNeeds: AccessibilityNeed[];
 }
 
 export interface ErrorResponse {

@@ -120,4 +120,51 @@ export interface RecommendationsResponse {
   lastUpdated: string;
   degraded: boolean;
   recommendations: Recommendation[];
+  /** True when the backend has more candidates than what's in `recommendations`.
+   *  The UI shows "Show more" only while this is true. */
+  hasMore: boolean;
+}
+
+// --- v3 personalization (mirror of backend src/types.ts) ---
+
+export type TripDuration = '1-day' | '2-days' | '3-4-days' | '5-plus-days';
+
+export type RideCategory =
+  | 'thrills'
+  | 'classics'
+  | 'immersive'
+  | 'kid-favorites'
+  | 'shows-characters'
+  | 'first-time';
+
+export type AccessibilityNeed =
+  | 'stroller'
+  | 'wheelchair'
+  | 'pregnant'
+  | 'sensory'
+  | 'none';
+
+export interface Persona {
+  tripDuration: TripDuration | null;
+  youngestAge: number | null;
+  ridePreferences: RideCategory[];
+  mustDoRideIds: string[];
+  accessibilityNeeds: AccessibilityNeed[];
+}
+
+export type DailyParks = 'disneyland' | 'california-adventure' | 'both';
+
+export interface DailyContext {
+  date: string;   // YYYY-MM-DD in the user's local timezone
+  parks: DailyParks;
+}
+
+export function emptyPersona(): Persona {
+  return {
+    tripDuration: null,
+    youngestAge: null,
+    ridePreferences: [],
+    mustDoRideIds: [],
+    accessibilityNeeds: [],
+  };
 }

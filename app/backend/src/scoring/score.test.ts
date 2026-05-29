@@ -12,6 +12,8 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     rideStats: makeStats(15, 60),
     prediction: null,
     recentHistory: null,
+    lat: null,
+    lng: null,
     ...overrides,
   };
 }

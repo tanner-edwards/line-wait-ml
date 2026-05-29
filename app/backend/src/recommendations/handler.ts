@@ -13,6 +13,7 @@ import { fetchPark } from '../handler';
 import {
   ParkSlug,
   PARKS,
+  Persona,
   Ride,
   Recommendation,
   RecommendationsResponse,
@@ -20,14 +21,19 @@ import {
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
 import { walkingMinutes, walkingYards } from './walkingDistance';
 import { invokeRecommendations } from './bedrockClient';
-import { buildUserMessage, SYSTEM_PROMPT, RideForPrompt } from './promptBuilder';
+import { buildSystemPrompt, buildUserMessage, RideForPrompt } from './promptBuilder';
+import { personaToText } from './persona';
 import { getParkHours } from './parkHours';
 
 const DEFAULT_FALLBACK_ONE_LINER = 'Recommended based on current waits.';
 const DEFAULT_FALLBACK_PARAGRAPH =
   "Our scoring system rates this ride positively given current waits, the typical line for this hour, and the projected trend over the next two hours.";
 
-const TOTAL_RECS = 10;
+/** Recommendations are batched: each call returns up to BATCH_SIZE picks.
+ *  The client fires a second call with excludeRideIds when the user taps
+ *  "show more" to fetch the next batch. Halves the LLM latency vs. asking
+ *  for 10 upfront. */
+export const BATCH_SIZE = 5;
 
 export interface RecommendationsRequest {
   park: ParkSlug;
@@ -37,6 +43,14 @@ export interface RecommendationsRequest {
    *  uses it as the reference date (live feed still fetches real-time but
    *  scoring / day-type / current-time context are evaluated against `at`). */
   at?: Date;
+  /** Optional v3 persona. When provided, it's translated to natural language
+   *  and inlined into the LLM system prompt. When omitted (or null) we fall
+   *  back to DEFAULT_PERSONA, preserving v2 behavior. */
+  persona?: Persona | null;
+  /** Optional list of ride UUIDs to exclude from the candidate pool. Used
+   *  by the "show more" flow so the second batch doesn't repeat picks from
+   *  the first. */
+  excludeRideIds?: string[];
 }
 
 /**
@@ -62,9 +76,15 @@ export async function buildRecommendations(
   const currentRideEntity = park.rides.find(r => r.id === req.currentRideId);
 
   // Candidate set: operating rides in the same park, excluding the user's
-  // current ride. Carry walk minutes + yards per candidate.
+  // current ride AND any ride IDs the client says it already has from a
+  // prior batch ("show more" flow). Carry walk minutes + yards per candidate.
+  const excluded = new Set(req.excludeRideIds ?? []);
   const candidates: RideForPrompt[] = park.rides
-    .filter(r => r.status === 'OPERATING' && r.id !== req.currentRideId)
+    .filter(r =>
+      r.status === 'OPERATING'
+      && r.id !== req.currentRideId
+      && !excluded.has(r.id)
+    )
     .map(ride => {
       const otherMeta = lookupRideMetadata(metadataMap, ride.id);
       return {
@@ -74,8 +94,8 @@ export async function buildRecommendations(
       };
     });
 
-  // Empty park (closed, weather, etc.) → return an empty list. Not degraded,
-  // just no rides to recommend.
+  // Empty candidate pool (park closed, all rides already shown, etc.) →
+  // return an empty list. Not degraded, just no rides to recommend.
   if (candidates.length === 0) {
     return {
       currentRide: shapeCurrentRide(req.park, req.currentRideId, currentRideEntity, currentMeta),
@@ -83,6 +103,7 @@ export async function buildRecommendations(
       lastUpdated: park.lastUpdated,
       degraded: false,
       recommendations: [],
+      hasMore: false,
     };
   }
 
@@ -102,9 +123,14 @@ export async function buildRecommendations(
     rides: candidates,
   };
 
+  // Build system prompt fresh per request so the persona block reflects the
+  // calling user. When persona is null/empty, personaToText returns the
+  // DEFAULT_PERSONA text and we get the same prompt v2 used.
+  const systemPrompt = buildSystemPrompt(personaToText(req.persona, metadataMap), BATCH_SIZE);
+
   let llmRecs: Recommendation[] | null = null;
   try {
-    const text = await invokeRecommendations(SYSTEM_PROMPT, buildUserMessage(ctx));
+    const text = await invokeRecommendations(systemPrompt, buildUserMessage(ctx, BATCH_SIZE));
     // TEMP DEBUG (remove once Bedrock path is verified): log the raw model
     // response so we can tell whether a degraded result came from a parse
     // failure vs an empty rec list vs all-filtered IDs.
@@ -116,12 +142,14 @@ export async function buildRecommendations(
   }
 
   if (llmRecs === null || llmRecs.length === 0) {
+    const recs = fallbackRecs(candidates);
     return {
       currentRide: shapeCurrentRide(req.park, req.currentRideId, currentRideEntity, currentMeta),
       park: req.park,
       lastUpdated: park.lastUpdated,
       degraded: true,
-      recommendations: fallbackRecs(candidates),
+      recommendations: recs,
+      hasMore: candidates.length > recs.length,
     };
   }
 
@@ -131,6 +159,7 @@ export async function buildRecommendations(
     lastUpdated: park.lastUpdated,
     degraded: false,
     recommendations: llmRecs,
+    hasMore: candidates.length > llmRecs.length,
   };
 }
 
@@ -161,7 +190,7 @@ function formatLocalTime(date: Date): string {
 }
 
 // Strict JSON validator. Rejects anything not matching the contract.
-// Filters out recs whose rideId isn't in the candidate set. Caps at TOTAL_RECS.
+// Filters out recs whose rideId isn't in the candidate set. Caps at BATCH_SIZE.
 export function parseAndValidate(
   text: string,
   candidates: RideForPrompt[]
@@ -202,7 +231,7 @@ export function parseAndValidate(
       walkYards: walk?.yards ?? null,
       arrivalWait,
     });
-    if (valid.length >= TOTAL_RECS) break;
+    if (valid.length >= BATCH_SIZE) break;
   }
   return valid;
 }
@@ -217,7 +246,7 @@ function stripCodeFences(text: string): string {
 
 /**
  * Deterministic fallback when Bedrock fails or returns garbage.
- * Sorts candidates by score (descending), takes the top TOTAL_RECS, and
+ * Sorts candidates by score (descending), takes the top BATCH_SIZE, and
  * assigns a generic one-liner + paragraph.
  */
 export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
@@ -226,7 +255,7 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
     const sb = b.ride.score?.score ?? 0;
     return sb - sa;
   });
-  return sorted.slice(0, TOTAL_RECS).map(({ ride, walkMinutes, walkYards }) => ({
+  return sorted.slice(0, BATCH_SIZE).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,
     oneLiner: DEFAULT_FALLBACK_ONE_LINER,
     paragraph: DEFAULT_FALLBACK_PARAGRAPH,

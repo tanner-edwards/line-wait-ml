@@ -59,9 +59,11 @@ Most attraction types are fair game — dark rides, water rides, classics.`;
 /**
  * Build the system prompt with the given persona inlined. Use
  * DEFAULT_PERSONA as the fallback when no per-user persona has been
- * captured yet.
+ * captured yet. `batchSize` is the maximum number of recommendations the
+ * LLM should return; the frontend may fire follow-up calls with
+ * excludeRideIds to fetch more.
  */
-export function buildSystemPrompt(persona: string): string {
+export function buildSystemPrompt(persona: string, batchSize: number): string {
   return `You are the recommendation engine for Club 32, a Disney parks app.
 Your job is to pick rides for the guest to visit next and explain why each is a good pick.
 
@@ -101,7 +103,7 @@ WRITING THE COPY (oneLiner + paragraph):
 HARD RULES (apply regardless of persona):
 - Never include the guest's current ride. It is already filtered out; never put it back even if the data implies it.
 - Don't recommend a ride past the park's listed close time, if hours are known.
-- Return up to 10 rides — fewer if the list is shorter than 10, but always return as many as you have ride entries for.
+- Return up to ${batchSize} rides — fewer if the list is shorter, but always return as many as you have ride entries for.
 
 OUTPUT FORMAT — strict, machine-parsed:
 Respond with a single JSON object, no markdown fences, no commentary outside the JSON, exactly this shape:
@@ -114,7 +116,7 @@ Respond with a single JSON object, no markdown fences, no commentary outside the
       "paragraph": "<1-3 sentences of fuller reasoning, shown on a detail screen>",
       "arrivalWait": <integer — your best estimate of the wait in minutes when the guest physically arrives at the queue, accounting for walk time and the current trend; null only if walk time is unknown AND trend signals are absent>
     },
-    ... priority order, up to 10 entries
+    ... priority order, up to ${batchSize} entries
   ]
 }
 
@@ -129,13 +131,13 @@ Otherwise always return a non-empty list, even if you only have a handful of rid
 }
 
 /**
- * Backwards-compatible export: the locked default system prompt, with the
- * default persona inlined. Callers that don't pass a custom persona use
- * this directly.
+ * Test-only export: the default-persona system prompt at the default
+ * batch size. Production callers build their own via buildSystemPrompt
+ * with the per-request persona + batch size.
  */
-export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_PERSONA);
+export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_PERSONA, 5);
 
-export function buildUserMessage(ctx: PromptContext): string {
+export function buildUserMessage(ctx: PromptContext, batchSize: number): string {
   const lines: string[] = [];
   lines.push(`Park: ${ctx.park}`);
   if (ctx.parkHours) {
@@ -151,7 +153,7 @@ export function buildUserMessage(ctx: PromptContext): string {
     lines.push(rideBlock(ride, walkMinutes));
   }
   lines.push('');
-  lines.push(`Return JSON with exactly 10 recommendations in priority order.`);
+  lines.push(`Return JSON with up to ${batchSize} recommendations in priority order.`);
   return lines.join('\n');
 }
 

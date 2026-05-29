@@ -1,6 +1,10 @@
-// Half-sheet modal for the "Where are you?" picker. Two-step flow: pick park,
-// then pick the ride you're currently at. Pre-fills both when reopened with
-// an existing selection so re-confirming is one tap.
+// Half-sheet modal for the "Where are you?" picker.
+//
+// v3 behavior:
+//   - When restrictToParks is a single park (DLR or DCA), we skip the
+//     park-selection step entirely and show only that park's rides.
+//   - When restrictToParks is 'both' (Park Hopper), we show a combined
+//     ride list from both parks, with the park labeled under each ride.
 //
 // Visual pattern cloned from TimeTravelModal: cross-platform RN Modal +
 // transparent backdrop + slide-from-bottom card. Deliberately no native-only
@@ -13,26 +17,27 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   View,
 } from 'react-native';
-import { ParkSlug, Ride } from '../types';
+import { DailyParks, ParkSlug, Ride } from '../types';
+import { SearchField } from './SearchField';
 
-const PARK_LABEL: Record<ParkSlug, string> = {
-  'disneyland': 'Disneyland',
-  'california-adventure': 'Disney California Adventure',
-};
 const PARK_DISPLAY_NAME: Record<ParkSlug, string> = {
-  // The backend's combined response uses these display names per park entry;
-  // we match them so we can filter `data.parks[i].rides` by slug.
   'disneyland': 'Disneyland',
   'california-adventure': 'Disney California Adventure',
 };
 
-const PARK_OPTIONS: ParkSlug[] = ['disneyland', 'california-adventure'];
+const PARK_SHORT: Record<ParkSlug, string> = {
+  'disneyland': 'DLR',
+  'california-adventure': 'DCA',
+};
 
 export function parkDisplayName(slug: ParkSlug): string {
   return PARK_DISPLAY_NAME[slug];
+}
+
+interface RideWithPark extends Ride {
+  park: ParkSlug;
 }
 
 interface PickerSheetProps {
@@ -40,143 +45,104 @@ interface PickerSheetProps {
   initialPark?: ParkSlug | null;
   initialRideId?: string | null;
   /** All rides keyed by park slug. Provided by the Recommendations screen
-   *  from RideContext.data. Used to populate the RidePicker step. */
+   *  from RideContext.data. */
   ridesByPark: Record<ParkSlug, Ride[]>;
+  /** Daily-park scope: limits which rides appear. 'both' shows a combined
+   *  list from both parks; a single park hides the other entirely. */
+  restrictToParks: DailyParks;
   /** Called when the user picks a ride. Sheet auto-dismisses on submit. */
   onSubmit: (park: ParkSlug, currentRideId: string) => void;
-  /** Called when the user dismisses without picking (back-button / backdrop). */
+  /** Called when the user dismisses without picking (backdrop tap). */
   onClose: () => void;
 }
 
 export function PickerSheet({
   visible,
-  initialPark,
+  initialPark: _initialPark,
   initialRideId: _initialRideId,
   ridesByPark,
+  restrictToParks,
   onSubmit,
   onClose,
 }: PickerSheetProps): React.ReactElement {
-  // Two-step state. `selectedPark` null → show park picker. Non-null → show
-  // ride picker for that park.
-  const [selectedPark, setSelectedPark] = useState<ParkSlug | null>(initialPark ?? null);
   const [query, setQuery] = useState('');
 
-  // Pre-fill the park selection whenever the sheet opens.
   useEffect(() => {
-    if (visible) {
-      setSelectedPark(initialPark ?? null);
-      setQuery('');
-    }
-  }, [visible, initialPark]);
+    if (visible) setQuery('');
+  }, [visible]);
 
-  const filteredRides = useMemo<Ride[]>(() => {
-    if (!selectedPark) return [];
-    const rides = ridesByPark[selectedPark] ?? [];
+  // Build a single flat list of rides annotated with their park. The list
+  // contents depend on the daily-park scope: a single park only shows that
+  // park's rides; 'both' shows both. Sorted alphabetically for searchability.
+  const ridesInScope = useMemo<RideWithPark[]>(() => {
+    const collect: RideWithPark[] = [];
+    const slugs: ParkSlug[] =
+      restrictToParks === 'both'
+        ? ['disneyland', 'california-adventure']
+        : [restrictToParks];
+    for (const slug of slugs) {
+      for (const ride of ridesByPark[slug] ?? []) {
+        collect.push({ ...ride, park: slug });
+      }
+    }
+    collect.sort((a, b) => a.name.localeCompare(b.name));
+    return collect;
+  }, [ridesByPark, restrictToParks]);
+
+  const filteredRides = useMemo<RideWithPark[]>(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return rides;
-    return rides.filter(r => r.name.toLowerCase().includes(q));
-  }, [selectedPark, ridesByPark, query]);
+    if (!q) return ridesInScope;
+    return ridesInScope.filter(r => r.name.toLowerCase().includes(q));
+  }, [ridesInScope, query]);
+
+  const showParkSubtitle = restrictToParks === 'both';
+  const scopeTitle =
+    restrictToParks === 'both'
+      ? 'Both parks'
+      : PARK_DISPLAY_NAME[restrictToParks];
 
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.backdrop} onPress={onClose} testID="picker-backdrop">
         {/* Inner Pressable swallows backdrop taps so taps inside the card don't dismiss. */}
         <Pressable style={styles.card} onPress={() => {}}>
-          {selectedPark === null ? (
-            <ParkPickerStep onPick={setSelectedPark} />
+          <Text style={styles.scopeLabel}>{scopeTitle}</Text>
+          <Text style={styles.title}>Which ride are you at?</Text>
+          <View style={styles.searchWrap}>
+            <SearchField
+              value={query}
+              onChangeText={setQuery}
+              placeholder="Search rides…"
+              testID="picker-search"
+            />
+          </View>
+          {filteredRides.length === 0 ? (
+            <Text style={styles.emptyText}>
+              {query ? 'No rides match that search.' : 'No rides available yet.'}
+            </Text>
           ) : (
-            <RidePickerStep
-              park={selectedPark}
-              query={query}
-              setQuery={setQuery}
-              rides={filteredRides}
-              onPickRide={(rideId) => onSubmit(selectedPark, rideId)}
-              onChangePark={() => setSelectedPark(null)}
+            <FlatList
+              data={filteredRides}
+              keyExtractor={r => r.id}
+              keyboardShouldPersistTaps="handled"
+              style={styles.rideList}
+              renderItem={({ item }) => (
+                <Pressable
+                  style={styles.rideRow}
+                  onPress={() => onSubmit(item.park, item.id)}
+                  testID={`picker-ride-${item.id}`}
+                >
+                  <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
+                  <Text style={styles.rideLand}>
+                    {showParkSubtitle ? `${item.land} · ${PARK_SHORT[item.park]}` : item.land}
+                  </Text>
+                </Pressable>
+              )}
             />
           )}
         </Pressable>
       </Pressable>
     </Modal>
-  );
-}
-
-function ParkPickerStep({ onPick }: { onPick: (p: ParkSlug) => void }): React.ReactElement {
-  return (
-    <View>
-      <Text style={styles.title}>Where are you?</Text>
-      <Text style={styles.subtitle}>Pick a park first.</Text>
-      <View style={styles.parkButtonRow}>
-        {PARK_OPTIONS.map(slug => (
-          <Pressable
-            key={slug}
-            style={styles.parkButton}
-            onPress={() => onPick(slug)}
-            testID={`park-pick-${slug}`}
-          >
-            <Text style={styles.parkButtonText}>{PARK_LABEL[slug]}</Text>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-function RidePickerStep({
-  park,
-  query,
-  setQuery,
-  rides,
-  onPickRide,
-  onChangePark,
-}: {
-  park: ParkSlug;
-  query: string;
-  setQuery: (s: string) => void;
-  rides: Ride[];
-  onPickRide: (rideId: string) => void;
-  onChangePark: () => void;
-}): React.ReactElement {
-  return (
-    <View style={styles.ridePickerContainer}>
-      <View style={styles.headerRow}>
-        <Pressable onPress={onChangePark} testID="picker-change-park">
-          <Text style={styles.backLink}>← {PARK_LABEL[park]}</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.title}>Which ride are you at?</Text>
-      <TextInput
-        style={styles.search}
-        placeholder="Search rides…"
-        placeholderTextColor="#aaa"
-        value={query}
-        onChangeText={setQuery}
-        autoCorrect={false}
-        autoCapitalize="none"
-        testID="picker-search"
-      />
-      {rides.length === 0 ? (
-        <Text style={styles.emptyText}>
-          {query ? 'No rides match that search.' : 'No rides available yet.'}
-        </Text>
-      ) : (
-        <FlatList
-          data={rides}
-          keyExtractor={r => r.id}
-          keyboardShouldPersistTaps="handled"
-          style={styles.rideList}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.rideRow}
-              onPress={() => onPickRide(item.id)}
-              testID={`picker-ride-${item.id}`}
-            >
-              <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.rideLand}>{item.land}</Text>
-            </Pressable>
-          )}
-        />
-      )}
-    </View>
   );
 }
 
@@ -196,52 +162,22 @@ const styles = StyleSheet.create({
     minHeight: 380,
     maxHeight: '85%',
   },
+  scopeLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#888',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 4,
+  },
   title: {
     fontSize: 20,
     fontWeight: '700',
     color: '#222',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 24,
-  },
-
-  parkButtonRow: {
-    gap: 12,
-  },
-  parkButton: {
-    backgroundColor: '#6b6bf5',
-    borderRadius: 12,
-    paddingVertical: 18,
-    alignItems: 'center',
-  },
-  parkButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-
-  ridePickerContainer: {
-    flex: 1,
-  },
-  headerRow: {
     marginBottom: 12,
   },
-  backLink: {
-    color: '#6b6bf5',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  search: {
-    backgroundColor: '#f4f4f7',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 15,
+  searchWrap: {
     marginBottom: 12,
-    color: '#222',
   },
   rideList: {
     flexGrow: 0,

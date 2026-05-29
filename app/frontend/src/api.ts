@@ -2,6 +2,7 @@ import {
   CombinedResponse,
   ErrorResponse,
   ParkSlug,
+  Persona,
   RecommendationsResponse,
 } from './types';
 
@@ -51,6 +52,11 @@ export async function fetchWaits(at?: string): Promise<CombinedResponse> {
 interface FetchRecommendationsInput {
   park: ParkSlug;
   currentRideId: string;
+  /** Optional v3 persona — backend defaults to its built-in persona when null. */
+  persona?: Persona | null;
+  /** Ride IDs the client already has from a previous batch. Used by the
+   *  "show more" flow so the next call doesn't return the same picks. */
+  excludeRideIds?: string[];
   /** Optional AbortSignal so the Recommendations screen can cancel an in-
    *  flight call when the user re-picks before the previous call returns. */
   signal?: AbortSignal;
@@ -59,11 +65,19 @@ interface FetchRecommendationsInput {
 export async function fetchRecommendations({
   park,
   currentRideId,
+  persona,
+  excludeRideIds,
   signal,
 }: FetchRecommendationsInput): Promise<RecommendationsResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
   }
+
+  // Only include optional fields in the body when present so the wire shape
+  // stays compatible with older backends that don't know about them.
+  const body: Record<string, unknown> = { park, currentRideId };
+  if (persona) body.persona = persona;
+  if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 
   let res: Response;
   try {
@@ -73,7 +87,7 @@ export async function fetchRecommendations({
         'x-api-key': API_KEY,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ park, currentRideId }),
+      body: JSON.stringify(body),
       signal,
     });
   } catch (err) {
