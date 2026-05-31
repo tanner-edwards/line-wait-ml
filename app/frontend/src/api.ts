@@ -51,7 +51,9 @@ export async function fetchWaits(at?: string): Promise<CombinedResponse> {
 
 interface FetchRecommendationsInput {
   park: ParkSlug;
-  currentRideId: string;
+  /** User's GPS coordinates (or debug-mode fake coordinates). */
+  userLat: number;
+  userLng: number;
   /** Optional v3 persona — backend defaults to its built-in persona when null. */
   persona?: Persona | null;
   /** Ride IDs the client already has from a previous batch. Used by the
@@ -64,7 +66,8 @@ interface FetchRecommendationsInput {
 
 export async function fetchRecommendations({
   park,
-  currentRideId,
+  userLat,
+  userLng,
   persona,
   excludeRideIds,
   signal,
@@ -73,9 +76,7 @@ export async function fetchRecommendations({
     throw new ApiError(null, 'API base URL or key not configured');
   }
 
-  // Only include optional fields in the body when present so the wire shape
-  // stays compatible with older backends that don't know about them.
-  const body: Record<string, unknown> = { park, currentRideId };
+  const body: Record<string, unknown> = { park, userLat, userLng };
   if (persona) body.persona = persona;
   if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 

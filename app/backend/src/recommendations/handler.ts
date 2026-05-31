@@ -15,11 +15,12 @@ import {
   PARKS,
   Persona,
   Ride,
+  RideMetadata,
   Recommendation,
   RecommendationsResponse,
 } from '../types';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
-import { walkingMinutes, walkingYards } from './walkingDistance';
+import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
 import { invokeRecommendations } from './bedrockClient';
 import { buildSystemPrompt, buildUserMessage, RideForPrompt } from './promptBuilder';
 import { personaToText } from './persona';
@@ -37,7 +38,10 @@ export const BATCH_SIZE = 5;
 
 export interface RecommendationsRequest {
   park: ParkSlug;
-  currentRideId: string;
+  /** GPS coordinates of the user. Backend derives the nearest ride as the
+   *  "current ride" anchor for the LLM and as the walking-distance origin. */
+  userLat: number;
+  userLng: number;
   /** Optional ISO timestamp for testing against historical/future ride
    *  states. Mirrors the /v0/waits `?at=` query param: when set, fetchPark
    *  uses it as the reference date (live feed still fetches real-time but
@@ -72,25 +76,24 @@ export async function buildRecommendations(
     metadataMap = new Map();
   }
 
-  const currentMeta = lookupRideMetadata(metadataMap, req.currentRideId);
-  const currentRideEntity = park.rides.find(r => r.id === req.currentRideId);
+  // Derive the nearest ride to the user's GPS position — used as the LLM
+  // "current ride" anchor and excluded from the candidate pool.
+  const nearest = findNearestRide(req.userLat, req.userLng, metadataMap, park.rides);
+  const currentRideId = nearest?.id ?? '';
+  const currentRideEntity = park.rides.find(r => r.id === currentRideId);
+  const userCoords = { lat: req.userLat, lng: req.userLng };
 
-  // Candidate set: operating rides in the same park, excluding the user's
-  // current ride AND any ride IDs the client says it already has from a
-  // prior batch ("show more" flow). Carry walk minutes + yards per candidate.
-  const excluded = new Set(req.excludeRideIds ?? []);
+  // Candidate set: operating rides in the same park, excluding the nearest
+  // ride AND any ride IDs the client says it already has from a prior batch.
+  const excluded = new Set([currentRideId, ...(req.excludeRideIds ?? [])].filter(Boolean));
   const candidates: RideForPrompt[] = park.rides
-    .filter(r =>
-      r.status === 'OPERATING'
-      && r.id !== req.currentRideId
-      && !excluded.has(r.id)
-    )
+    .filter(r => r.status === 'OPERATING' && !excluded.has(r.id))
     .map(ride => {
       const otherMeta = lookupRideMetadata(metadataMap, ride.id);
       return {
         ride,
-        walkMinutes: walkingMinutes(currentMeta, otherMeta),
-        walkYards: walkingYards(currentMeta, otherMeta),
+        walkMinutes: walkingMinutes(userCoords, otherMeta),
+        walkYards: walkingYards(userCoords, otherMeta),
       };
     });
 
@@ -98,7 +101,7 @@ export async function buildRecommendations(
   // return an empty list. Not degraded, just no rides to recommend.
   if (candidates.length === 0) {
     return {
-      currentRide: shapeCurrentRide(req.park, req.currentRideId, currentRideEntity, currentMeta),
+      currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
       park: req.park,
       lastUpdated: park.lastUpdated,
       degraded: false,
@@ -115,8 +118,8 @@ export async function buildRecommendations(
   const ctx = {
     park: PARKS[req.park].name,
     currentRide: {
-      id: req.currentRideId,
-      name: currentRideEntity?.name ?? currentMeta?.name ?? 'Unknown',
+      id: currentRideId,
+      name: currentRideEntity?.name ?? nearest?.name ?? 'Unknown',
     },
     currentLocalTime: formatLocalTime(req.at ?? new Date()),
     parkHours,
@@ -144,7 +147,7 @@ export async function buildRecommendations(
   if (llmRecs === null || llmRecs.length === 0) {
     const recs = fallbackRecs(candidates);
     return {
-      currentRide: shapeCurrentRide(req.park, req.currentRideId, currentRideEntity, currentMeta),
+      currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
       park: req.park,
       lastUpdated: park.lastUpdated,
       degraded: true,
@@ -154,13 +157,35 @@ export async function buildRecommendations(
   }
 
   return {
-    currentRide: shapeCurrentRide(req.park, req.currentRideId, currentRideEntity, currentMeta),
+    currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
     park: req.park,
     lastUpdated: park.lastUpdated,
     degraded: false,
     recommendations: llmRecs,
     hasMore: candidates.length > llmRecs.length,
   };
+}
+
+/** Returns the ride in `parkRides` whose metadata coordinates are closest
+ *  to (userLat, userLng). Rides without coordinates in ride_metadata are
+ *  skipped. Returns null only when no ride has coordinates at all. */
+export function findNearestRide(
+  userLat: number,
+  userLng: number,
+  metadataMap: Map<string, RideMetadata>,
+  parkRides: Ride[]
+): { id: string; name: string; lat: number; lng: number } | null {
+  const parkRideIds = new Set(parkRides.map(r => r.id));
+  let best: { id: string; name: string; lat: number; lng: number; dist: number } | null = null;
+  for (const [rideId, meta] of metadataMap) {
+    if (!parkRideIds.has(rideId)) continue;
+    if (meta.lat === null || meta.lng === null) continue;
+    const dist = haversineMeters(userLat, userLng, meta.lat, meta.lng);
+    if (best === null || dist < best.dist) {
+      best = { id: rideId, name: meta.name, lat: meta.lat, lng: meta.lng, dist };
+    }
+  }
+  return best ? { id: best.id, name: best.name, lat: best.lat, lng: best.lng } : null;
 }
 
 function shapeCurrentRide(

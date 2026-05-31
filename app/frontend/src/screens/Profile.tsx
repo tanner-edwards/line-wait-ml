@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
+import { useDebugMode } from '../context/DebugModeContext';
 import { useRides } from '../context/RideContext';
 import {
   AccessibilityNeed,
@@ -52,6 +53,7 @@ const ACCESSIBILITY_LABELS: Record<AccessibilityNeed, string> = {
 export function Profile(): React.ReactElement {
   const { persona, clearPersona } = usePersona();
   const { clearDailyContext } = useDailyContext();
+  const { debugMode, setDebugMode } = useDebugMode();
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
 
@@ -123,11 +125,25 @@ export function Profile(): React.ReactElement {
         />
 
         <Pressable
+          onPress={() => void setDebugMode(!debugMode)}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          testID="debug-mode-toggle"
+        >
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Debug mode</Text>
+            <Text style={[styles.rowValue, debugMode && styles.debugModeOn]}>
+              {debugMode ? 'On — fake GPS via ride picker' : 'Off'}
+            </Text>
+          </View>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
+
+        <Pressable
           onPress={() => void resetForTesting()}
           style={({ pressed }) => [styles.resetButton, pressed && styles.resetButtonPressed]}
           testID="debug-reset"
         >
-          <Text style={styles.resetText}>🛠 Reset persona (dev)</Text>
+          <Text style={styles.resetText}>Reset persona (dev)</Text>
         </Pressable>
       </ScrollView>
 
@@ -190,4 +206,5 @@ const styles = StyleSheet.create({
   },
   resetButtonPressed: { opacity: 0.6 },
   resetText: { color: '#c41e3a', fontSize: 14, fontWeight: '600' },
+  debugModeOn: { color: '#f5a623', fontWeight: '600' },
 });

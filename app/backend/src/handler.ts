@@ -273,7 +273,8 @@ async function handleRecommendations(
 ): Promise<APIGatewayProxyResult> {
   let body: {
     park?: unknown;
-    currentRideId?: unknown;
+    userLat?: unknown;
+    userLng?: unknown;
     persona?: unknown;
     excludeRideIds?: unknown;
   };
@@ -284,12 +285,16 @@ async function handleRecommendations(
   }
 
   const park = body.park;
-  const currentRideId = body.currentRideId;
+  const userLat = body.userLat;
+  const userLng = body.userLng;
   if (park !== 'disneyland' && park !== 'california-adventure') {
     return jsonResponse(400, errorBody('BAD_REQUEST', 'park must be "disneyland" or "california-adventure"'));
   }
-  if (typeof currentRideId !== 'string' || currentRideId.length === 0) {
-    return jsonResponse(400, errorBody('BAD_REQUEST', 'currentRideId is required'));
+  if (typeof userLat !== 'number' || !Number.isFinite(userLat)) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'userLat must be a finite number'));
+  }
+  if (typeof userLng !== 'number' || !Number.isFinite(userLng)) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'userLng must be a finite number'));
   }
 
   // Optional persona — bad shapes are dropped silently (logged, not 400'd) so
@@ -314,11 +319,11 @@ async function handleRecommendations(
     }
   }
 
-  // Cache key includes a persona signature AND the (sorted) excludeRideIds
-  // so different batches don't collide.
+  // Cache key: coarse GPS grid (4 decimal places ≈ 11 m precision) +
+  // persona + excludeRideIds so different users/batches don't collide.
   const excludeKey =
     excludeRideIds.length === 0 ? '' : '__ex' + [...excludeRideIds].sort().join(',');
-  const cacheKey = `${park}__${currentRideId}__${personaCacheKey(persona)}${excludeKey}`;
+  const cacheKey = `${park}__${userLat.toFixed(4)}_${userLng.toFixed(4)}__${personaCacheKey(persona)}${excludeKey}`;
   if (!at) {
     const cached = recsCache.get(cacheKey);
     if (cached) {
@@ -327,7 +332,7 @@ async function handleRecommendations(
   }
 
   try {
-    const result = await buildRecommendations({ park, currentRideId, at, persona, excludeRideIds });
+    const result = await buildRecommendations({ park, userLat, userLng, at, persona, excludeRideIds });
     if (!at) recsCache.set(cacheKey, result);
     return jsonResponse(200, result);
   } catch (err) {

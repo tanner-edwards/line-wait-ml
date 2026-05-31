@@ -1,9 +1,10 @@
 import {
   buildRecommendations,
   fallbackRecs,
+  findNearestRide,
   parseAndValidate,
 } from './handler';
-import { Ride, ParkData } from '../types';
+import { Ride, ParkData, RideMetadata } from '../types';
 import * as mainHandler from '../handler';
 import * as rideMetadataModule from './rideMetadata';
 import * as bedrockClient from './bedrockClient';
@@ -25,6 +26,20 @@ jest.mock('./bedrockClient', () => {
 const mockFetchPark = mainHandler.fetchPark as jest.MockedFunction<typeof mainHandler.fetchPark>;
 const mockEnsureMeta = rideMetadataModule.ensureRideMetadataLoaded as jest.MockedFunction<typeof rideMetadataModule.ensureRideMetadataLoaded>;
 const mockInvoke = bedrockClient.invokeRecommendations as jest.MockedFunction<typeof bedrockClient.invokeRecommendations>;
+
+// Standard GPS position used across tests — sits on top of 'curr' ride coords.
+const USER_LAT = 33.81;
+const USER_LNG = -117.92;
+
+function meta(rideId: string, lat: number, lng: number, name = rideId): RideMetadata {
+  return { rideId, parkId: 'p', name, lat, lng, source: 'manual' };
+}
+
+// Metadata map that places 'curr' at the user's GPS position so it's always
+// found as nearest and excluded from candidates.
+function currMeta(): Map<string, RideMetadata> {
+  return new Map([['curr', meta('curr', USER_LAT, USER_LNG, 'Current')]]);
+}
 
 function makeRide(id: string, name: string, currentWait: number | null, scoreValue = 0): Ride {
   return {
@@ -166,18 +181,65 @@ describe('fallbackRecs', () => {
   });
 });
 
+describe('findNearestRide', () => {
+  const parkRides = [
+    makeRide('close', 'Close', 10),
+    makeRide('far', 'Far', 20),
+    makeRide('noloc', 'No Coords', 5),
+  ];
+
+  it('returns the ride whose metadata coords are closest to the user', () => {
+    const map = new Map<string, RideMetadata>([
+      ['close', meta('close', 33.810, -117.920)],
+      ['far',   meta('far',   33.820, -117.910)],
+      ['noloc', { rideId: 'noloc', parkId: 'p', name: 'No Coords', lat: null, lng: null, source: 'manual' }],
+    ]);
+    const result = findNearestRide(33.810, -117.920, map, parkRides);
+    expect(result?.id).toBe('close');
+  });
+
+  it('skips rides with null coords', () => {
+    const map = new Map<string, RideMetadata>([
+      ['noloc', { rideId: 'noloc', parkId: 'p', name: 'No Coords', lat: null, lng: null, source: 'manual' }],
+      ['close', meta('close', 33.810, -117.920)],
+    ]);
+    const result = findNearestRide(33.810, -117.920, map, parkRides);
+    expect(result?.id).toBe('close');
+  });
+
+  it('skips rides not in the park ride list', () => {
+    const map = new Map<string, RideMetadata>([
+      ['other-park-ride', meta('other-park-ride', 33.810, -117.920)],
+      ['far', meta('far', 33.820, -117.910)],
+    ]);
+    const result = findNearestRide(33.810, -117.920, map, parkRides);
+    expect(result?.id).toBe('far');
+  });
+
+  it('returns null when no ride has coordinates', () => {
+    const map = new Map<string, RideMetadata>([
+      ['noloc', { rideId: 'noloc', parkId: 'p', name: 'No Coords', lat: null, lng: null, source: 'manual' }],
+    ]);
+    expect(findNearestRide(33.810, -117.920, map, parkRides)).toBeNull();
+  });
+
+  it('returns null when the metadata map is empty', () => {
+    expect(findNearestRide(33.810, -117.920, new Map(), parkRides)).toBeNull();
+  });
+});
+
 describe('buildRecommendations — happy path', () => {
   it('returns LLM-picked recs when Bedrock succeeds', async () => {
     const rides = [
-      makeRide('curr', 'Current Ride', null), // user is here
+      makeRide('curr', 'Current Ride', null),
       makeRide('a', 'Ride A', 20, 3),
       makeRide('b', 'Ride B', 10, 5),
     ];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
     mockEnsureMeta.mockResolvedValue(new Map([
-      ['curr', { rideId: 'curr', parkId: 'p', name: 'Current Ride', lat: 33.81, lng: -117.92, source: 'manual' }],
-      ['a', { rideId: 'a', parkId: 'p', name: 'A', lat: 33.812, lng: -117.92, source: 'manual' }],
-      ['b', { rideId: 'b', parkId: 'p', name: 'B', lat: 33.811, lng: -117.918, source: 'manual' }],
+      ['curr', meta('curr', USER_LAT, USER_LNG, 'Current Ride')],
+      ['a',    meta('a',    33.812, -117.92,  'A')],
+      ['b',    meta('b',    33.811, -117.918, 'B')],
     ]));
     mockInvoke.mockResolvedValue(JSON.stringify({
       recommendations: [
@@ -186,24 +248,25 @@ describe('buildRecommendations — happy path', () => {
       ],
     }));
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
 
     expect(res.degraded).toBe(false);
     expect(res.recommendations).toHaveLength(2);
     expect(res.recommendations[0].rideId).toBe('b');
     expect(res.recommendations[0].oneLiner).toBe('Top pick');
     expect(res.currentRide.id).toBe('curr');
-    expect(res.currentRide.lat).toBe(33.81);
+    expect(res.currentRide.lat).toBe(USER_LAT);
     expect(res.lastUpdated).toBe('2026-05-22T18:00:00Z');
   });
 
-  it('excludes the user\'s current ride from candidates even if Bedrock tries to recommend it', async () => {
+  it('excludes the nearest ride from candidates even if Bedrock tries to recommend it', async () => {
     const rides = [
       makeRide('curr', 'Current', null),
       makeRide('a', 'A', 10, 5),
     ];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
-    mockEnsureMeta.mockResolvedValue(new Map());
+    // 'curr' is at USER_LAT/LNG → nearest → excluded from candidates
+    mockEnsureMeta.mockResolvedValue(currMeta());
     mockInvoke.mockResolvedValue(JSON.stringify({
       recommendations: [
         { rideId: 'curr', oneLiner: 'Try me again!', paragraph: 'Bad model.' },
@@ -211,7 +274,7 @@ describe('buildRecommendations — happy path', () => {
       ],
     }));
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     expect(res.recommendations.map(r => r.rideId)).toEqual(['a']);
   });
 });
@@ -224,13 +287,13 @@ describe('buildRecommendations — degraded paths', () => {
       makeRide('b', 'B', 20, 5),
     ];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
-    mockEnsureMeta.mockResolvedValue(new Map());
+    mockEnsureMeta.mockResolvedValue(currMeta());
     mockInvoke.mockRejectedValue(new Error('Bedrock down'));
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
 
     expect(res.degraded).toBe(true);
-    // top-by-score order: b(5) before a(3)
+    // top-by-score order: b(5) before a(3); curr excluded as nearest ride
     expect(res.recommendations.map(r => r.rideId)).toEqual(['b', 'a']);
     expect(res.recommendations[0].oneLiner).toBe('Recommended based on current waits.');
   });
@@ -241,10 +304,10 @@ describe('buildRecommendations — degraded paths', () => {
       makeRide('a', 'A', 10, 3),
     ];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
-    mockEnsureMeta.mockResolvedValue(new Map());
+    mockEnsureMeta.mockResolvedValue(currMeta());
     mockInvoke.mockResolvedValue('not json at all');
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     expect(res.degraded).toBe(true);
     expect(res.recommendations).toHaveLength(1);
   });
@@ -257,7 +320,7 @@ describe('buildRecommendations — degraded paths', () => {
     mockFetchPark.mockResolvedValue(makeParkData(rides));
     mockEnsureMeta.mockResolvedValue(new Map());
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     expect(res.degraded).toBe(false);
     expect(res.recommendations).toEqual([]);
     expect(mockInvoke).not.toHaveBeenCalled();
@@ -274,7 +337,7 @@ describe('buildRecommendations — degraded paths', () => {
       recommendations: [{ rideId: 'a', oneLiner: 'ok', paragraph: 'ok' }],
     }));
 
-    const res = await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     expect(res.degraded).toBe(false);
     expect(res.recommendations[0].walkMinutes).toBeNull();
   });
@@ -287,7 +350,7 @@ describe('buildRecommendations — persona injection', () => {
       makeRide('a', 'Ride A', 10, 3),
     ];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
-    mockEnsureMeta.mockResolvedValue(new Map());
+    mockEnsureMeta.mockResolvedValue(currMeta());
     mockInvoke.mockResolvedValue(JSON.stringify({
       recommendations: [{ rideId: 'a', oneLiner: 'ok', paragraph: 'ok' }],
     }));
@@ -295,14 +358,14 @@ describe('buildRecommendations — persona injection', () => {
 
   it('uses the default persona when no persona is provided', async () => {
     setupHappyPark();
-    await buildRecommendations({ park: 'disneyland', currentRideId: 'curr' });
+    await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     const [systemPrompt] = mockInvoke.mock.calls[0];
     expect(systemPrompt).toContain('Club 32 Generic Guest');
   });
 
   it('uses the default persona when persona is null', async () => {
     setupHappyPark();
-    await buildRecommendations({ park: 'disneyland', currentRideId: 'curr', persona: null });
+    await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG, persona: null });
     const [systemPrompt] = mockInvoke.mock.calls[0];
     expect(systemPrompt).toContain('Club 32 Generic Guest');
   });
@@ -311,7 +374,8 @@ describe('buildRecommendations — persona injection', () => {
     setupHappyPark();
     await buildRecommendations({
       park: 'disneyland',
-      currentRideId: 'curr',
+      userLat: USER_LAT,
+      userLng: USER_LNG,
       persona: {
         tripDuration: '1-day',
         youngestAge: 4,
@@ -333,7 +397,8 @@ describe('buildRecommendations — persona injection', () => {
     setupHappyPark();
     await buildRecommendations({
       park: 'disneyland',
-      currentRideId: 'curr',
+      userLat: USER_LAT,
+      userLng: USER_LNG,
       persona: {
         tripDuration: null,
         youngestAge: null,

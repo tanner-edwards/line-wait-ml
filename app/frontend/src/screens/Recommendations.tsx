@@ -1,15 +1,10 @@
-// Recommendations landing screen.
+// Recommendations screen — v4.
 //
-// Launch flow (per v2 spec):
-//   1. App mounts → RideProvider fires /v0/waits (the source of ride data
-//      for both tabs).
-//   2. This screen reads persisted selection from AsyncStorage.
-//      - none           → open picker
-//      - < 1 hour old   → skip picker, fetch /v2/recommendations using it
-//      - ≥ 1 hour old   → open picker pre-filled
-//   3. After picker submit: save selection, fire /v2/recommendations.
-//   4. Show 5 cards + "More" button → reveals 5 more from the same payload.
-//   5. Header "Change location" button always re-opens picker pre-filled.
+// Location flow:
+//   GPS ready  → auto-fetch with user coordinates; backend derives nearest ride
+//   GPS denied → "Location access denied" prompt
+//   Out of park → "You don't appear to be in the park" + Retry
+//   Debug mode → ride picker (OPERATING rides only) injects fake GPS coords
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -23,22 +18,17 @@ import {
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { ApiError, fetchRecommendations } from '../api';
-import { ParkSlug, RecommendationsResponse, Ride } from '../types';
+import { DailyContext, ParkSlug, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
-import { useLocation } from '../context/LocationContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
+import { useLocation } from '../context/LocationContext';
+import { useDebugMode } from '../context/DebugModeContext';
 import { ParkTogglePill } from '../components/ParkTogglePill';
-import {
-  PersistedSelection,
-  getLastSelection,
-  isStale,
-  setLastSelection,
-} from '../utils/recommendationsStorage';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { formatHHMM } from '../timestamp';
-
+import { haversineMeters } from '../grouping';
 
 const LOADING_LINES = [
   'Looking around the park…',
@@ -47,67 +37,66 @@ const LOADING_LINES = [
   'Checking who has elbow room…',
 ];
 
-export function Recommendations(): React.ReactElement {
-  const {
-    data,
-    error: waitsError,
-    loading: waitsLoading,
-    ridesById,
-  } = useRides();
+const DLR_CENTER = { lat: 33.8121, lng: -117.9190 };
+const DCA_CENTER = { lat: 33.8058, lng: -117.9218 };
 
-  const { setLocation } = useLocation();
+function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] | undefined): ParkSlug {
+  if (dailyParks === 'disneyland') return 'disneyland';
+  if (dailyParks === 'california-adventure') return 'california-adventure';
+  const dlr = haversineMeters(lat, lng, DLR_CENTER.lat, DLR_CENTER.lng);
+  const dca = haversineMeters(lat, lng, DCA_CENTER.lat, DCA_CENTER.lng);
+  return dlr <= dca ? 'disneyland' : 'california-adventure';
+}
+
+export function Recommendations(): React.ReactElement {
+  const { data, error: waitsError, loading: waitsLoading, ridesById } = useRides();
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
-  const [selection, setSelection] = useState<PersistedSelection | null>(null);
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const { coords, status, retry, setDebugCoords } = useLocation();
+  const { debugMode } = useDebugMode();
+
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
+  const [debugPickerOpen, setDebugPickerOpen] = useState(false);
+
   const inFlightAbort = useRef<AbortController | null>(null);
   const loadMoreAbort = useRef<AbortController | null>(null);
-  const [initialized, setInitialized] = useState(false);
-  // Picked once when the loading state appears, so the wording feels fresh
-  // each fetch without re-rolling on every render mid-spinner.
+
   const loadingLine = useMemo(
     () => LOADING_LINES[Math.floor(Math.random() * LOADING_LINES.length)],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [recsLoading]
   );
 
-  // ridesByPark: derive from RideContext.data for the picker.
-  const ridesByPark = useMemo<Record<ParkSlug, Ride[]>>(() => {
-    const out: Record<ParkSlug, Ride[]> = {
-      'disneyland': [],
-      'california-adventure': [],
-    };
+  // Rides filtered to OPERATING with a real wait — used by the debug picker
+  // so the list is short and every entry is a plausible "I'm here" location.
+  const ridesByParkForPicker = useMemo<Record<ParkSlug, Ride[]>>(() => {
+    const out: Record<ParkSlug, Ride[]> = { disneyland: [], 'california-adventure': [] };
     if (!data) return out;
     for (const slug of Object.keys(out) as ParkSlug[]) {
       const parkData = data.parks.find(p => p.park === parkDisplayName(slug));
       if (parkData && !('error' in parkData)) {
-        out[slug] = parkData.rides;
+        out[slug] = parkData.rides.filter(r => r.status === 'OPERATING' && r.currentWait !== null);
       }
     }
     return out;
   }, [data]);
 
-  // A park is "open" when at least one ride is OPERATING with a non-null
-  // current wait. Pre-opening artifacts (Disney Gallery, walkthroughs) show
-  // up as OPERATING with null waits — they shouldn't count as "park open."
   const isParkOpen = useCallback((park: ParkSlug): boolean => {
-    return ridesByPark[park].some(r => r.status === 'OPERATING' && r.currentWait !== null);
-  }, [ridesByPark]);
+    const parkData = data?.parks.find(p => p.park === parkDisplayName(park));
+    if (!parkData || 'error' in parkData) return false;
+    return parkData.rides.some(r => r.status === 'OPERATING' && r.currentWait !== null);
+  }, [data]);
 
-  const runFetch = useCallback(async (park: ParkSlug, currentRideId: string) => {
-    // Cancel any prior in-flight call so a re-pick doesn't race the previous one.
+  const runFetch = useCallback(async (lat: number, lng: number, park: ParkSlug) => {
     inFlightAbort.current?.abort();
     const controller = new AbortController();
     inFlightAbort.current = controller;
 
-    // Gate: don't fire the LLM request when the park is currently closed.
-    // (Time-travel mode — when added — should bypass this gate; today
-    // Recommendations has no time-travel UI so the gate is unconditional.)
     if (!isParkOpen(park)) {
       setRecs(null);
       setRecsError(null);
@@ -119,11 +108,9 @@ export function Recommendations(): React.ReactElement {
     setRecsError(null);
     setLoadMoreError(null);
     setExpandedRideId(null);
-    // Initial fetch — cancel any in-flight "show more" since the rec list
-    // is about to be replaced anyway.
     loadMoreAbort.current?.abort();
     try {
-      const res = await fetchRecommendations({ park, currentRideId, persona, signal: controller.signal });
+      const res = await fetchRecommendations({ park, userLat: lat, userLng: lng, persona, signal: controller.signal });
       if (controller.signal.aborted) return;
       setRecs(res);
     } catch (err) {
@@ -135,12 +122,9 @@ export function Recommendations(): React.ReactElement {
     }
   }, [isParkOpen, persona]);
 
-  // "Show more" — fetches the next batch from the backend, telling it which
-  // ride IDs we already have so it doesn't repeat them. New recs are
-  // appended to the existing list; `hasMore` on the new response decides
-  // whether the button stays visible.
   const loadMore = useCallback(async () => {
-    if (!recs || !selection) return;
+    if (!recs || !coords) return;
+    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
     loadMoreAbort.current?.abort();
     const controller = new AbortController();
     loadMoreAbort.current = controller;
@@ -149,8 +133,9 @@ export function Recommendations(): React.ReactElement {
     setLoadMoreError(null);
     try {
       const res = await fetchRecommendations({
-        park: selection.park,
-        currentRideId: selection.currentRideId,
+        park,
+        userLat: coords.lat,
+        userLng: coords.lng,
         persona,
         excludeRideIds: recs.recommendations.map(r => r.rideId),
         signal: controller.signal,
@@ -159,8 +144,6 @@ export function Recommendations(): React.ReactElement {
       setRecs(prev => prev
         ? {
             ...res,
-            // Keep the original currentRide/lastUpdated/degraded; only merge
-            // in the new picks. hasMore comes from the latest response.
             currentRide: prev.currentRide,
             lastUpdated: prev.lastUpdated,
             degraded: prev.degraded,
@@ -176,48 +159,31 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
-  }, [recs, selection, persona]);
+  }, [recs, coords, dailyContext, persona]);
 
-  // 1. On mount, read persisted selection and decide whether to open the picker.
-  // (Placed after runFetch so the effect can call it.)
+  // Stable key derived from coordinates — changes only when GPS resolves or
+  // debug coords are set, not on every context re-render.
+  const coordsKey = coords ? `${coords.lat.toFixed(6)},${coords.lng.toFixed(6)}` : null;
+
+  // Fetch whenever we have a ready location, or when the persona changes.
   useEffect(() => {
-    (async () => {
-      const saved = await getLastSelection();
-      setSelection(saved);
-      if (saved) setLocation({ park: saved.park, currentRideId: saved.currentRideId });
-      if (!saved) {
-        setPickerOpen(true);
-      } else if (isStale(saved)) {
-        setPickerOpen(true);
-      } else {
-        // Fresh enough — auto-fetch with the saved selection.
-        void runFetch(saved.park, saved.currentRideId);
-      }
-      setInitialized(true);
-    })();
+    if (status !== 'ready' || !coords) return;
+    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
+    void runFetch(coords.lat, coords.lng, park);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [coordsKey, status, persona, dailyContext?.parks]);
 
-  // Re-fetch when the persona changes (e.g. user edited it on the Profile tab).
-  // Gated on `initialized` so the mount-time init effect drives the first call,
-  // not this one. Selection-less state (picker open) bypasses.
-  useEffect(() => {
-    if (!initialized) return;
-    if (!selection) return;
-    void runFetch(selection.park, selection.currentRideId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persona]);
+  const handleDebugPickerSubmit = useCallback((_park: ParkSlug, rideId: string) => {
+    setDebugPickerOpen(false);
+    const ride = ridesById.get(rideId);
+    if (ride?.lat != null && ride?.lng != null) {
+      setDebugCoords(ride.lat, ride.lng);
+    }
+  }, [ridesById, setDebugCoords]);
 
-  const handlePickerSubmit = useCallback(async (park: ParkSlug, currentRideId: string) => {
-    setPickerOpen(false);
-    await setLastSelection(park, currentRideId);
-    setSelection({ park, currentRideId, timestamp: Date.now() });
-    setLocation({ park, currentRideId });
-    void runFetch(park, currentRideId);
-  }, [runFetch]);
+  // --- render ---
 
-  // Top-level branch ordering: error states first, then loading, then data.
-  if (!initialized || waitsLoading && !data) {
+  if (waitsLoading && !data) {
     return (
       <SafeAreaView style={styles.center} testID="recs-loading-waits">
         <ActivityIndicator size="large" />
@@ -239,17 +205,56 @@ export function Recommendations(): React.ReactElement {
     );
   }
 
-  const currentRideName =
-    selection ? ridesById.get(selection.currentRideId)?.name ?? selection.currentRideId : '—';
+  // GPS denied — no location access.
+  if (!debugMode && status === 'denied') {
+    return (
+      <SafeAreaView style={styles.errorContainer} testID="recs-location-denied">
+        <Text style={styles.errorTitle}>Location access denied</Text>
+        <Text style={styles.errorBody}>
+          Club 32 needs your location to recommend what to ride next.
+        </Text>
+        <Text style={styles.errorHint}>
+          Enable location in your device settings and return to this tab.
+        </Text>
+        <Pressable style={styles.retryButton} onPress={retry} testID="recs-retry-location">
+          <Text style={styles.retryButtonText}>Try again</Text>
+        </Pressable>
+        <StatusBar style="auto" />
+      </SafeAreaView>
+    );
+  }
+
+  // Outside park boundaries.
+  if (!debugMode && status === 'out-of-park') {
+    return (
+      <SafeAreaView style={styles.errorContainer} testID="recs-out-of-park">
+        <Text style={styles.errorTitle}>You don't appear to be in the park</Text>
+        <Text style={styles.errorBody}>
+          Recommendations are available once you're inside Disneyland or California Adventure.
+        </Text>
+        <Pressable style={styles.retryButton} onPress={retry} testID="recs-retry-location">
+          <Text style={styles.retryButtonText}>Check again</Text>
+        </Pressable>
+        <StatusBar style="auto" />
+      </SafeAreaView>
+    );
+  }
+
+  // Debug mode: no coords yet → force picker open.
+  const needsDebugPick = debugMode && !coords;
+  const derivedPark = coords ? derivePark(coords.lat, coords.lng, dailyContext?.parks) : null;
 
   return (
     <SafeAreaView style={styles.container} testID="recs-loaded">
       <View style={styles.header}>
         <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Recommendations</Text>
-          {selection ? (
+          <View style={styles.titleRow}>
+            <Text style={styles.headerTitle}>Recommendations</Text>
+            {debugMode && <Text style={styles.debugBadge}>DEBUG</Text>}
+          </View>
+          {recs && !recsLoading ? (
             <Text style={styles.headerSubtitle} numberOfLines={1}>
-              From {currentRideName} · {parkDisplayName(selection.park)}
+              Near {recs.currentRide.name} · {parkDisplayName(recs.currentRide.park)}
             </Text>
           ) : null}
           {recs && !recsLoading ? (
@@ -258,26 +263,34 @@ export function Recommendations(): React.ReactElement {
             </Text>
           ) : null}
         </View>
-        <Pressable
-          onPress={() => setPickerOpen(true)}
-          style={styles.changeButton}
-          testID="recs-change-location"
-        >
-          <Text style={styles.changeButtonText}>Change location</Text>
-        </Pressable>
+        {debugMode && (
+          <Pressable
+            onPress={() => setDebugPickerOpen(true)}
+            style={styles.changeButton}
+            testID="recs-change-location"
+          >
+            <Text style={styles.changeButtonText}>Change location</Text>
+          </Pressable>
+        )}
       </View>
+
       <View style={styles.toggleRow}>
         <ParkTogglePill />
       </View>
 
-      {selection && !isParkOpen(selection.park) ? (
+      {(status === 'idle' || status === 'locating') && !debugMode ? (
+        <View style={styles.center} testID="recs-locating">
+          <ActivityIndicator size="large" />
+          <Text style={styles.loadingHint}>Locating you…</Text>
+        </View>
+      ) : derivedPark && !isParkOpen(derivedPark) ? (
         <View style={styles.errorContainer} testID="recs-park-closed">
-          <Text style={styles.errorTitle}>{parkDisplayName(selection.park)} is closed</Text>
+          <Text style={styles.errorTitle}>{parkDisplayName(derivedPark)} is closed</Text>
           <Text style={styles.errorBody}>
             We don't recommend rides when the park isn't open — wait times aren't available yet.
           </Text>
           <Text style={styles.errorHint}>
-            Check back after the park opens (typically 8 AM PT). You can change locations in the meantime.
+            Check back after the park opens (typically 8 AM PT).
           </Text>
         </View>
       ) : recsLoading ? (
@@ -289,10 +302,10 @@ export function Recommendations(): React.ReactElement {
         <View style={styles.errorContainer} testID="recs-error">
           <Text style={styles.errorTitle}>Couldn't get recommendations</Text>
           <Text style={styles.errorBody}>{recsError}</Text>
-          {selection ? (
+          {coords && derivedPark ? (
             <Pressable
               style={styles.retryButton}
-              onPress={() => void runFetch(selection.park, selection.currentRideId)}
+              onPress={() => void runFetch(coords.lat, coords.lng, derivedPark)}
               testID="recs-retry"
             >
               <Text style={styles.retryButtonText}>Try again</Text>
@@ -313,18 +326,20 @@ export function Recommendations(): React.ReactElement {
         />
       ) : null}
 
-      <PickerSheet
-        visible={pickerOpen}
-        initialPark={selection?.park ?? null}
-        initialRideId={selection?.currentRideId ?? null}
-        ridesByPark={ridesByPark}
-        restrictToParks={dailyContext?.parks ?? 'both'}
-        onSubmit={handlePickerSubmit}
-        onClose={() => {
-          // Only allow dismissing without picking if a selection already exists.
-          if (selection) setPickerOpen(false);
-        }}
-      />
+      {/* Debug picker — only shown in debug mode */}
+      {debugMode && (
+        <PickerSheet
+          visible={debugPickerOpen || needsDebugPick}
+          initialPark={derivedPark}
+          initialRideId={null}
+          ridesByPark={ridesByParkForPicker}
+          restrictToParks={dailyContext?.parks ?? 'both'}
+          onSubmit={handleDebugPickerSubmit}
+          onClose={() => {
+            if (coords) setDebugPickerOpen(false);
+          }}
+        />
+      )}
 
       <StatusBar style="auto" />
     </SafeAreaView>
@@ -418,7 +433,18 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   headerLeft: { flex: 1, paddingRight: 12 },
+  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' },
+  debugBadge: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#fff',
+    backgroundColor: '#f5a623',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
   headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 },
   headerAsOf: { fontSize: 11, color: '#888', marginTop: 2, fontStyle: 'italic' },
   changeButton: {
@@ -428,9 +454,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f4f4f7',
   },
   changeButtonText: { color: '#444', fontSize: 13, fontWeight: '600' },
-
   loadingHint: { color: '#666', marginTop: 12, fontSize: 13 },
-
   errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorTitle: { fontSize: 16, fontWeight: '700', color: '#c41e3a', marginBottom: 6 },
   errorBody: { fontSize: 14, color: '#444', textAlign: 'center' },
@@ -443,11 +467,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#222',
   },
   retryButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-
   emptyContainer: { padding: 32, alignItems: 'center' },
   emptyTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 6 },
   emptyBody: { fontSize: 13, color: '#666', textAlign: 'center' },
-
   degradedBanner: {
     backgroundColor: '#fff7e0',
     paddingHorizontal: 16,
@@ -456,7 +478,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   degradedText: { fontSize: 12, color: '#7a5b00' },
-
   moreButton: {
     margin: 16,
     paddingVertical: 14,
@@ -474,14 +495,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   moreLoadingText: { fontSize: 13, color: '#666' },
-  moreErrorRow: {
-    margin: 16,
-    alignItems: 'center',
-  },
-  moreErrorText: {
-    fontSize: 13,
-    color: '#7a1f1f',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
+  moreErrorRow: { margin: 16, alignItems: 'center' },
+  moreErrorText: { fontSize: 13, color: '#7a1f1f', marginBottom: 8, textAlign: 'center' },
 });

@@ -57,7 +57,7 @@ export function Home() {
   // its own UI state (expanded debug rows + time-travel modal). The auto-
   // refresh and foreground-refresh effects moved to the provider too.
   const { data, error, loading, refreshing, lastRefreshedAt, refresh, ridesById } = useRides();
-  const { selection: locationSelection } = useLocation();
+  const { coords: locationCoords } = useLocation();
   const { context: dailyContext } = useDailyContext();
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
@@ -93,13 +93,7 @@ export function Home() {
     );
   }
 
-  const originRide = locationSelection ? ridesById.get(locationSelection.currentRideId) : undefined;
-  const origin =
-    originRide?.lat != null && originRide?.lng != null
-      ? { lat: originRide.lat, lng: originRide.lng }
-      : null;
-
-  const walkOrigin = sortBy === 'distance' ? origin : null;
+  const walkOrigin = sortBy === 'distance' ? locationCoords : null;
 
   // Apply daily-park filter before flattening so the list (and any sort)
   // only sees rides in the selected park scope.
@@ -109,7 +103,7 @@ export function Home() {
 
   const items: ListItem[] = scopedData
     ? sortBy
-      ? flattenSorted(scopedData, sortBy, origin)
+      ? flattenSorted(scopedData, sortBy, locationCoords)
       : flattenForList(scopedData)
     : [];
   const lastUpdate = lastRefreshedAt
@@ -197,7 +191,7 @@ export function Home() {
       <SortMenu
         visible={showSortMenu}
         current={sortBy}
-        distanceAvailable={locationSelection !== null}
+        distanceAvailable={locationCoords !== null}
         onSelect={setSortBy}
         onClose={() => setShowSortMenu(false)}
       />
