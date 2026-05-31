@@ -4,7 +4,7 @@ import {
   findNearestRide,
   parseAndValidate,
 } from './handler';
-import { Ride, ParkData, RideMetadata } from '../types';
+import { Ride, ParkData, RideMetadata, HistoricalBucket } from '../types';
 import * as mainHandler from '../handler';
 import * as rideMetadataModule from './rideMetadata';
 import * as bedrockClient from './bedrockClient';
@@ -87,16 +87,42 @@ describe('parseAndValidate', () => {
     { ride: makeRide('r2', 'Ride 2', 20), walkMinutes: 7, walkYards: 560 },
   ];
 
-  it('parses a well-formed response and attaches walkMinutes', () => {
+  it('parses a well-formed response, attaches walkMinutes, and computes arrivalWait server-side', () => {
     const text = JSON.stringify({
       recommendations: [
-        { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.' },
+        // LLM emits arrivalWait: 999 — the server should ignore it and compute its own.
+        { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', arrivalWait: 999 },
       ],
     });
     const recs = parseAndValidate(text, candidates);
+    // r1 has currentWait=10, walkMinutes=3, no historical average → flat → arrivalWait=10
+    // (paragraph is dropped from the output shape — see promptBuilder TODO(paragraph))
     expect(recs).toEqual([
-      { rideId: 'r1', oneLiner: 'Closest, line is short', paragraph: 'Three-minute walk.', walkMinutes: 3, walkYards: 240, arrivalWait: null },
+      { rideId: 'r1', oneLiner: 'Closest, line is short', walkMinutes: 3, walkYards: 240, arrivalWait: 10 },
     ]);
+  });
+
+  it('uses bucket slope to project arrivalWait when historical data is present', () => {
+    const ha = {
+      dayType: 'weekday' as const,
+      buckets: [
+        { offsetMinutes: 0,   timeSlot: '11:00-11:30', wait: 20, sampleCount: 20 },
+        { offsetMinutes: 30,  timeSlot: '11:30-12:00', wait: 50, sampleCount: 20 },
+        { offsetMinutes: 60,  timeSlot: '12:00-12:30', wait: 60, sampleCount: 20 },
+        { offsetMinutes: 90,  timeSlot: '12:30-13:00', wait: 65, sampleCount: 20 },
+        { offsetMinutes: 120, timeSlot: '13:00-13:30', wait: 70, sampleCount: 20 },
+      ] as [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket],
+    };
+    const candidatesWithHA = [
+      { ride: { ...makeRide('r1', 'Ride 1', 10), historicalAverage: ha }, walkMinutes: 6, walkYards: 480 },
+      { ride: makeRide('r2', 'Ride 2', 20), walkMinutes: 7, walkYards: 560 },
+    ];
+    const text = JSON.stringify({
+      recommendations: [{ rideId: 'r1', oneLiner: 'good pick', paragraph: 'detail' }],
+    });
+    const recs = parseAndValidate(text, candidatesWithHA);
+    // slope = (50 - 20) / 30 = 1 min/min; arrivalWait = 10 + 1 * 6 = 16
+    expect(recs![0].arrivalWait).toBe(16);
   });
 
   it('strips ```json code fences if the model emits them', () => {

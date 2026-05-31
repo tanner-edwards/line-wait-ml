@@ -16,6 +16,7 @@ import {
   Persona,
   Ride,
   RideMetadata,
+  HistoricalAverage,
   Recommendation,
   RecommendationsResponse,
 } from '../types';
@@ -27,8 +28,11 @@ import { personaToText } from './persona';
 import { getParkHours } from './parkHours';
 
 const DEFAULT_FALLBACK_ONE_LINER = 'Recommended based on current waits.';
-const DEFAULT_FALLBACK_PARAGRAPH =
-  "Our scoring system rates this ride positively given current waits, the typical line for this hour, and the projected trend over the next two hours.";
+// [DROPPED] Paragraph fallback string. Removed alongside the LLM paragraph
+// field to halve output tokens. Restore when paragraph comes back as an
+// on-demand fetch. See promptBuilder.ts TODO(paragraph).
+// const DEFAULT_FALLBACK_PARAGRAPH =
+//   "Our scoring system rates this ride positively given current waits, the typical line for this hour, and the projected trend over the next two hours.";
 
 /** Recommendations are batched: each call returns up to BATCH_SIZE picks.
  *  The client fires a second call with excludeRideIds when the user taps
@@ -214,8 +218,34 @@ function formatLocalTime(date: Date): string {
   }).format(date);
 }
 
+/**
+ * Deterministically estimate the wait a guest will encounter when they
+ * physically arrive at the queue. Uses the slope of the first two historical
+ * buckets (t+0 → t+30) to project how much the wait changes over the walk.
+ * Falls back to currentWait when bucket data is absent (flat assumption).
+ * Replaces the LLM's self-reported arrivalWait, which was unreliable
+ * (Claude was computing currentWait + walkMinutes rather than using trends).
+ */
+function computeArrivalWait(
+  currentWait: number | null,
+  walkMinutes: number | null,
+  ha: HistoricalAverage | null,
+): number | null {
+  if (currentWait === null) return null;
+  if (walkMinutes === null) return currentWait;
+  const b0 = ha?.buckets[0]; // t+0
+  const b1 = ha?.buckets[1]; // t+30
+  if (b0?.wait != null && b1?.wait != null && b0.sampleCount > 0 && b1.sampleCount > 0) {
+    const slopePerMin = (b1.wait - b0.wait) / 30;
+    return Math.max(0, Math.round(currentWait + slopePerMin * walkMinutes));
+  }
+  return currentWait;
+}
+
 // Strict JSON validator. Rejects anything not matching the contract.
 // Filters out recs whose rideId isn't in the candidate set. Caps at BATCH_SIZE.
+// arrivalWait is computed server-side via computeArrivalWait — the LLM value
+// is ignored to prevent naive currentWait+walkMinutes arithmetic.
 export function parseAndValidate(
   text: string,
   candidates: RideForPrompt[]
@@ -232,9 +262,7 @@ export function parseAndValidate(
   if (!Array.isArray(recs)) return null;
 
   const candidateIds = new Set(candidates.map(c => c.ride.id));
-  const walkLookup = new Map(
-    candidates.map(c => [c.ride.id, { minutes: c.walkMinutes, yards: c.walkYards }])
-  );
+  const candidateLookup = new Map(candidates.map(c => [c.ride.id, c]));
 
   const valid: Recommendation[] = [];
   for (const entry of recs) {
@@ -242,19 +270,23 @@ export function parseAndValidate(
     const e = entry as Record<string, unknown>;
     if (typeof e.rideId !== 'string') continue;
     if (typeof e.oneLiner !== 'string') continue;
-    if (typeof e.paragraph !== 'string') continue;
+    // [DROPPED] paragraph field check + assignment removed to halve LLM
+    // output tokens. Restore when paragraph comes back as an on-demand
+    // fetch. See promptBuilder.ts TODO(paragraph).
+    // if (typeof e.paragraph !== 'string') continue;
     if (!candidateIds.has(e.rideId)) continue;
-    const walk = walkLookup.get(e.rideId);
-    const arrivalWait = typeof e.arrivalWait === 'number' && Number.isFinite(e.arrivalWait)
-      ? Math.round(e.arrivalWait)
-      : null;
+    const candidate = candidateLookup.get(e.rideId)!;
     valid.push({
       rideId: e.rideId,
       oneLiner: e.oneLiner,
-      paragraph: e.paragraph,
-      walkMinutes: walk?.minutes ?? null,
-      walkYards: walk?.yards ?? null,
-      arrivalWait,
+      // paragraph: e.paragraph,
+      walkMinutes: candidate.walkMinutes,
+      walkYards: candidate.walkYards,
+      arrivalWait: computeArrivalWait(
+        candidate.ride.currentWait,
+        candidate.walkMinutes,
+        candidate.ride.historicalAverage ?? null,
+      ),
     });
     if (valid.length >= BATCH_SIZE) break;
   }
@@ -272,7 +304,7 @@ function stripCodeFences(text: string): string {
 /**
  * Deterministic fallback when Bedrock fails or returns garbage.
  * Sorts candidates by score (descending), takes the top BATCH_SIZE, and
- * assigns a generic one-liner + paragraph.
+ * assigns a generic one-liner.
  */
 export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
   const sorted = [...candidates].sort((a, b) => {
@@ -283,9 +315,9 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
   return sorted.slice(0, BATCH_SIZE).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,
     oneLiner: DEFAULT_FALLBACK_ONE_LINER,
-    paragraph: DEFAULT_FALLBACK_PARAGRAPH,
+    // paragraph: DEFAULT_FALLBACK_PARAGRAPH,  // [DROPPED] see promptBuilder.ts TODO(paragraph)
     walkMinutes,
     walkYards,
-    arrivalWait: null,
+    arrivalWait: computeArrivalWait(ride.currentWait, walkMinutes, ride.historicalAverage ?? null),
   }));
 }

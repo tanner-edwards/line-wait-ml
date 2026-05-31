@@ -57,7 +57,7 @@ export function Home() {
   // its own UI state (expanded debug rows + time-travel modal). The auto-
   // refresh and foreground-refresh effects moved to the provider too.
   const { data, error, loading, refreshing, lastRefreshedAt, refresh, ridesById } = useRides();
-  const { coords: locationCoords } = useLocation();
+  const { coords: locationCoords, status: locationStatus } = useLocation();
   const { context: dailyContext } = useDailyContext();
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
@@ -191,7 +191,7 @@ export function Home() {
       <SortMenu
         visible={showSortMenu}
         current={sortBy}
-        distanceAvailable={locationCoords !== null}
+        distanceAvailable={locationCoords !== null && locationStatus === 'ready'}
         onSelect={setSortBy}
         onClose={() => setShowSortMenu(false)}
       />

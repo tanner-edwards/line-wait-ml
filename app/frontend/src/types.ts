@@ -100,7 +100,10 @@ export type ParkSlug = 'disneyland' | 'california-adventure';
 export interface Recommendation {
   rideId: string;
   oneLiner: string;
-  paragraph: string;
+  // paragraph: string;      // [DROPPED] LLM-generated detail copy shown on expand.
+                              //   Removed to halve LLM output tokens and speed up first paint.
+                              //   May come back via a separate on-demand fetch when the user
+                              //   taps to expand. See backend promptBuilder.ts TODO(paragraph).
   walkMinutes: number | null;
   walkYards: number | null;
   arrivalWait: number | null; // LLM-estimated wait when guest arrives; null when unavailable

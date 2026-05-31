@@ -61,7 +61,8 @@ describe('SYSTEM_PROMPT', () => {
     expect(SYSTEM_PROMPT).toContain('"recommendations"');
     expect(SYSTEM_PROMPT).toContain('"rideId"');
     expect(SYSTEM_PROMPT).toContain('"oneLiner"');
-    expect(SYSTEM_PROMPT).toContain('"paragraph"');
+    // paragraph was removed to cut LLM output tokens; guard against accidental re-add.
+    expect(SYSTEM_PROMPT).not.toContain('"paragraph"');
   });
 
   it('scopes the model to ride recommendations and refuses off-topic input', () => {

@@ -160,7 +160,10 @@ export interface RideMetadata {
 export interface Recommendation {
   rideId: string;
   oneLiner: string;          // shown on the card
-  paragraph: string;         // shown on the detail screen
+  // paragraph: string;      // [DROPPED] LLM-generated detail copy shown on expand.
+                              //   Removed to halve LLM output tokens and speed up first paint.
+                              //   May come back as a separate on-demand endpoint when the
+                              //   user taps to expand. See promptBuilder.ts TODO(paragraph).
   walkMinutes: number | null; // null when either ride lacks lat/lng metadata
   walkYards: number | null;   // null under the same conditions as walkMinutes
   arrivalWait: number | null; // LLM-estimated wait when guest arrives; null when unavailable

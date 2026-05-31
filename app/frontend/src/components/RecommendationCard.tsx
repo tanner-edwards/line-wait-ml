@@ -2,9 +2,10 @@
 // Browse list row — badge, name, current wait, trend arrow, normal-band
 // pill — plus the v2-specific LLM one-liner + walk-time pill.
 //
-// Tap → inline expand to show the LLM's longer paragraph + the existing
-// DebugCard. Matches the Browse tab's expand-in-place pattern so users
-// don't get bounced to a separate page.
+// Tap → inline expand to show the existing DebugCard. (The LLM paragraph
+// that used to render here was dropped to halve LLM output tokens and
+// speed up first paint; see backend promptBuilder.ts TODO(paragraph) for
+// the plan to bring it back via an on-demand fetch.)
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -53,7 +54,12 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
   const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const badge = scoreResult.badge;
-  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
+  // Only show walk-on badge if the arrival wait also stays in walk-on
+  // territory (≤15 min). When arrivalWait is null we can't tell, so we
+  // trust the current-wait signal. This prevents badge/number contradictions
+  // like 🚶 + "~20 min" that appear when a walk-on ride has a long walk.
+  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait)
+    && (rec.arrivalWait === null || rec.arrivalWait <= 15);
   const walkLabel = rec.walkMinutes !== null
     ? `~${rec.walkMinutes} min walk${rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
     : null;
@@ -103,9 +109,14 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
 
       {expanded ? (
         <View testID={`rec-expanded-${rec.rideId}`}>
-          <View style={styles.paragraphContainer}>
+          {/* [DROPPED] LLM paragraph render — removed to halve LLM output
+              tokens and speed up first paint. Bring back when paragraph
+              ships as a separate on-demand fetch. Styles paragraphContainer
+              / paragraph are left in StyleSheet below for the restoration.
+              See backend promptBuilder.ts TODO(paragraph). */}
+          {/* <View style={styles.paragraphContainer}>
             <Text style={styles.paragraph}>{rec.paragraph}</Text>
-          </View>
+          </View> */}
           <DebugCard ride={ride} result={scoreResult} />
         </View>
       ) : null}
