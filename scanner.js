@@ -253,11 +253,15 @@ function scoreRide(ride) {
 
 // --- firestore reads ---
 
-// Reads the most-recent wait_times tick. collect.js writes a batch every
-// ~10 min, so the past 15 minutes catches the latest snapshot plus a buffer.
-// Returns Map<rideId, { ts, parkId, rideId, name, status, wait }>.
+// Reads recent wait_times. The query covers the last 25 minutes — enough
+// for two ticks (collect.js writes every 10 min). Returns a map per ride
+// of { current, previous } where each is { ts, parkId, rideId, name,
+// status, wait } or `previous` is null if only one tick was found.
+// `current` is the most-recent observation; `previous` is the second-
+// most-recent. Used by both trough scoring (current only) and closure /
+// reopen detection (current vs previous status diff).
 async function readLatestSnapshot(db) {
-  const since = new Date(Date.now() - 15 * 60_000);
+  const since = new Date(Date.now() - 25 * 60_000);
   const snap = await db.collection('wait_times')
     .where('timestamp_utc', '>=', since)
     .get();
@@ -269,16 +273,22 @@ async function readLatestSnapshot(db) {
     const ts = d.timestamp_utc?.toMillis
       ? d.timestamp_utc.toMillis()
       : new Date(d.timestamp_utc).getTime();
+    const observation = {
+      ts,
+      parkId: d.park_id,
+      rideId: d.ride_id,
+      name: d.ride_name,
+      status: d.status,
+      wait: d.wait_minutes,
+    };
     const existing = byRide.get(d.ride_id);
-    if (!existing || ts > existing.ts) {
-      byRide.set(d.ride_id, {
-        ts,
-        parkId: d.park_id,
-        rideId: d.ride_id,
-        name: d.ride_name,
-        status: d.status,
-        wait: d.wait_minutes,
-      });
+    if (!existing) {
+      byRide.set(d.ride_id, { current: observation, previous: null });
+    } else if (ts > existing.current.ts) {
+      existing.previous = existing.current;
+      existing.current = observation;
+    } else if (!existing.previous || ts > existing.previous.ts) {
+      existing.previous = observation;
     }
   });
   return byRide;
@@ -342,15 +352,24 @@ async function writeNotificationLog(db, entry) {
 
 // Build the user-facing notification payload. Kept short — the service
 // worker on the device renders this directly via the Notification API.
-function buildPayload({ rideId, rideName, badge }) {
+// The `type` field is what the service worker uses to tag the OS
+// notification, so closure/reopen/trough for the same ride show as
+// separate cards rather than collapsing into one.
+function buildPayload({ type, rideId, rideName, badge = null }) {
   const title = rideName ?? 'Club 32';
   let body;
-  if (badge === 'star') {
-    body = `${rideName} just hit a rare low — head over before it climbs.`;
+  if (type === 'trough') {
+    body = badge === 'star'
+      ? `${rideName} just hit a rare low — head over before it climbs.`
+      : `${rideName} is looking like a good window right now.`;
+  } else if (type === 'closure') {
+    body = `${rideName} just went down — you may want to pivot.`;
+  } else if (type === 'reopen') {
+    body = `${rideName} just reopened — a short window may open before crowds catch on.`;
   } else {
-    body = `${rideName} is looking like a good window right now.`;
+    body = '';
   }
-  return { title, body, rideId, type: 'trough', badge };
+  return { title, body, rideId, type, badge };
 }
 
 // Sends a Web Push to the device's stored subscription. Returns
@@ -390,6 +409,52 @@ async function nullDeviceToken(db, deviceId) {
   );
 }
 
+// Shared fire path used by all three notification types. Cooldown check,
+// push send, notification_log write, expired-subscription handling, and
+// a single log line are all encapsulated here so the main loop stays
+// readable.
+async function fireNotification({ db, device, currentRide, type, badge = null }) {
+  const { deviceId } = device;
+  const rideId = currentRide.rideId;
+
+  const onCooldown = await isWithinCooldown(db, deviceId, rideId, type);
+  if (onCooldown) {
+    log('skipped_cooldown', { deviceId, rideId, type });
+    return { fired: false, reason: 'cooldown' };
+  }
+
+  const firedAt = new Date().toISOString();
+  const payload = buildPayload({ type, rideId, rideName: currentRide.name, badge });
+  const result = await sendPush(device, payload);
+  await writeNotificationLog(db, {
+    deviceId,
+    rideId,
+    rideName: currentRide.name,
+    type,
+    badge,
+    firedAt,
+    expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+    currentWait: currentRide.wait,
+    delivered: result.sent,
+    deliveryError: result.sent ? null : result.reason,
+  });
+  if (result.expired) {
+    await nullDeviceToken(db, deviceId);
+    log('expired_subscription', { deviceId, rideId });
+  }
+  log('fired', {
+    deviceId,
+    rideId,
+    rideName: currentRide.name,
+    type,
+    badge,
+    currentWait: currentRide.wait,
+    delivered: result.sent,
+    deliveryError: result.sent ? undefined : result.reason,
+  });
+  return { fired: true };
+}
+
 // --- park-hours gate ---
 
 // Heuristic copy of the frontend's isParkOpen check (Recommendations.tsx):
@@ -398,7 +463,8 @@ async function nullDeviceToken(db, deviceId) {
 // Gallery, walkthroughs) show as OPERATING with null waits — they don't
 // count.
 function isParkOpen(parkId, snapshot) {
-  for (const ride of snapshot.values()) {
+  for (const obs of snapshot.values()) {
+    const ride = obs.current;
     if (ride.parkId === parkId && ride.status === 'OPERATING' && ride.wait !== null) {
       return true;
     }
@@ -445,19 +511,44 @@ async function run() {
   log('lookups_loaded', { historicalKeys: historical.size, statsKeys: stats.size });
 
   let considered = 0, fired = 0, skippedCooldown = 0, skippedClosed = 0;
+  let firedTrough = 0, firedClosure = 0, firedReopen = 0;
 
   for (const device of devices) {
-    const { deviceId, mustDoRideIds = [] } = device;
+    const { mustDoRideIds = [] } = device;
     for (const rideId of mustDoRideIds) {
-      const ride = snapshot.get(rideId);
-      if (!ride) continue;
-      if (!openParkIds.includes(ride.parkId)) {
+      const obs = snapshot.get(rideId);
+      if (!obs) continue;
+      const current = obs.current;
+      const previous = obs.previous;
+      if (!openParkIds.includes(current.parkId)) {
         skippedClosed++;
         continue;
       }
+      considered++;
+
+      // --- Status-change detection (Phase C + D) ---
+      // Only fires when we have BOTH a current and previous observation —
+      // skips phantom diffs from collector hiccups. Park-hours gate is
+      // already applied above so we don't fire end-of-day closures.
+      if (previous) {
+        if (previous.status === 'OPERATING' && current.status === 'DOWN') {
+          const r = await fireNotification({ db, device, currentRide: current, type: 'closure' });
+          if (r.fired) { fired++; firedClosure++; }
+          else if (r.reason === 'cooldown') skippedCooldown++;
+        } else if (previous.status === 'DOWN' && current.status === 'OPERATING') {
+          const r = await fireNotification({ db, device, currentRide: current, type: 'reopen' });
+          if (r.fired) { fired++; firedReopen++; }
+          else if (r.reason === 'cooldown') skippedCooldown++;
+        }
+      }
+
+      // --- Trough detection (Phase B) ---
+      // Only score rides that are currently operating; closed rides can't
+      // have a meaningful trough.
+      if (current.status !== 'OPERATING') continue;
 
       const historicalBuckets = buckets.map((bucket, i) => {
-        const v = historical.get(`${ride.parkId}__${rideId}__${bucket}__${dayType}`);
+        const v = historical.get(`${current.parkId}__${rideId}__${bucket}__${dayType}`);
         return {
           offsetMinutes: [0, 30, 60, 90, 120][i],
           timeSlot: bucket,
@@ -466,58 +557,32 @@ async function run() {
         };
       });
       const rideForScoring = {
-        currentWait: ride.wait,
-        status: ride.status,
+        currentWait: current.wait,
+        status: current.status,
         historicalAverage: historicalBuckets[0].wait === null
           ? null
           : { dayType, buckets: historicalBuckets },
-        rideStats: stats.get(`${ride.parkId}__${rideId}__${dayType}`) ?? null,
+        rideStats: stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null,
       };
 
-      considered++;
       const badge = scoreRide(rideForScoring);
       if (badge !== 'star' && badge !== 'go') continue;
 
-      const onCooldown = await isWithinCooldown(db, deviceId, rideId, 'trough');
-      if (onCooldown) {
-        log('skipped_cooldown', { deviceId, rideId, badge });
-        skippedCooldown++;
-        continue;
-      }
-
-      const firedAt = new Date().toISOString();
-      const payload = buildPayload({ rideId, rideName: ride.name, badge });
-      const result = await sendPush(device, payload);
-      await writeNotificationLog(db, {
-        deviceId,
-        rideId,
-        rideName: ride.name,
-        type: 'trough',
-        badge,
-        firedAt,
-        expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
-        currentWait: ride.wait,
-        delivered: result.sent,
-        deliveryError: result.sent ? null : result.reason,
-      });
-      if (result.expired) {
-        await nullDeviceToken(db, deviceId);
-        log('expired_subscription', { deviceId, rideId });
-      }
-      log('fired', {
-        deviceId,
-        rideId,
-        rideName: ride.name,
-        badge,
-        currentWait: ride.wait,
-        delivered: result.sent,
-        deliveryError: result.sent ? undefined : result.reason,
-      });
-      fired++;
+      const r = await fireNotification({ db, device, currentRide: current, type: 'trough', badge });
+      if (r.fired) { fired++; firedTrough++; }
+      else if (r.reason === 'cooldown') skippedCooldown++;
     }
   }
 
-  log('scanner_done', { considered, fired, skippedCooldown, skippedClosed });
+  log('scanner_done', {
+    considered,
+    fired,
+    firedTrough,
+    firedClosure,
+    firedReopen,
+    skippedCooldown,
+    skippedClosed,
+  });
 }
 
 run().catch(err => {
