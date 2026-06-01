@@ -26,3 +26,9 @@ jobs:
       - run: node collect.js && node scanner.js
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          # VAPID credentials for Web Push. When any of the three is missing,
+          # scanner.js falls back to dry-run mode (logs candidates, doesn't
+          # actually send pushes). VAPID_SUBJECT is typically "mailto:you@x".
+          VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}

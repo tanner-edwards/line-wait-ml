@@ -18,6 +18,7 @@
 // both the Lambda and the scanner.
 
 import admin from 'firebase-admin';
+import webpush from 'web-push';
 
 const PARK_TZ = 'America/Los_Angeles';
 
@@ -42,6 +43,23 @@ function getFirestore() {
   admin.initializeApp({ credential: admin.credential.cert(JSON.parse(blob)) });
   firestoreInstance = admin.firestore();
   return firestoreInstance;
+}
+
+// VAPID setup for Web Push. Skipped (push sends become dry-runs) if any of
+// the three secrets are missing — useful for local debugging without keys.
+let pushReady = false;
+function initWebPush() {
+  const publicKey = process.env.VAPID_PUBLIC_KEY;
+  const privateKey = process.env.VAPID_PRIVATE_KEY;
+  const subject = process.env.VAPID_SUBJECT;
+  if (!publicKey || !privateKey || !subject) {
+    log('vapid_missing', {
+      publicKey: !!publicKey, privateKey: !!privateKey, subject: !!subject,
+    });
+    return;
+  }
+  webpush.setVapidDetails(subject, publicKey, privateKey);
+  pushReady = true;
 }
 
 // --- date / bucket helpers (ported from app/backend/src/bucketing.ts and dayType.ts) ---
@@ -322,6 +340,56 @@ async function writeNotificationLog(db, entry) {
   await db.collection('notification_log').doc(docId).set(entry);
 }
 
+// Build the user-facing notification payload. Kept short — the service
+// worker on the device renders this directly via the Notification API.
+function buildPayload({ rideId, rideName, badge }) {
+  const title = rideName ?? 'Club 32';
+  let body;
+  if (badge === 'star') {
+    body = `${rideName} just hit a rare low — head over before it climbs.`;
+  } else {
+    body = `${rideName} is looking like a good window right now.`;
+  }
+  return { title, body, rideId, type: 'trough', badge };
+}
+
+// Sends a Web Push to the device's stored subscription. Returns
+// { sent, reason, expired? }. Failures don't throw — the caller still
+// writes the notification_log entry so cooldown applies (we don't want
+// to retry the same alert every tick when delivery is broken).
+async function sendPush(device, payload) {
+  if (!pushReady) return { sent: false, reason: 'vapid_not_configured' };
+  if (!device.pushToken || device.pushTokenType !== 'web') {
+    return { sent: false, reason: 'no_web_push_token' };
+  }
+  let subscription;
+  try {
+    subscription = JSON.parse(device.pushToken);
+  } catch {
+    return { sent: false, reason: 'bad_token_json' };
+  }
+  try {
+    await webpush.sendNotification(subscription, JSON.stringify(payload), { TTL: 1800 });
+    return { sent: true };
+  } catch (err) {
+    const status = err?.statusCode;
+    if (status === 404 || status === 410) {
+      return { sent: false, reason: 'subscription_expired', expired: true };
+    }
+    return { sent: false, reason: `${status ?? 'unknown'}: ${err?.message ?? String(err)}` };
+  }
+}
+
+// When a subscription expires (404/410), null out the device's pushToken
+// so future scanner runs don't keep trying to deliver to a dead endpoint.
+// The user will see notifications stop and can re-enable from Profile.
+async function nullDeviceToken(db, deviceId) {
+  await db.collection('devices').doc(deviceId).set(
+    { pushToken: null, pushTokenType: null, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
 // --- park-hours gate ---
 
 // Heuristic copy of the frontend's isParkOpen check (Recommendations.tsx):
@@ -346,6 +414,9 @@ async function run() {
   const dayType = classifyDayType(now);
   const buckets = bucketsAroundNow(now);
   log('scanner_start', { now: now.toISOString(), today, dayType, buckets });
+
+  initWebPush();
+  log('vapid_status', { pushReady });
 
   const db = getFirestore();
 
@@ -415,6 +486,8 @@ async function run() {
       }
 
       const firedAt = new Date().toISOString();
+      const payload = buildPayload({ rideId, rideName: ride.name, badge });
+      const result = await sendPush(device, payload);
       await writeNotificationLog(db, {
         deviceId,
         rideId,
@@ -424,16 +497,21 @@ async function run() {
         firedAt,
         expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
         currentWait: ride.wait,
-        // delivered=false marks the dry-run phase — Phase B2 sets this true
-        // after a successful push send.
-        delivered: false,
+        delivered: result.sent,
+        deliveryError: result.sent ? null : result.reason,
       });
+      if (result.expired) {
+        await nullDeviceToken(db, deviceId);
+        log('expired_subscription', { deviceId, rideId });
+      }
       log('fired', {
         deviceId,
         rideId,
         rideName: ride.name,
         badge,
         currentWait: ride.wait,
+        delivered: result.sent,
+        deliveryError: result.sent ? undefined : result.reason,
       });
       fired++;
     }
