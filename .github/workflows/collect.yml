@@ -18,6 +18,11 @@ jobs:
           node-version: '22'
           cache: 'npm'
       - run: npm ci
-      - run: node collect.js
+      # collect.js writes the latest tick; scanner.js reads it back and
+      # decides which armed devices to notify. Chained in one step so both
+      # share the same GitHub Actions billed minute (collector ~20s, scanner
+      # ~20-30s, total well under 60s). The hard rule that collect.js only
+      # writes is preserved — scanner.js is the new read+notify surface.
+      - run: node collect.js && node scanner.js
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}

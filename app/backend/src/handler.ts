@@ -34,6 +34,14 @@ import {
   RideCategory,
   TripDuration,
 } from './types';
+import {
+  PUSH_TOKEN_TYPES,
+  PushTokenType,
+  setArmedDate,
+  setMustDoRideIds,
+  todayInPT,
+  upsertDevice,
+} from './devices/devices';
 
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
@@ -152,7 +160,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'x-api-key, content-type',
-    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
   };
 }
 
@@ -183,6 +191,9 @@ type RouteKind =
   | { kind: 'combined' }
   | { kind: 'park'; slug: ParkSlug }
   | { kind: 'recommendations' }
+  | { kind: 'device-register' }
+  | { kind: 'device-arm'; deviceId: string }
+  | { kind: 'device-must-do'; deviceId: string }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -192,6 +203,15 @@ function routeFromPath(
   if (!path) return { kind: 'unknown' };
   if (path.endsWith('/v2/recommendations') && method === 'POST') {
     return { kind: 'recommendations' };
+  }
+  if (method === 'POST') {
+    if (path.endsWith('/v1/devices')) {
+      return { kind: 'device-register' };
+    }
+    const armMatch = path.match(/\/v1\/devices\/([^/]+)\/arm$/);
+    if (armMatch) return { kind: 'device-arm', deviceId: armMatch[1] };
+    const mustDoMatch = path.match(/\/v1\/devices\/([^/]+)\/must-do$/);
+    if (mustDoMatch) return { kind: 'device-must-do', deviceId: mustDoMatch[1] };
   }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
@@ -224,6 +244,18 @@ export async function handler(
 
   if (route.kind === 'recommendations') {
     return handleRecommendations(event);
+  }
+
+  if (route.kind === 'device-register') {
+    return handleDeviceRegister(event);
+  }
+
+  if (route.kind === 'device-arm') {
+    return handleDeviceArm(route.deviceId);
+  }
+
+  if (route.kind === 'device-must-do') {
+    return handleDeviceMustDo(route.deviceId, event);
   }
 
   const atParam = event.queryStringParameters?.at;
@@ -388,6 +420,110 @@ function parsePersona(raw: unknown): Persona | null {
     : [];
 
   return { tripDuration, youngestAge, ridePreferences, mustDoRideIds, accessibilityNeeds };
+}
+
+// --- /v1/devices/* handlers ---
+
+async function handleDeviceRegister(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  let body: {
+    deviceId?: unknown;
+    pushToken?: unknown;
+    pushTokenType?: unknown;
+    mustDoRideIds?: unknown;
+    notificationsEnabled?: unknown;
+  };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const deviceId = body.deviceId;
+  if (typeof deviceId !== 'string' || deviceId.length === 0) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId must be a non-empty string'));
+  }
+
+  const pushToken =
+    body.pushToken === null || body.pushToken === undefined
+      ? null
+      : typeof body.pushToken === 'string'
+      ? body.pushToken
+      : undefined;
+  if (pushToken === undefined) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'pushToken must be a string or null'));
+  }
+
+  let pushTokenType: PushTokenType | null = null;
+  if (body.pushTokenType !== null && body.pushTokenType !== undefined) {
+    if (typeof body.pushTokenType !== 'string' || !(PUSH_TOKEN_TYPES as readonly string[]).includes(body.pushTokenType)) {
+      return jsonResponse(400, errorBody('BAD_REQUEST', 'pushTokenType must be "web" or "expo"'));
+    }
+    pushTokenType = body.pushTokenType as PushTokenType;
+  }
+
+  const mustDoRideIds = Array.isArray(body.mustDoRideIds)
+    ? body.mustDoRideIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
+    : undefined;
+
+  const notificationsEnabled =
+    typeof body.notificationsEnabled === 'boolean' ? body.notificationsEnabled : undefined;
+
+  try {
+    await upsertDevice(deviceId, {
+      pushToken,
+      pushTokenType,
+      mustDoRideIds,
+      notificationsEnabled,
+    });
+    return jsonResponse(200, { deviceId, ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceArm(deviceId: string): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  const armedDate = todayInPT();
+  try {
+    await setArmedDate(deviceId, armedDate);
+    return jsonResponse(200, { deviceId, armedDate });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceMustDo(
+  deviceId: string,
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  let body: { mustDoRideIds?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+  if (!Array.isArray(body.mustDoRideIds)) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'mustDoRideIds must be an array of strings'));
+  }
+  const rideIds = body.mustDoRideIds.filter(
+    (x): x is string => typeof x === 'string' && x.length > 0
+  );
+  try {
+    await setMustDoRideIds(deviceId, rideIds);
+    return jsonResponse(200, { deviceId, mustDoRideIds: rideIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
 }
 
 // Test helper — clears the module-level caches between tests.

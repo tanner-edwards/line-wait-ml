@@ -14,6 +14,7 @@ import {
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useDebugMode } from '../context/DebugModeContext';
+import { useDevice } from '../context/DeviceContext';
 import { useRides } from '../context/RideContext';
 import {
   AccessibilityNeed,
@@ -54,6 +55,15 @@ export function Profile(): React.ReactElement {
   const { persona, clearPersona } = usePersona();
   const { clearDailyContext } = useDailyContext();
   const { debugMode, setDebugMode } = useDebugMode();
+  const {
+    notificationsEnabled,
+    armedDate,
+    busy: deviceBusy,
+    error: deviceError,
+    enableNotifications,
+    disableNotifications,
+    armForToday,
+  } = useDevice();
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
 
@@ -123,6 +133,49 @@ export function Profile(): React.ReactElement {
           }
           onPress={() => setEditing('accessibilityNeeds')}
         />
+
+        <Pressable
+          onPress={() => {
+            if (deviceBusy) return;
+            void (notificationsEnabled ? disableNotifications() : enableNotifications());
+          }}
+          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+          testID="notifications-toggle"
+          disabled={deviceBusy}
+        >
+          <View style={styles.rowText}>
+            <Text style={styles.rowLabel}>Enable notifications</Text>
+            <Text style={[styles.rowValue, notificationsEnabled && styles.notificationsOn]}>
+              {notificationsEnabled
+                ? 'On — heads-up on your must-do rides'
+                : 'Off'}
+            </Text>
+            {deviceError ? (
+              <Text style={styles.errorText} testID="device-error">{deviceError}</Text>
+            ) : null}
+          </View>
+          <Text style={styles.rowChevron}>›</Text>
+        </Pressable>
+
+        {notificationsEnabled ? (
+          <Pressable
+            onPress={() => {
+              if (deviceBusy) return;
+              void armForToday();
+            }}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            testID="arm-for-today"
+            disabled={deviceBusy}
+          >
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>I'm at the park today</Text>
+              <Text style={[styles.rowValue, armedDate && styles.armedOn]}>
+                {armedDate ? `Armed for ${armedDate}` : 'Tap to arm notifications for today'}
+              </Text>
+            </View>
+            <Text style={styles.rowChevron}>›</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable
           onPress={() => void setDebugMode(!debugMode)}
@@ -207,4 +260,7 @@ const styles = StyleSheet.create({
   resetButtonPressed: { opacity: 0.6 },
   resetText: { color: '#c41e3a', fontSize: 14, fontWeight: '600' },
   debugModeOn: { color: '#f5a623', fontWeight: '600' },
+  notificationsOn: { color: '#4a4ec7', fontWeight: '600' },
+  armedOn: { color: '#2a8f3e', fontWeight: '600' },
+  errorText: { color: '#c41e3a', fontSize: 12, marginTop: 6 },
 });
