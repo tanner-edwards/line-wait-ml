@@ -151,7 +151,20 @@ function classifyDayType(now) {
 // Returns 'star' | 'go' | 'skip' | null. Only 'star' and 'go' fire alerts.
 function scoreRide(ride) {
   const { currentWait, status, historicalAverage, rideStats } = ride;
-  if (currentWait === null || status !== 'OPERATING' || !historicalAverage) return null;
+  if (currentWait === null || status !== 'OPERATING') return null;
+
+  // Absolute floor override (from spec): a non-trivial ride sitting at
+  // walk-on territory is an opportunity, regardless of badge logic. The
+  // p90 >= 15 guard excludes chronic walk-on rides whose p90 stays low —
+  // railroad, Casey Jr, walkthroughs — while still alerting on rides that
+  // *can* get busy (Dumbo, Pirates, Indy etc.) when they hit a trough.
+  // Bypasses the projDelta requirements of the badge logic so this fires
+  // even near park close when the model expects a further drop.
+  if (rideStats && rideStats.p90 >= 15 && currentWait <= 10) {
+    return 'star';
+  }
+
+  if (!historicalAverage) return null;
 
   const [b0, b1, , b3, b4] = historicalAverage.buckets;
   if (b0.sampleCount < 1) return null;
@@ -288,26 +301,24 @@ async function loadArmedDevices(db, today) {
   return list;
 }
 
-// Returns true if a notification of the same (deviceId, rideId, type) has
-// fired within the last 30 minutes.
+// Cooldown check via a deterministic doc ID per (deviceId, rideId, type).
+// The doc holds the LATEST fire — each new fire overwrites it. This avoids
+// the composite index a multi-equality query would otherwise need, and
+// reduces cooldown checks to a single `get()`.
+function cooldownDocId(deviceId, rideId, type) {
+  return `${deviceId}__${rideId}__${type}`;
+}
+
 async function isWithinCooldown(db, deviceId, rideId, type) {
-  const cutoff = new Date(Date.now() - 30 * 60_000).toISOString();
-  const snap = await db.collection('notification_log')
-    .where('deviceId', '==', deviceId)
-    .where('rideId', '==', rideId)
-    .where('type', '==', type)
-    .where('firedAt', '>=', cutoff)
-    .limit(1)
-    .get();
-  return !snap.empty;
+  const doc = await db.collection('notification_log').doc(cooldownDocId(deviceId, rideId, type)).get();
+  if (!doc.exists) return false;
+  const firedAt = doc.data()?.firedAt;
+  if (!firedAt) return false;
+  return Date.now() - new Date(firedAt).getTime() < 30 * 60_000;
 }
 
 async function writeNotificationLog(db, entry) {
-  // Doc ID is collision-resistant by minute. Two scanner runs in the same
-  // minute (rare — manual re-trigger) would overwrite the same record,
-  // which is fine: the effective state is identical.
-  const minute = entry.firedAt.slice(0, 16).replace(/[-:T]/g, '');
-  const docId = `${entry.deviceId}__${entry.rideId}__${entry.type}__${minute}`;
+  const docId = cooldownDocId(entry.deviceId, entry.rideId, entry.type);
   await db.collection('notification_log').doc(docId).set(entry);
 }
 
