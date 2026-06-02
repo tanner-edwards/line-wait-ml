@@ -336,8 +336,14 @@ async function loadRideStats(db) {
   const map = new Map();
   snap.forEach(doc => {
     const d = doc.data();
+    // ride_stats docs written before p50 was added (early cron runs) are
+    // missing that field. Fall back to the midpoint of p10/p90 — matches
+    // the same defensive logic the backend's rideStats.ts uses.
+    const p10 = d.p10 ?? 0;
+    const p90 = d.p90 ?? 0;
+    const p50 = d.p50 ?? Math.round((p10 + p90) / 2);
     map.set(`${d.parkId}__${d.rideId}__${d.dayType}`, {
-      p10: d.p10, p50: d.p50, p90: d.p90, sampleCount: d.sampleCount,
+      p10, p50, p90, sampleCount: d.sampleCount ?? 0,
     });
   });
   return map;
@@ -392,7 +398,22 @@ async function isWithinCooldown(db, deviceId, rideId, type) {
 
 async function writeNotificationLog(db, entry) {
   const docId = cooldownDocId(entry.deviceId, entry.rideId, entry.type);
-  await db.collection('notification_log').doc(docId).set(entry);
+  // Firestore rejects `undefined` anywhere in the document. Strip
+  // (rather than convert to null) so absent fields stay absent on
+  // overwrite — keeps the schema clean as we add/remove extras.
+  await db.collection('notification_log').doc(docId).set(stripUndefined(entry));
+}
+
+function stripUndefined(value) {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) return value.map(stripUndefined);
+  if (typeof value !== 'object') return value;
+  const out = {};
+  for (const [k, v] of Object.entries(value)) {
+    if (v === undefined) continue;
+    out[k] = stripUndefined(v);
+  }
+  return out;
 }
 
 // Human-friendly duration: "20 min", "an hour", "1.5 hours", "3 hours".
