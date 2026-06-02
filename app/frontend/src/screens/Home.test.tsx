@@ -6,6 +6,8 @@ import { CombinedResponse, HistoricalAverage, Ride } from '../types';
 import { RideProvider } from '../context/RideContext';
 import { LocationProvider } from '../context/LocationContext';
 import { DailyContextProvider } from '../context/DailyContextContext';
+import { PersonaProvider } from '../context/PersonaContext';
+import { DeviceProvider } from '../context/DeviceContext';
 
 // AsyncStorage's native module is unavailable in jest; use the library's
 // official in-memory mock per its testing docs.
@@ -28,13 +30,17 @@ const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWai
 // (mocked) fetchWaits call and pushes data down to Home.
 function renderHome() {
   return render(
-    <DailyContextProvider>
-      <LocationProvider>
-        <RideProvider>
-          <Home />
-        </RideProvider>
-      </LocationProvider>
-    </DailyContextProvider>
+    <PersonaProvider>
+      <DailyContextProvider>
+        <DeviceProvider>
+          <LocationProvider>
+            <RideProvider>
+              <Home />
+            </RideProvider>
+          </LocationProvider>
+        </DeviceProvider>
+      </DailyContextProvider>
+    </PersonaProvider>
   );
 }
 

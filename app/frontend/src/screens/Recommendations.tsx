@@ -27,6 +27,7 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { ParkTogglePill } from '../components/ParkTogglePill';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
+import { NotificationBellButton } from '../components/NotificationBellButton';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
 
@@ -263,6 +264,7 @@ export function Recommendations(): React.ReactElement {
             </Text>
           ) : null}
         </View>
+        <NotificationBellButton />
         {debugMode && (
           <Pressable
             onPress={() => setDebugPickerOpen(true)}

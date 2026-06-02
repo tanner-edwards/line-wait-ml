@@ -24,6 +24,7 @@ import {
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
+import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
 import { buildRecommendations } from './recommendations/handler';
@@ -222,6 +223,7 @@ type RouteKind =
   | { kind: 'device-must-do'; deviceId: string }
   | { kind: 'device-daily-parks'; deviceId: string }
   | { kind: 'device-notification-types'; deviceId: string }
+  | { kind: 'device-notifications-list'; deviceId: string }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -244,6 +246,10 @@ function routeFromPath(
     if (dailyParksMatch) return { kind: 'device-daily-parks', deviceId: dailyParksMatch[1] };
     const notifTypesMatch = path.match(/\/v1\/devices\/([^/]+)\/notification-types$/);
     if (notifTypesMatch) return { kind: 'device-notification-types', deviceId: notifTypesMatch[1] };
+  }
+  if (method === 'GET') {
+    const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
+    if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
   }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
@@ -296,6 +302,10 @@ export async function handler(
 
   if (route.kind === 'device-notification-types') {
     return handleDeviceNotificationTypes(route.deviceId, event);
+  }
+
+  if (route.kind === 'device-notifications-list') {
+    return handleDeviceNotificationsList(route.deviceId);
   }
 
   const atParam = event.queryStringParameters?.at;
@@ -560,6 +570,21 @@ async function handleDeviceMustDo(
   try {
     await setMustDoRideIds(deviceId, rideIds);
     return jsonResponse(200, { deviceId, mustDoRideIds: rideIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceNotificationsList(
+  deviceId: string
+): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  try {
+    const notifications = await loadDeviceNotifications(deviceId);
+    return jsonResponse(200, { deviceId, notifications });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));

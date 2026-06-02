@@ -1,6 +1,7 @@
 import {
   CombinedResponse,
   ErrorResponse,
+  NotificationLogEntry,
   ParkSlug,
   Persona,
   RecommendationsResponse,
@@ -145,6 +146,33 @@ export async function syncNotificationTypes(
   types: { trough: boolean; closure: boolean; reopen: boolean }
 ): Promise<void> {
   await postJson(`/v1/devices/${encodeURIComponent(deviceId)}/notification-types`, types);
+}
+
+export async function fetchDeviceNotifications(deviceId: string): Promise<NotificationLogEntry[]> {
+  if (!BASE_URL || !API_KEY) {
+    throw new ApiError(null, 'API base URL or key not configured');
+  }
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/notifications`, {
+      headers: { 'x-api-key': API_KEY },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch {
+      // body wasn't JSON
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const body = (await res.json()) as { notifications: NotificationLogEntry[] };
+  return body.notifications ?? [];
 }
 
 // Tiny shared POST helper for the devices endpoints. Threads the same

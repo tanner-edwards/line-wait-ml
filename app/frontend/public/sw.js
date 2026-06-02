@@ -42,13 +42,27 @@ self.addEventListener('push', event => {
 
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const data = event.notification.data || {};
+  const rideId = data.rideId || '';
+  const type = data.type || '';
+  // URL for cold opens — the app's NotificationDeepLinkHandler reads this
+  // on launch. For warm opens (existing tab), we focus the tab and post
+  // a message instead so we don't navigate away from whatever they were
+  // looking at.
+  const openUrl = rideId && type
+    ? `/?notif=${encodeURIComponent(rideId)}__${encodeURIComponent(type)}`
+    : '/';
   event.waitUntil((async () => {
     const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of allClients) {
       if (client.url.startsWith(self.location.origin)) {
-        return client.focus();
+        await client.focus();
+        if (rideId && type) {
+          client.postMessage({ kind: 'notification-click', rideId, type });
+        }
+        return;
       }
     }
-    return self.clients.openWindow('/');
+    return self.clients.openWindow(openUrl);
   })());
 });

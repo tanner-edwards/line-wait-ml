@@ -25,6 +25,7 @@ import { RecommendationBadge } from '../components/RecommendationBadge';
 import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
+import { NotificationBellButton } from '../components/NotificationBellButton';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -132,6 +133,7 @@ export function Home() {
             </Text>
           </Pressable>
         </View>
+        <NotificationBellButton />
         <Pressable
           accessibilityRole="button"
           onPress={() => setShowSortMenu(true)}

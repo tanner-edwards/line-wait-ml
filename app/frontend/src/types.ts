@@ -173,6 +173,26 @@ export function defaultNotificationTypes(): NotificationTypes {
   return { trough: true, closure: true, reopen: true };
 }
 
+// Mirror of the backend's notificationLog.ts NotificationLogEntry. Used by
+// the in-app history sheet (GET /v1/devices/:id/notifications).
+export interface NotificationLogEntry {
+  deviceId: string;
+  rideId: string;
+  rideName: string | null;
+  type: NotificationKind;
+  badge: 'star' | 'go' | null;
+  firedAt: string;
+  expiresAt: string;
+  currentWait: number | null;
+  delivered: boolean;
+  deliveryError: string | null;
+  bucket0Wait?: number | null;
+  rideStats?: { p10: number; p50: number; p90: number; sampleCount: number } | null;
+  previousWait?: number | null;
+  closedAt?: string | null;
+  durationMs?: number | null;
+}
+
 export function emptyPersona(): Persona {
   return {
     tripDuration: null,

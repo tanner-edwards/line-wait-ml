@@ -25,6 +25,13 @@ jest.mock('../recentHistory', () => ({
   _resetForTests: jest.fn(),
 }));
 
+// notification_log read for GET /v1/devices/:id/notifications.
+jest.mock('../notificationLog', () => ({
+  loadDeviceNotifications: jest.fn().mockResolvedValue([]),
+}));
+import * as notifLogModule from '../notificationLog';
+const mockedNotifLog = notifLogModule as jest.Mocked<typeof notifLogModule>;
+
 import * as devicesModule from './devices';
 const mockedDevices = devicesModule as jest.Mocked<typeof devicesModule>;
 
@@ -251,6 +258,38 @@ describe('POST /v1/devices/:id/notification-types', () => {
       })
     );
     expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('GET /v1/devices/:id/notifications', () => {
+  it('returns the entries from notification_log for the device', async () => {
+    const entries = [
+      {
+        deviceId: 'abc-123', rideId: 'r1', rideName: 'Pirates',
+        type: 'trough' as const, badge: 'go' as const,
+        firedAt: '2026-06-01T18:30:00Z', expiresAt: '2026-06-02T18:30:00Z',
+        currentWait: 25, delivered: true, deliveryError: null,
+      },
+    ];
+    mockedNotifLog.loadDeviceNotifications.mockResolvedValueOnce(entries);
+    const res = await handler(buildEvent('/v1/devices/abc-123/notifications', 'GET'));
+    expect(res.statusCode).toBe(200);
+    const body = JSON.parse(res.body);
+    expect(body.deviceId).toBe('abc-123');
+    expect(body.notifications).toEqual(entries);
+    expect(mockedNotifLog.loadDeviceNotifications).toHaveBeenCalledWith('abc-123');
+  });
+
+  it('returns an empty list when no recent notifications', async () => {
+    mockedNotifLog.loadDeviceNotifications.mockResolvedValueOnce([]);
+    const res = await handler(buildEvent('/v1/devices/abc-123/notifications', 'GET'));
+    expect(res.statusCode).toBe(200);
+    expect(JSON.parse(res.body).notifications).toEqual([]);
+  });
+
+  it('requires API key', async () => {
+    const res = await handler(buildEvent('/v1/devices/abc-123/notifications', 'GET', null, null));
+    expect(res.statusCode).toBe(401);
   });
 });
 

@@ -6,6 +6,9 @@ import { PersonaProvider } from './src/context/PersonaContext';
 import { DeviceProvider } from './src/context/DeviceContext';
 import { DailyContextProvider } from './src/context/DailyContextContext';
 import { DebugModeProvider } from './src/context/DebugModeContext';
+import { NotificationDetailProvider } from './src/context/NotificationDetailContext';
+import { NotificationDetailModal } from './src/components/NotificationDetailModal';
+import { NotificationDeepLinkHandler } from './src/components/NotificationDeepLinkHandler';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
 export default function App() {
@@ -18,7 +21,11 @@ export default function App() {
               <DebugModeProvider>
                 <LocationProvider>
                   <RideProvider>
-                    <RootNavigator />
+                    <NotificationDetailProvider>
+                      <RootNavigator />
+                      <NotificationDetailModal />
+                      <NotificationDeepLinkHandler />
+                    </NotificationDetailProvider>
                   </RideProvider>
                 </LocationProvider>
               </DebugModeProvider>
