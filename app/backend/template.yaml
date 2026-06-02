@@ -198,6 +198,14 @@ Resources:
             Method: post
             Auth:
               ApiKeyRequired: true
+        DeviceDailyParks:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/devices/{deviceId}/daily-parks
+            Method: post
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:

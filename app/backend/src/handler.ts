@@ -23,6 +23,7 @@ import {
 } from './historicalAverages';
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
+import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
 import { buildRecommendations } from './recommendations/handler';
@@ -35,9 +36,12 @@ import {
   TripDuration,
 } from './types';
 import {
+  DAILY_PARKS_VALUES,
+  DailyParks,
   PUSH_TOKEN_TYPES,
   PushTokenType,
   setArmedDate,
+  setDailyParks,
   setMustDoRideIds,
   todayInPT,
   upsertDevice,
@@ -116,27 +120,32 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
 
   const now = referenceDate ?? new Date();
   const dayType = classifyDayType(now);
-  const [live, recentHistoryMap, metadataMap] = await Promise.all([
+  const [live, recentHistoryMap, metadataMap, closuresMap] = await Promise.all([
     fetchLiveData(parkSlug),
     fetchRecentHistory(parkSlug, now),
     ensureRideMetadataLoaded().catch(() => new Map()),
+    // Best-effort: a missing/failed current_closures fetch just means no
+    // closedAt timestamps, never a 5xx for the whole response.
+    loadCurrentClosures().catch(() => new Map()),
   ]);
 
-  const rides: Ride[] = await Promise.all(
+  const allRides: Ride[] = await Promise.all(
     filterToRides(live.liveData).map(async entity => {
       const isOperating = entity.status === 'OPERATING';
-      const [historicalAverage, rideStats] = isOperating
-        ? await Promise.all([
-            buildHistoricalAverage(parkSlug, entity.id, now),
-            buildRideStats(parkSlug, entity.id, dayType),
-          ])
-        : [null, null];
+      // rideStats is looked up for all rides (not just operating) so the
+      // non-ride filter below can use it to drop chronic walk-ons /
+      // walkthroughs / experiences regardless of current status.
+      const [historicalAverage, rideStats] = await Promise.all([
+        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now) : Promise.resolve(null),
+        buildRideStats(parkSlug, entity.id, dayType),
+      ]);
       const meta = lookupRideMetadata(metadataMap, entity.id);
+      const status = entity.status ?? 'UNKNOWN';
       const ride: Ride = {
         id: entity.id,
         name: entity.name,
         land: resolveLand(entity.id, parkSlug),
-        status: entity.status ?? 'UNKNOWN',
+        status,
         currentWait: isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null,
         historicalAverage,
         rideStats,
@@ -144,11 +153,25 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         recentHistory: recentHistoryMap.get(entity.id) ?? null,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
+        // Only meaningful when status is DOWN — the scanner only records
+        // OPERATING → DOWN transitions. For other states we leave null.
+        closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
       };
       ride.score = scoreRide(ride);
       return ride;
     })
   );
+
+  // Filter out chronic walk-ons / walkthroughs / non-ride experiences:
+  // rides whose p90 has stayed below 5 min across many observations are
+  // never going to produce a meaningful wait. Closed-but-real rides
+  // (refurbishment, scheduled closures) pass because their stats are
+  // populated. Rides with <= 100 samples pass too — we err on showing.
+  const rides = allRides.filter(r => {
+    if (!r.rideStats) return true;
+    if (r.rideStats.sampleCount <= 100) return true;
+    return r.rideStats.p90 >= 5;
+  });
 
   const data = shapeParkData(parkSlug, rides, now.toISOString());
   if (!referenceDate) parkCache.set(parkSlug, data);
@@ -194,6 +217,7 @@ type RouteKind =
   | { kind: 'device-register' }
   | { kind: 'device-arm'; deviceId: string }
   | { kind: 'device-must-do'; deviceId: string }
+  | { kind: 'device-daily-parks'; deviceId: string }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -212,6 +236,8 @@ function routeFromPath(
     if (armMatch) return { kind: 'device-arm', deviceId: armMatch[1] };
     const mustDoMatch = path.match(/\/v1\/devices\/([^/]+)\/must-do$/);
     if (mustDoMatch) return { kind: 'device-must-do', deviceId: mustDoMatch[1] };
+    const dailyParksMatch = path.match(/\/v1\/devices\/([^/]+)\/daily-parks$/);
+    if (dailyParksMatch) return { kind: 'device-daily-parks', deviceId: dailyParksMatch[1] };
   }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
@@ -256,6 +282,10 @@ export async function handler(
 
   if (route.kind === 'device-must-do') {
     return handleDeviceMustDo(route.deviceId, event);
+  }
+
+  if (route.kind === 'device-daily-parks') {
+    return handleDeviceDailyParks(route.deviceId, event);
   }
 
   const atParam = event.queryStringParameters?.at;
@@ -520,6 +550,34 @@ async function handleDeviceMustDo(
   try {
     await setMustDoRideIds(deviceId, rideIds);
     return jsonResponse(200, { deviceId, mustDoRideIds: rideIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceDailyParks(
+  deviceId: string,
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  let body: { dailyParks?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+  if (
+    typeof body.dailyParks !== 'string' ||
+    !(DAILY_PARKS_VALUES as readonly string[]).includes(body.dailyParks)
+  ) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'dailyParks must be "disneyland", "california-adventure", or "both"'));
+  }
+  try {
+    await setDailyParks(deviceId, body.dailyParks as DailyParks);
+    return jsonResponse(200, { deviceId, dailyParks: body.dailyParks });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));

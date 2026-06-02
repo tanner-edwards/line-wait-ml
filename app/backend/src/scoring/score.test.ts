@@ -14,6 +14,7 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     recentHistory: null,
     lat: null,
     lng: null,
+    closedAt: null,
     ...overrides,
   };
 }

@@ -12,6 +12,7 @@ jest.mock('./devices', () => {
     upsertDevice: jest.fn().mockResolvedValue(undefined),
     setArmedDate: jest.fn().mockResolvedValue(undefined),
     setMustDoRideIds: jest.fn().mockResolvedValue(undefined),
+    setDailyParks: jest.fn().mockResolvedValue(undefined),
     // todayInPT stays real so tests assert on a stable date format.
   };
 });
@@ -193,6 +194,31 @@ describe('POST /v1/devices/:id/must-do', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(mockedDevices.setMustDoRideIds).toHaveBeenCalledWith('abc-123', ['ride-1', 'ride-2']);
+  });
+});
+
+describe('POST /v1/devices/:id/daily-parks', () => {
+  it('accepts each valid value', async () => {
+    for (const v of ['disneyland', 'california-adventure', 'both']) {
+      const res = await handler(
+        buildEvent('/v1/devices/abc-123/daily-parks', 'POST', { dailyParks: v })
+      );
+      expect(res.statusCode).toBe(200);
+      expect(mockedDevices.setDailyParks).toHaveBeenLastCalledWith('abc-123', v);
+    }
+  });
+
+  it('rejects missing dailyParks', async () => {
+    const res = await handler(buildEvent('/v1/devices/abc-123/daily-parks', 'POST', {}));
+    expect(res.statusCode).toBe(400);
+    expect(mockedDevices.setDailyParks).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid value', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/daily-parks', 'POST', { dailyParks: 'magic-kingdom' })
+    );
+    expect(res.statusCode).toBe(400);
   });
 });
 

@@ -18,11 +18,13 @@ import {
   ApiError,
   armDeviceForToday,
   registerDevice,
+  syncDailyParks,
   syncMustDoRideIds,
 } from '../api';
 import { getOrCreateDeviceId } from '../utils/deviceStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
 import { usePersona } from './PersonaContext';
+import { useDailyContext } from './DailyContextContext';
 
 interface DeviceContextValue {
   deviceId: string | null;
@@ -47,6 +49,7 @@ const DeviceContext = createContext<DeviceContextValue | null>(null);
 
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const { persona } = usePersona();
+  const { context: dailyContext } = useDailyContext();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
   const [armedDate, setArmedDate] = useState<string | null>(null);
@@ -82,6 +85,19 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       console.warn('syncMustDoRideIds failed', err);
     });
   }, [deviceId, notificationsEnabled, persona]);
+
+  // Same pattern for dailyParks: sync the daily park scope so the scanner
+  // can filter must-do rides to the park(s) the user said they're at today.
+  const lastSyncedDailyParksRef = useRef<string>('');
+  useEffect(() => {
+    if (!deviceId || !notificationsEnabled || !dailyContext) return;
+    const parks = dailyContext.parks;
+    if (parks === lastSyncedDailyParksRef.current) return;
+    lastSyncedDailyParksRef.current = parks;
+    void syncDailyParks(deviceId, parks).catch(err => {
+      console.warn('syncDailyParks failed', err);
+    });
+  }, [deviceId, notificationsEnabled, dailyContext]);
 
   const enableNotifications = useCallback(async (): Promise<boolean> => {
     if (!deviceId) return false;

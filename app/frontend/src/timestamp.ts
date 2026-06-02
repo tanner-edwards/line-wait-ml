@@ -29,6 +29,22 @@ export function formatHHMM(iso: string | null): string {
 }
 
 /**
+ * Formats an ISO timestamp as a relative duration like "~30m ago" / "~2h ago".
+ * Used for closed-ride rows so the user can see how long ago a ride went down.
+ * Returns "" if the input is null or unparseable.
+ */
+export function formatTimeAgo(iso: string | null, now: Date = new Date()): string {
+  if (!iso) return '';
+  const then = new Date(iso).getTime();
+  if (!Number.isFinite(then)) return '';
+  const minutesAgo = Math.max(0, Math.round((now.getTime() - then) / 60_000));
+  if (minutesAgo < 60) return `~${minutesAgo}m ago`;
+  const hoursAgo = minutesAgo / 60;
+  if (hoursAgo < 10) return `~${Math.round(hoursAgo * 10) / 10}h ago`;
+  return `~${Math.round(hoursAgo)}h ago`;
+}
+
+/**
  * Formats a bucket's `timeSlot` (e.g. "10:30-11:00") as a 12-hour start time
  * (e.g. "10:30 AM"). The timeSlot is already in California (America/Los_Angeles)
  * wall-clock time. Returns "—" if the input is empty or malformed.

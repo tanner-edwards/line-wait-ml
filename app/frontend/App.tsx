@@ -13,8 +13,8 @@ export default function App() {
     <SafeAreaProvider>
       <NavigationContainer>
         <PersonaProvider>
-          <DeviceProvider>
-            <DailyContextProvider>
+          <DailyContextProvider>
+            <DeviceProvider>
               <DebugModeProvider>
                 <LocationProvider>
                   <RideProvider>
@@ -22,8 +22,8 @@ export default function App() {
                   </RideProvider>
                 </LocationProvider>
               </DebugModeProvider>
-            </DailyContextProvider>
-          </DeviceProvider>
+            </DeviceProvider>
+          </DailyContextProvider>
         </PersonaProvider>
       </NavigationContainer>
     </SafeAreaProvider>

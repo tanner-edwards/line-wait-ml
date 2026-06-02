@@ -61,6 +61,10 @@ export interface Ride {
   recentHistory: RecentSnapshot[] | null;
   lat: number | null;
   lng: number | null;
+  // ISO timestamp of when this ride last transitioned OPERATING → DOWN.
+  // Only meaningful while status === 'DOWN'; null otherwise (and null
+  // for closures that pre-date the scanner — no backfill).
+  closedAt?: string | null;
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;

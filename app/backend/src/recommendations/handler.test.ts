@@ -54,6 +54,7 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
     recentHistory: null,
     lat: null,
     lng: null,
+    closedAt: null,
     score: {
       score: scoreValue,
       badge: scoreValue >= 2 ? 'go' : null,

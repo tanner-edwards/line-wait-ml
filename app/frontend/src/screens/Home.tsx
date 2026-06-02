@@ -18,7 +18,7 @@ import {
   haversineMeters,
   rideWaitLabel,
 } from '../grouping';
-import { formatHHMM, olderLastUpdated } from '../timestamp';
+import { formatHHMM, formatTimeAgo, olderLastUpdated } from '../timestamp';
 import { TrendArrow } from '../components/TrendArrow';
 import { BelowNormalBadge } from '../components/BelowNormalBadge';
 import { RecommendationBadge } from '../components/RecommendationBadge';
@@ -291,6 +291,11 @@ function ListRow({
             {walkMins != null ? (
               <Text style={styles.walkLabel}>~{walkMins} min walk</Text>
             ) : null}
+            {ride.status === 'DOWN' && ride.closedAt ? (
+              <Text style={styles.closedSince}>
+                since {formatHHMM(ride.closedAt)} ({formatTimeAgo(ride.closedAt)})
+              </Text>
+            ) : null}
           </View>
         </View>
       </Pressable>
@@ -395,6 +400,7 @@ const styles = StyleSheet.create({
   emptyText: { color: '#666', textAlign: 'center', fontSize: 14 },
   emptyContent: { flexGrow: 1, justifyContent: 'center' },
   walkLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'right' },
+  closedSince: { fontSize: 11, color: '#7a1f1f', marginTop: 2, textAlign: 'right' },
   walkOnEmoji: {
     width: 20,
     height: 20,

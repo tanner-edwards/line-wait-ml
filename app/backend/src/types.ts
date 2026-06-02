@@ -121,6 +121,11 @@ export interface Ride {
   recentHistory: RecentSnapshot[] | null;
   lat: number | null;
   lng: number | null;
+  // ISO timestamp of when this ride last transitioned OPERATING → DOWN.
+  // Populated by the scanner; only meaningful while status === 'DOWN'.
+  // Null for currently-operating rides and for closures that pre-date
+  // the scanner (no historical backfill).
+  closedAt: string | null;
   // Always present on the wire response; optional in the type to allow
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.

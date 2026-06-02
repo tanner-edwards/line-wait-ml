@@ -28,6 +28,20 @@ const DLR_PARK_IDS = [
   '7340550b-c14d-4def-80bb-acdb51d49a66', // Disneyland Park
   '832fcd51-ea19-4e77-85c7-75d5843b127c', // Disney California Adventure
 ];
+const PARK_ID_BY_SLUG = {
+  'disneyland': '7340550b-c14d-4def-80bb-acdb51d49a66',
+  'california-adventure': '832fcd51-ea19-4e77-85c7-75d5843b127c',
+};
+
+// Resolve the set of park UUIDs a device cares about today. 'both' (or
+// missing — older device records that pre-date this field) means no
+// filter; the user is treated as a park-hopper.
+function allowedParkIdsFor(device) {
+  const dp = device.dailyParks;
+  if (!dp || dp === 'both') return DLR_PARK_IDS;
+  const id = PARK_ID_BY_SLUG[dp];
+  return id ? [id] : DLR_PARK_IDS;
+}
 
 // --- logging + firestore singleton (mirrors collect.js) ---
 
@@ -319,6 +333,27 @@ async function loadRideStats(db) {
   return map;
 }
 
+// current_closures/ holds one doc per ride that's currently DOWN. Doc ID
+// is the rideId; the doc records when it went down. On reopen we read
+// closedAt to compute downtime, then delete the doc.
+async function recordClosureStart(db, current) {
+  await db.collection('current_closures').doc(current.rideId).set({
+    parkId: current.parkId,
+    rideId: current.rideId,
+    rideName: current.name,
+    closedAt: new Date().toISOString(),
+  });
+}
+
+async function readAndClearClosure(db, rideId) {
+  const ref = db.collection('current_closures').doc(rideId);
+  const doc = await ref.get();
+  if (!doc.exists) return null;
+  const data = doc.data();
+  await ref.delete();
+  return data;
+}
+
 async function loadArmedDevices(db, today) {
   const snap = await db.collection('devices')
     .where('notificationsEnabled', '==', true)
@@ -413,7 +448,7 @@ async function nullDeviceToken(db, deviceId) {
 // push send, notification_log write, expired-subscription handling, and
 // a single log line are all encapsulated here so the main loop stays
 // readable.
-async function fireNotification({ db, device, currentRide, type, badge = null }) {
+async function fireNotification({ db, device, currentRide, type, badge = null, extra = {} }) {
   const { deviceId } = device;
   const rideId = currentRide.rideId;
 
@@ -437,6 +472,7 @@ async function fireNotification({ db, device, currentRide, type, badge = null })
     currentWait: currentRide.wait,
     delivered: result.sent,
     deliveryError: result.sent ? null : result.reason,
+    ...extra,
   });
   if (result.expired) {
     await nullDeviceToken(db, deviceId);
@@ -513,33 +549,67 @@ async function run() {
   let considered = 0, fired = 0, skippedCooldown = 0, skippedClosed = 0;
   let firedTrough = 0, firedClosure = 0, firedReopen = 0;
 
+  // --- First pass: ride-level status-change accounting (Phase E1) ---
+  // Closures/reopens are facts about the world, not about any particular
+  // device, so we record current_closures/ updates here — once per ride
+  // per tick. Device fanout uses the resulting map in the second pass.
+  const statusChanges = new Map();
+  for (const [rideId, obs] of snapshot) {
+    if (!obs.previous) continue;
+    if (!openParkIds.includes(obs.current.parkId)) continue;
+    const prevOp = obs.previous.status === 'OPERATING';
+    const curOp = obs.current.status === 'OPERATING';
+    const curDown = obs.current.status === 'DOWN';
+    const prevDown = obs.previous.status === 'DOWN';
+    if (prevOp && curDown) {
+      await recordClosureStart(db, obs.current);
+      statusChanges.set(rideId, { kind: 'closure' });
+    } else if (prevDown && curOp) {
+      const closure = await readAndClearClosure(db, rideId);
+      const closedAt = closure?.closedAt ?? null;
+      const durationMs = closedAt ? Date.now() - new Date(closedAt).getTime() : null;
+      statusChanges.set(rideId, { kind: 'reopen', closedAt, durationMs });
+    }
+  }
+  log('status_changes', {
+    closures: [...statusChanges.values()].filter(e => e.kind === 'closure').length,
+    reopens: [...statusChanges.values()].filter(e => e.kind === 'reopen').length,
+  });
+
+  // --- Second pass: device fanout ---
+  let skippedWrongPark = 0;
   for (const device of devices) {
     const { mustDoRideIds = [] } = device;
+    const dailyParkIds = allowedParkIdsFor(device);
     for (const rideId of mustDoRideIds) {
       const obs = snapshot.get(rideId);
       if (!obs) continue;
       const current = obs.current;
-      const previous = obs.previous;
+      // Daily-parks gate: skip rides outside the user's selected scope.
+      // 'both' (or missing) passes everything (treats user as a hopper).
+      if (!dailyParkIds.includes(current.parkId)) {
+        skippedWrongPark++;
+        continue;
+      }
       if (!openParkIds.includes(current.parkId)) {
         skippedClosed++;
         continue;
       }
       considered++;
 
-      // --- Status-change detection (Phase C + D) ---
-      // Only fires when we have BOTH a current and previous observation —
-      // skips phantom diffs from collector hiccups. Park-hours gate is
-      // already applied above so we don't fire end-of-day closures.
-      if (previous) {
-        if (previous.status === 'OPERATING' && current.status === 'DOWN') {
-          const r = await fireNotification({ db, device, currentRide: current, type: 'closure' });
-          if (r.fired) { fired++; firedClosure++; }
-          else if (r.reason === 'cooldown') skippedCooldown++;
-        } else if (previous.status === 'DOWN' && current.status === 'OPERATING') {
-          const r = await fireNotification({ db, device, currentRide: current, type: 'reopen' });
-          if (r.fired) { fired++; firedReopen++; }
-          else if (r.reason === 'cooldown') skippedCooldown++;
-        }
+      // --- Status-change fanout (uses first-pass result) ---
+      const change = statusChanges.get(rideId);
+      if (change?.kind === 'closure') {
+        const r = await fireNotification({ db, device, currentRide: current, type: 'closure' });
+        if (r.fired) { fired++; firedClosure++; }
+        else if (r.reason === 'cooldown') skippedCooldown++;
+      } else if (change?.kind === 'reopen') {
+        const r = await fireNotification({
+          db, device, currentRide: current, type: 'reopen',
+          extra: { closedAt: change.closedAt, durationMs: change.durationMs },
+        });
+        if (r.fired) { fired++; firedReopen++; }
+        else if (r.reason === 'cooldown') skippedCooldown++;
       }
 
       // --- Trough detection (Phase B) ---
@@ -582,6 +652,7 @@ async function run() {
     firedReopen,
     skippedCooldown,
     skippedClosed,
+    skippedWrongPark,
   });
 }
 

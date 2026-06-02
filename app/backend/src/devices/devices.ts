@@ -9,6 +9,8 @@ import { getFirestore } from '../firestoreClient';
 const COLLECTION = 'devices';
 
 export type PushTokenType = 'web' | 'expo';
+export type DailyParks = 'disneyland' | 'california-adventure' | 'both';
+export const DAILY_PARKS_VALUES: readonly DailyParks[] = ['disneyland', 'california-adventure', 'both'];
 
 export interface DeviceRecord {
   deviceId: string;
@@ -64,6 +66,14 @@ export async function setMustDoRideIds(deviceId: string, rideIds: string[]): Pro
   const db = getFirestore();
   await db.collection(COLLECTION).doc(deviceId).set(
     { mustDoRideIds: rideIds, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
+export async function setDailyParks(deviceId: string, dailyParks: DailyParks): Promise<void> {
+  const db = getFirestore();
+  await db.collection(COLLECTION).doc(deviceId).set(
+    { dailyParks, updatedAt: new Date().toISOString() },
     { merge: true }
   );
 }
