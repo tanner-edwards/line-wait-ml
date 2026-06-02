@@ -12,6 +12,11 @@ export type PushTokenType = 'web' | 'expo';
 export type DailyParks = 'disneyland' | 'california-adventure' | 'both';
 export const DAILY_PARKS_VALUES: readonly DailyParks[] = ['disneyland', 'california-adventure', 'both'];
 
+export type NotificationKind = 'trough' | 'closure' | 'reopen';
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen'];
+
+export type NotificationTypes = Record<NotificationKind, boolean>;
+
 export interface DeviceRecord {
   deviceId: string;
   pushToken: string | null;
@@ -74,6 +79,17 @@ export async function setDailyParks(deviceId: string, dailyParks: DailyParks): P
   const db = getFirestore();
   await db.collection(COLLECTION).doc(deviceId).set(
     { dailyParks, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
+export async function setNotificationTypes(
+  deviceId: string,
+  types: NotificationTypes
+): Promise<void> {
+  const db = getFirestore();
+  await db.collection(COLLECTION).doc(deviceId).set(
+    { notificationTypes: types, updatedAt: new Date().toISOString() },
     { merge: true }
   );
 }

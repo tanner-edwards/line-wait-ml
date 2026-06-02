@@ -43,6 +43,16 @@ function allowedParkIdsFor(device) {
   return id ? [id] : DLR_PARK_IDS;
 }
 
+// Per-type opt-in check. Default to true for legacy records that don't
+// have the field — they haven't been through the new Profile screen yet,
+// and "send everything" matches the original v1 behavior.
+function wantsNotification(device, type) {
+  const types = device.notificationTypes;
+  if (!types || typeof types !== 'object') return true;
+  if (typeof types[type] !== 'boolean') return true;
+  return types[type];
+}
+
 // --- logging + firestore singleton (mirrors collect.js) ---
 
 function log(event, extra = {}) {
@@ -385,23 +395,78 @@ async function writeNotificationLog(db, entry) {
   await db.collection('notification_log').doc(docId).set(entry);
 }
 
-// Build the user-facing notification payload. Kept short — the service
-// worker on the device renders this directly via the Notification API.
-// The `type` field is what the service worker uses to tag the OS
-// notification, so closure/reopen/trough for the same ride show as
-// separate cards rather than collapsing into one.
-function buildPayload({ type, rideId, rideName, badge = null }) {
-  const title = rideName ?? 'Club 32';
+// Human-friendly duration: "20 min", "an hour", "1.5 hours", "3 hours".
+// Used for reopen messages where the scanner has durationMs from the
+// matching closure event.
+function formatDuration(ms) {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const minutes = Math.round(ms / 60_000);
+  if (minutes < 60) return `${minutes} min`;
+  const hours = minutes / 60;
+  if (hours < 1.25) return 'an hour';
+  if (hours < 10) return `${Math.round(hours * 10) / 10} hours`;
+  return `${Math.round(hours)} hours`;
+}
+
+// Build the user-facing notification payload. The title carries the
+// emoji marker (⭐ rare low, ✅ good window, 🛑 down, 🎉 reopen) so the
+// notification type is identifiable at a glance on the lockscreen.
+// Body composition:
+//   trough/star : "Just 5 min — usually 40. Rare low."
+//   trough/go   : "Only 25 min — below the usual 40."
+//   closure     : "Just went down — was 30 min."  (or just "Just went down.")
+//   reopen+opp  : "Back after 2 hours — wait only 25 min!"
+//   reopen+dur  : "Back after 20 min. Wait posted at 75."
+//   reopen      : "Just reopened. Wait posted at 75."
+function buildPayload({
+  type,
+  rideId,
+  rideName,
+  badge = null,
+  currentWait = null,   // current ride wait at fire time
+  bucket0Wait = null,   // historical avg for this 30-min slot (trough context)
+  rideStats = null,     // { p10, p50, p90 } — for reopen opportunity check
+  previousWait = null,  // wait at the previous tick (closure context)
+  durationMs = null,    // downtime length in ms (reopen)
+}) {
+  const safeName = rideName ?? 'Ride';
+  let title;
   let body;
+
   if (type === 'trough') {
-    body = badge === 'star'
-      ? `${rideName} just hit a rare low — head over before it climbs.`
-      : `${rideName} is looking like a good window right now.`;
+    const emoji = badge === 'star' ? '⭐' : '✅';
+    title = `${emoji} ${safeName}`;
+    const waitText = currentWait != null ? `${currentWait} min` : 'a short wait';
+    const compare = bucket0Wait != null ? ` — usually ${bucket0Wait} around now` : '';
+    if (badge === 'star') {
+      body = `Just ${waitText}${compare}. Rare low.`;
+    } else {
+      body = `Only ${waitText}${compare}.`;
+    }
   } else if (type === 'closure') {
-    body = `${rideName} just went down — you may want to pivot.`;
+    title = `🛑 ${safeName}`;
+    body = previousWait != null
+      ? `Just went down — was ${previousWait} min.`
+      : 'Just went down.';
   } else if (type === 'reopen') {
-    body = `${rideName} just reopened — a short window may open before crowds catch on.`;
+    title = `🎉 ${safeName}`;
+    const downtime = formatDuration(durationMs);
+    const waitText = currentWait != null ? `${currentWait} min` : null;
+    const longDowntime = durationMs != null && durationMs >= 60 * 60_000;
+    const lowWait = rideStats?.p50 != null && currentWait != null && currentWait < rideStats.p50 * 0.7;
+    if (downtime && longDowntime && lowWait) {
+      body = `Back after ${downtime} — wait only ${waitText}!`;
+    } else if (downtime && waitText) {
+      body = `Back after ${downtime}. Wait posted at ${waitText}.`;
+    } else if (downtime) {
+      body = `Back after ${downtime}.`;
+    } else if (waitText) {
+      body = `Just reopened. Wait posted at ${waitText}.`;
+    } else {
+      body = 'Just reopened.';
+    }
   } else {
+    title = safeName;
     body = '';
   }
   return { title, body, rideId, type, badge };
@@ -459,7 +524,18 @@ async function fireNotification({ db, device, currentRide, type, badge = null, e
   }
 
   const firedAt = new Date().toISOString();
-  const payload = buildPayload({ type, rideId, rideName: currentRide.name, badge });
+  const payload = buildPayload({
+    type,
+    rideId,
+    rideName: currentRide.name,
+    badge,
+    currentWait: currentRide.wait,
+    // Optional context — main loop injects these per type via `extra`.
+    bucket0Wait: extra.bucket0Wait ?? null,
+    rideStats: extra.rideStats ?? null,
+    previousWait: extra.previousWait ?? null,
+    durationMs: extra.durationMs ?? null,
+  });
   const result = await sendPush(device, payload);
   await writeNotificationLog(db, {
     deviceId,
@@ -548,6 +624,7 @@ async function run() {
 
   let considered = 0, fired = 0, skippedCooldown = 0, skippedClosed = 0;
   let firedTrough = 0, firedClosure = 0, firedReopen = 0;
+  let skippedTypeOptOut = 0;
 
   // --- First pass: ride-level status-change accounting (Phase E1) ---
   // Closures/reopens are facts about the world, not about any particular
@@ -600,16 +677,31 @@ async function run() {
       // --- Status-change fanout (uses first-pass result) ---
       const change = statusChanges.get(rideId);
       if (change?.kind === 'closure') {
-        const r = await fireNotification({ db, device, currentRide: current, type: 'closure' });
-        if (r.fired) { fired++; firedClosure++; }
-        else if (r.reason === 'cooldown') skippedCooldown++;
+        if (!wantsNotification(device, 'closure')) {
+          skippedTypeOptOut++;
+        } else {
+          const r = await fireNotification({
+            db, device, currentRide: current, type: 'closure',
+            extra: { previousWait: obs.previous?.wait ?? null },
+          });
+          if (r.fired) { fired++; firedClosure++; }
+          else if (r.reason === 'cooldown') skippedCooldown++;
+        }
       } else if (change?.kind === 'reopen') {
-        const r = await fireNotification({
-          db, device, currentRide: current, type: 'reopen',
-          extra: { closedAt: change.closedAt, durationMs: change.durationMs },
-        });
-        if (r.fired) { fired++; firedReopen++; }
-        else if (r.reason === 'cooldown') skippedCooldown++;
+        if (!wantsNotification(device, 'reopen')) {
+          skippedTypeOptOut++;
+        } else {
+          const r = await fireNotification({
+            db, device, currentRide: current, type: 'reopen',
+            extra: {
+              closedAt: change.closedAt,
+              durationMs: change.durationMs,
+              rideStats: stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null,
+            },
+          });
+          if (r.fired) { fired++; firedReopen++; }
+          else if (r.reason === 'cooldown') skippedCooldown++;
+        }
       }
 
       // --- Trough detection (Phase B) ---
@@ -638,7 +730,18 @@ async function run() {
       const badge = scoreRide(rideForScoring);
       if (badge !== 'star' && badge !== 'go') continue;
 
-      const r = await fireNotification({ db, device, currentRide: current, type: 'trough', badge });
+      if (!wantsNotification(device, 'trough')) {
+        skippedTypeOptOut++;
+        continue;
+      }
+
+      const r = await fireNotification({
+        db, device, currentRide: current, type: 'trough', badge,
+        extra: {
+          bucket0Wait: historicalBuckets[0]?.wait ?? null,
+          rideStats: rideForScoring.rideStats,
+        },
+      });
       if (r.fired) { fired++; firedTrough++; }
       else if (r.reason === 'cooldown') skippedCooldown++;
     }
@@ -653,6 +756,7 @@ async function run() {
     skippedCooldown,
     skippedClosed,
     skippedWrongPark,
+    skippedTypeOptOut,
   });
 }
 

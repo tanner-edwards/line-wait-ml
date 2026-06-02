@@ -38,11 +38,14 @@ import {
 import {
   DAILY_PARKS_VALUES,
   DailyParks,
+  NOTIFICATION_KINDS,
+  NotificationTypes,
   PUSH_TOKEN_TYPES,
   PushTokenType,
   setArmedDate,
   setDailyParks,
   setMustDoRideIds,
+  setNotificationTypes,
   todayInPT,
   upsertDevice,
 } from './devices/devices';
@@ -218,6 +221,7 @@ type RouteKind =
   | { kind: 'device-arm'; deviceId: string }
   | { kind: 'device-must-do'; deviceId: string }
   | { kind: 'device-daily-parks'; deviceId: string }
+  | { kind: 'device-notification-types'; deviceId: string }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -238,6 +242,8 @@ function routeFromPath(
     if (mustDoMatch) return { kind: 'device-must-do', deviceId: mustDoMatch[1] };
     const dailyParksMatch = path.match(/\/v1\/devices\/([^/]+)\/daily-parks$/);
     if (dailyParksMatch) return { kind: 'device-daily-parks', deviceId: dailyParksMatch[1] };
+    const notifTypesMatch = path.match(/\/v1\/devices\/([^/]+)\/notification-types$/);
+    if (notifTypesMatch) return { kind: 'device-notification-types', deviceId: notifTypesMatch[1] };
   }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
@@ -286,6 +292,10 @@ export async function handler(
 
   if (route.kind === 'device-daily-parks') {
     return handleDeviceDailyParks(route.deviceId, event);
+  }
+
+  if (route.kind === 'device-notification-types') {
+    return handleDeviceNotificationTypes(route.deviceId, event);
   }
 
   const atParam = event.queryStringParameters?.at;
@@ -550,6 +560,36 @@ async function handleDeviceMustDo(
   try {
     await setMustDoRideIds(deviceId, rideIds);
     return jsonResponse(200, { deviceId, mustDoRideIds: rideIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceNotificationTypes(
+  deviceId: string,
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  let body: { trough?: unknown; closure?: unknown; reopen?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+  const types: Partial<NotificationTypes> = {};
+  for (const kind of NOTIFICATION_KINDS) {
+    const val = body[kind];
+    if (typeof val !== 'boolean') {
+      return jsonResponse(400, errorBody('BAD_REQUEST', `${kind} must be a boolean`));
+    }
+    types[kind] = val;
+  }
+  try {
+    await setNotificationTypes(deviceId, types as NotificationTypes);
+    return jsonResponse(200, { deviceId, notificationTypes: types });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));

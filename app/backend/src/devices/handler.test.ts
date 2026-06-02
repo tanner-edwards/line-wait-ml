@@ -13,6 +13,7 @@ jest.mock('./devices', () => {
     setArmedDate: jest.fn().mockResolvedValue(undefined),
     setMustDoRideIds: jest.fn().mockResolvedValue(undefined),
     setDailyParks: jest.fn().mockResolvedValue(undefined),
+    setNotificationTypes: jest.fn().mockResolvedValue(undefined),
     // todayInPT stays real so tests assert on a stable date format.
   };
 });
@@ -217,6 +218,37 @@ describe('POST /v1/devices/:id/daily-parks', () => {
   it('rejects invalid value', async () => {
     const res = await handler(
       buildEvent('/v1/devices/abc-123/daily-parks', 'POST', { dailyParks: 'magic-kingdom' })
+    );
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+describe('POST /v1/devices/:id/notification-types', () => {
+  it('accepts all three booleans', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/notification-types', 'POST', {
+        trough: true, closure: false, reopen: true,
+      })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.setNotificationTypes).toHaveBeenCalledWith('abc-123', {
+      trough: true, closure: false, reopen: true,
+    });
+  });
+
+  it('rejects missing field', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/notification-types', 'POST', { trough: true, closure: false })
+    );
+    expect(res.statusCode).toBe(400);
+    expect(mockedDevices.setNotificationTypes).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-boolean values', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/notification-types', 'POST', {
+        trough: 'yes', closure: false, reopen: true,
+      })
     );
     expect(res.statusCode).toBe(400);
   });

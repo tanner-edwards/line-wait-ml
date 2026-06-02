@@ -166,6 +166,13 @@ export interface DailyContext {
   parks: DailyParks;
 }
 
+export type NotificationKind = 'trough' | 'closure' | 'reopen';
+export type NotificationTypes = Record<NotificationKind, boolean>;
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen'];
+export function defaultNotificationTypes(): NotificationTypes {
+  return { trough: true, closure: true, reopen: true };
+}
+
 export function emptyPersona(): Persona {
   return {
     tripDuration: null,

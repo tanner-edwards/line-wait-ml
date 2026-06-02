@@ -206,6 +206,14 @@ Resources:
             Method: post
             Auth:
               ApiKeyRequired: true
+        DeviceNotificationTypes:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/devices/{deviceId}/notification-types
+            Method: post
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:

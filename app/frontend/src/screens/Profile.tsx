@@ -26,6 +26,7 @@ import {
   PersonaField,
   PersonaFieldModal,
 } from '../components/PersonaFieldModal';
+import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -58,6 +59,7 @@ export function Profile(): React.ReactElement {
   const {
     notificationsEnabled,
     armedDate,
+    notificationTypes,
     busy: deviceBusy,
     error: deviceError,
     enableNotifications,
@@ -66,6 +68,7 @@ export function Profile(): React.ReactElement {
   } = useDevice();
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
+  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
 
   if (!persona) {
     // Shouldn't happen — RootNavigator gates this screen behind persona !== null.
@@ -177,6 +180,20 @@ export function Profile(): React.ReactElement {
           </Pressable>
         ) : null}
 
+        {notificationsEnabled ? (
+          <Pressable
+            onPress={() => setNotifSettingsOpen(true)}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            testID="notification-types"
+          >
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>Notification types</Text>
+              <Text style={styles.rowValue}>{notificationTypesSummary(notificationTypes)}</Text>
+            </View>
+            <Text style={styles.rowChevron}>›</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => void setDebugMode(!debugMode)}
           style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
@@ -201,8 +218,23 @@ export function Profile(): React.ReactElement {
       </ScrollView>
 
       <PersonaFieldModal field={editing} onClose={() => setEditing(null)} />
+      <NotificationSettingsModal
+        visible={notifSettingsOpen}
+        onClose={() => setNotifSettingsOpen(false)}
+      />
     </SafeAreaView>
   );
+}
+
+function notificationTypesSummary(types: { trough: boolean; closure: boolean; reopen: boolean }): string {
+  const on = [
+    types.trough && 'opportunities',
+    types.closure && 'closures',
+    types.reopen && 'reopens',
+  ].filter((x): x is string => typeof x === 'string');
+  if (on.length === 3) return 'All on';
+  if (on.length === 0) return 'All off';
+  return `${on.join(', ')}`;
 }
 
 interface RowProps {

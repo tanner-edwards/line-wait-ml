@@ -140,6 +140,13 @@ export async function syncDailyParks(deviceId: string, dailyParks: 'disneyland' 
   await postJson(`/v1/devices/${encodeURIComponent(deviceId)}/daily-parks`, { dailyParks });
 }
 
+export async function syncNotificationTypes(
+  deviceId: string,
+  types: { trough: boolean; closure: boolean; reopen: boolean }
+): Promise<void> {
+  await postJson(`/v1/devices/${encodeURIComponent(deviceId)}/notification-types`, types);
+}
+
 // Tiny shared POST helper for the devices endpoints. Threads the same
 // API key + error-shape conventions as the v0/v2 endpoints above.
 async function postJson(path: string, body: object): Promise<unknown> {

@@ -20,9 +20,15 @@ import {
   registerDevice,
   syncDailyParks,
   syncMustDoRideIds,
+  syncNotificationTypes,
 } from '../api';
 import { getOrCreateDeviceId } from '../utils/deviceStorage';
+import {
+  getNotificationTypes,
+  setNotificationTypes as writeNotificationTypes,
+} from '../utils/notificationTypesStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
+import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
 import { usePersona } from './PersonaContext';
 import { useDailyContext } from './DailyContextContext';
 
@@ -30,6 +36,8 @@ interface DeviceContextValue {
   deviceId: string | null;
   notificationsEnabled: boolean;
   armedDate: string | null;
+  /** Per-type opt-ins. Default all true; user toggles from Profile. */
+  notificationTypes: NotificationTypes;
   /** True while a request to /v1/devices is in flight. */
   busy: boolean;
   /** Last user-facing error from a /v1/devices call. Reset on next attempt. */
@@ -43,6 +51,8 @@ interface DeviceContextValue {
   disableNotifications: () => Promise<void>;
   /** Stamp armedDate = today (Pacific) on the device record. */
   armForToday: () => Promise<void>;
+  /** Toggle a single notification kind on/off. Persists locally + syncs. */
+  setNotificationTypeEnabled: (kind: NotificationKind, enabled: boolean) => Promise<void>;
 }
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
@@ -53,16 +63,24 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
   const [armedDate, setArmedDate] = useState<string | null>(null);
+  const [notificationTypes, setNotificationTypesState] = useState<NotificationTypes>(defaultNotificationTypes());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Resolve the deviceId once on mount — generated on first launch and
-  // persisted in AsyncStorage thereafter.
+  // persisted in AsyncStorage thereafter. Also hydrate the cached
+  // notificationTypes from AsyncStorage.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const id = await getOrCreateDeviceId();
-      if (!cancelled) setDeviceId(id);
+      const [id, types] = await Promise.all([
+        getOrCreateDeviceId(),
+        getNotificationTypes(),
+      ]);
+      if (!cancelled) {
+        setDeviceId(id);
+        setNotificationTypesState(types);
+      }
     })();
     return () => {
       cancelled = true;
@@ -98,6 +116,20 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       console.warn('syncDailyParks failed', err);
     });
   }, [deviceId, notificationsEnabled, dailyContext]);
+
+  // Sync notificationTypes when they first become syncable (notifications
+  // just turned on). Subsequent edits go through setNotificationTypeEnabled
+  // which syncs inline.
+  const lastSyncedTypesRef = useRef<string>('');
+  useEffect(() => {
+    if (!deviceId || !notificationsEnabled) return;
+    const fingerprint = JSON.stringify(notificationTypes);
+    if (fingerprint === lastSyncedTypesRef.current) return;
+    lastSyncedTypesRef.current = fingerprint;
+    void syncNotificationTypes(deviceId, notificationTypes).catch(err => {
+      console.warn('syncNotificationTypes failed', err);
+    });
+  }, [deviceId, notificationsEnabled, notificationTypes]);
 
   const enableNotifications = useCallback(async (): Promise<boolean> => {
     if (!deviceId) return false;
@@ -155,6 +187,20 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     }
   }, [deviceId, persona]);
 
+  const setNotificationTypeEnabled = useCallback(
+    async (kind: NotificationKind, enabled: boolean): Promise<void> => {
+      const next: NotificationTypes = { ...notificationTypes, [kind]: enabled };
+      setNotificationTypesState(next);
+      await writeNotificationTypes(next);
+      if (deviceId && notificationsEnabled) {
+        void syncNotificationTypes(deviceId, next).catch(err => {
+          console.warn('syncNotificationTypes failed', err);
+        });
+      }
+    },
+    [deviceId, notificationsEnabled, notificationTypes]
+  );
+
   const armForToday = useCallback(async (): Promise<void> => {
     if (!deviceId) return;
     setBusy(true);
@@ -176,11 +222,13 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         deviceId,
         notificationsEnabled,
         armedDate,
+        notificationTypes,
         busy,
         error,
         enableNotifications,
         disableNotifications,
         armForToday,
+        setNotificationTypeEnabled,
       }}
     >
       {children}
