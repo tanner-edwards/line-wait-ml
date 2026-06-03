@@ -11,6 +11,7 @@
 // later improve message wording the history reflects the new wording
 // automatically.
 
+import { notificationBody } from '../../../../notification-copy';
 import React, { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -127,7 +128,7 @@ function Row({
   onPress: () => void;
 }): React.ReactElement {
   const emoji = emojiFor(entry);
-  const body = summarize(entry);
+  const body = notificationBody(entry);
   const when = formatTimeAgo(entry.firedAt);
   return (
     <Pressable
@@ -152,40 +153,6 @@ function emojiFor(entry: NotificationLogEntry): string {
   return entry.badge === 'star' ? '⭐' : '✅';
 }
 
-function summarize(entry: NotificationLogEntry): string {
-  if (entry.type === 'trough') {
-    const wait = entry.currentWait != null ? `${entry.currentWait} min` : 'a short wait';
-    const compare = entry.bucket0Wait != null ? `, usually ${entry.bucket0Wait}` : '';
-    if (entry.badge === 'star') return `Just ${wait}${compare}. Rare low.`;
-    return `Only ${wait}${compare}.`;
-  }
-  if (entry.type === 'closure') {
-    return 'Just went down.';
-  }
-  if (entry.type === 'reopen') {
-    const wait = entry.currentWait != null ? `${entry.currentWait} min` : null;
-    const downtime = entry.durationMs != null ? formatShortDuration(entry.durationMs) : null;
-    if (downtime && wait) return `Back after ${downtime}. Wait posted at ${wait}.`;
-    if (downtime) return `Back after ${downtime}.`;
-    if (wait) return `Just reopened. Wait posted at ${wait}.`;
-    return 'Just reopened.';
-  }
-  if (entry.type === 'peak') {
-    const wait = entry.currentWait != null ? `${entry.currentWait} min` : 'a long wait';
-    const p90 = entry.rideStats?.p90 != null ? ` — p90 is ${entry.rideStats.p90}` : '';
-    return `At ${wait}${p90}. Now's not the time.`;
-  }
-  return '';
-}
-
-function formatShortDuration(ms: number): string {
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = minutes / 60;
-  if (hours < 1.25) return 'an hour';
-  if (hours < 10) return `${Math.round(hours * 10) / 10} hours`;
-  return `${Math.round(hours)} hours`;
-}
 
 const styles = StyleSheet.create({
   backdrop: {

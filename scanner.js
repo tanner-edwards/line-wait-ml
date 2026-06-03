@@ -19,6 +19,7 @@
 
 import admin from 'firebase-admin';
 import webpush from 'web-push';
+import { notificationTitle, notificationBody, formatDuration } from './notification-copy.js';
 
 const PARK_TZ = 'America/Los_Angeles';
 
@@ -419,84 +420,16 @@ function stripUndefined(value) {
 // Human-friendly duration: "20 min", "an hour", "1.5 hours", "3 hours".
 // Used for reopen messages where the scanner has durationMs from the
 // matching closure event.
-function formatDuration(ms) {
-  if (!Number.isFinite(ms) || ms <= 0) return null;
-  const minutes = Math.round(ms / 60_000);
-  if (minutes < 60) return `${minutes} min`;
-  const hours = minutes / 60;
-  if (hours < 1.25) return 'an hour';
-  if (hours < 10) return `${Math.round(hours * 10) / 10} hours`;
-  return `${Math.round(hours)} hours`;
-}
 
-// Build the user-facing notification payload. The title carries the
-// emoji marker (⭐ rare low, ✅ good window, 🛑 down, 🎉 reopen) so the
-// notification type is identifiable at a glance on the lockscreen.
-// Body composition:
-//   trough/star : "Just 5 min — usually 40. Rare low."
-//   trough/go   : "Only 25 min — below the usual 40."
-//   closure     : "Just went down — was 30 min."  (or just "Just went down.")
-//   reopen+opp  : "Back after 2 hours — wait only 25 min!"
-//   reopen+dur  : "Back after 20 min. Wait posted at 75."
-//   reopen      : "Just reopened. Wait posted at 75."
-function buildPayload({
-  type,
-  rideId,
-  rideName,
-  badge = null,
-  currentWait = null,   // current ride wait at fire time
-  bucket0Wait = null,   // historical avg for this 30-min slot (trough context)
-  rideStats = null,     // { p10, p50, p90 } — for reopen opportunity check
-  previousWait = null,  // wait at the previous tick (closure context)
-  durationMs = null,    // downtime length in ms (reopen)
-}) {
-  const safeName = rideName ?? 'Ride';
-  let title;
-  let body;
-
-  if (type === 'trough') {
-    const emoji = badge === 'star' ? '⭐' : '✅';
-    title = `${emoji} ${safeName}`;
-    const waitText = currentWait != null ? `${currentWait} min` : 'a short wait';
-    const compare = bucket0Wait != null ? ` — usually ${bucket0Wait} around now` : '';
-    if (badge === 'star') {
-      body = `Just ${waitText}${compare}. Rare low.`;
-    } else {
-      body = `Only ${waitText}${compare}.`;
-    }
-  } else if (type === 'closure') {
-    title = `🛑 ${safeName}`;
-    // TODO: once we have a per-ride downtime classifier, include an
-    // estimate ("expected back in ~30 min"). Until then, the bare fact
-    // of going down is the only honest thing to say.
-    body = 'Just went down.';
-  } else if (type === 'reopen') {
-    title = `🎉 ${safeName}`;
-    const downtime = formatDuration(durationMs);
-    const waitText = currentWait != null ? `${currentWait} min` : null;
-    const longDowntime = durationMs != null && durationMs >= 60 * 60_000;
-    const lowWait = rideStats?.p50 != null && currentWait != null && currentWait < rideStats.p50 * 0.7;
-    if (downtime && longDowntime && lowWait) {
-      body = `Back after ${downtime} — wait only ${waitText}!`;
-    } else if (downtime && waitText) {
-      body = `Back after ${downtime}. Wait posted at ${waitText}.`;
-    } else if (downtime) {
-      body = `Back after ${downtime}.`;
-    } else if (waitText) {
-      body = `Just reopened. Wait posted at ${waitText}.`;
-    } else {
-      body = 'Just reopened.';
-    }
-  } else if (type === 'peak') {
-    title = `✕ ${safeName}`;
-    const waitText = currentWait != null ? `${currentWait} min` : 'a long wait';
-    const compare = rideStats?.p90 != null ? ` — p90 is ${rideStats.p90}` : '';
-    body = `At ${waitText}${compare}. Now's not the time.`;
-  } else {
-    title = safeName;
-    body = '';
-  }
-  return { title, body, rideId, type, badge };
+// Build the user-facing notification payload. Copy lives in notification-copy.js.
+function buildPayload({ type, rideId, rideName, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, previousWait = null, durationMs = null }) {
+  return {
+    title: notificationTitle(type, rideName, badge),
+    body: notificationBody({ type, badge, currentWait, bucket0Wait, rideStats, durationMs }),
+    rideId,
+    type,
+    badge,
+  };
 }
 
 // Sends a Web Push to the device's stored subscription. Returns

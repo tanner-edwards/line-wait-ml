@@ -162,7 +162,26 @@ function DetailBody({
         aboveBelow={aboveBelow}
       />
 
-      {/* Trend graph */}
+      {/* Right-now tile — moved ABOVE the graph since the current-vs-typical
+          comparison is the most decision-relevant single number on the page. */}
+      {bucket0Wait != null ? (
+        <Tile>
+          <TileLabel>Right now vs typical</TileLabel>
+          <Text style={styles.rightNowLine}>
+            <Text style={styles.rightNowNumber}>
+              {isDown ? 'Closed' : (anchorWait != null ? `${anchorWait} min` : '—')}
+            </Text>
+            <Text style={styles.rightNowDim}> · usually ~{bucket0Wait} min around now</Text>
+          </Text>
+          {aboveBelow ? (
+            <Text style={[styles.rightNowDelta, { color: aboveBelow.color }]}>
+              {aboveBelow.arrow} {Math.abs(aboveBelow.percent)}% {aboveBelow.percent < 0 ? 'below' : 'above'} typical
+            </Text>
+          ) : null}
+        </Tile>
+      ) : null}
+
+      {/* Trend graph — full-width hero, taller so the Y axis is readable. */}
       {(ride.recentHistory && ride.recentHistory.length > 0) || buckets ? (
         <Tile>
           <TileLabel>Trend</TileLabel>
@@ -191,24 +210,6 @@ function DetailBody({
             current={anchorWait}
             isDown={isDown}
           />
-        </Tile>
-      ) : null}
-
-      {/* Right-now tile — currentWait vs historical typical at this hour */}
-      {bucket0Wait != null ? (
-        <Tile>
-          <TileLabel>Right now vs typical</TileLabel>
-          <Text style={styles.rightNowLine}>
-            <Text style={styles.rightNowNumber}>
-              {isDown ? 'Closed' : (anchorWait != null ? `${anchorWait} min` : '—')}
-            </Text>
-            <Text style={styles.rightNowDim}> · usually ~{bucket0Wait} min around now</Text>
-          </Text>
-          {aboveBelow ? (
-            <Text style={[styles.rightNowDelta, { color: aboveBelow.color }]}>
-              {aboveBelow.arrow} {Math.abs(aboveBelow.percent)}% {aboveBelow.percent < 0 ? 'below' : 'above'} typical
-            </Text>
-          ) : null}
         </Tile>
       ) : null}
 
@@ -304,12 +305,17 @@ function StatusRow({
 
 // ---- Trend graph (SVG) --------------------------------------------
 
-const GRAPH_W = 320;
-const GRAPH_H = 140;
-const G_PAD_LEFT = 12;
-const G_PAD_RIGHT = 12;
-const G_PAD_TOP = 24;
-const G_PAD_BOTTOM = 28;
+// Trend graph dimensions — tall enough to give the Y axis room to breathe.
+// Width is "100%" via the SVG attribute; the internal viewBox is just the
+// coordinate system. Height is fixed in pixels so the graph occupies a
+// real, readable chunk of the screen.
+const GRAPH_W = 360;
+const GRAPH_H = 280;
+const GRAPH_RENDER_H = 280;
+const G_PAD_LEFT = 40;   // room for Y axis labels (3 digits + tick)
+const G_PAD_RIGHT = 16;
+const G_PAD_TOP = 28;
+const G_PAD_BOTTOM = 32;
 
 function TrendGraph({
   recentHistory,
@@ -386,24 +392,65 @@ function TrendGraph({
     .map(p => `${xToPx(p.x)},${yToPx(p.y!)}`)
     .join(' ');
 
-  // Axis ticks: -60, -30, now, +60, +120
-  const ticks: { x: number; label: string }[] = [
+  // X axis ticks
+  const xTicks: { x: number; label: string }[] = [
     { x: -60, label: '60m ago' },
+    { x: -30, label: '30m ago' },
     { x: 0,   label: 'now' },
+    { x: 30,  label: '+30m' },
     { x: 60,  label: '+1h' },
+    { x: 90,  label: '+90m' },
     { x: 120, label: '+2h' },
   ];
+
+  // Y axis ticks — pick a "nice" step (5/10/15/20/25/50…) so we get
+  // roughly 4–6 evenly-spaced labels covering the data range.
+  const yTickStep = niceTickStep(yMax);
+  const yTicks: number[] = [];
+  for (let v = 0; v <= yMax; v += yTickStep) yTicks.push(v);
 
   const nowPx = xToPx(nowX);
 
   return (
     <View style={styles.graphWrap}>
-      <Svg width="100%" height={GRAPH_H} viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`} preserveAspectRatio="none">
-        {/* Subtle baseline */}
+      <Svg
+        width="100%"
+        height={GRAPH_RENDER_H}
+        viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
+        preserveAspectRatio="none"
+      >
+        {/* Horizontal gridlines + Y-axis tick labels */}
+        {yTicks.map(v => (
+          <React.Fragment key={`y-${v}`}>
+            <Line
+              x1={G_PAD_LEFT} x2={GRAPH_W - G_PAD_RIGHT}
+              y1={yToPx(v)} y2={yToPx(v)}
+              stroke="#f0f0f5" strokeWidth={1}
+            />
+            <SvgText
+              x={G_PAD_LEFT - 6}
+              y={yToPx(v) + 3}
+              fontSize="10"
+              fill={SUBINK}
+              textAnchor="end"
+            >
+              {v}
+            </SvgText>
+          </React.Fragment>
+        ))}
+
+        {/* Y axis line itself */}
+        <Line
+          x1={G_PAD_LEFT} x2={G_PAD_LEFT}
+          y1={G_PAD_TOP - 4} y2={GRAPH_H - G_PAD_BOTTOM}
+          stroke="#ddd" strokeWidth={1}
+        />
+
+        {/* Baseline (X axis) */}
         <Line
           x1={G_PAD_LEFT} x2={GRAPH_W - G_PAD_RIGHT}
           y1={GRAPH_H - G_PAD_BOTTOM} y2={GRAPH_H - G_PAD_BOTTOM}
-          stroke="#eee" strokeWidth={1}
+          stroke="#ddd" strokeWidth={1}
         />
 
         {/* "Now" vertical marker */}
@@ -475,7 +522,7 @@ function TrendGraph({
         ) : null}
 
         {/* X-axis tick labels */}
-        {ticks.map(t => (
+        {xTicks.map(t => (
           <SvgText
             key={t.label}
             x={xToPx(t.x)}
@@ -517,13 +564,25 @@ function TrendCaption({
   return <Text style={styles.tinyHint}>Trending down — a better window may be coming.</Text>;
 }
 
+// "Nice" Y axis step — pick the smallest tick increment from a fixed
+// candidate set that yields ≤6 ticks across the data range. Keeps the
+// gridline count readable across short-wait and headliner-wait rides.
+function niceTickStep(max: number): number {
+  const candidates = [5, 10, 15, 20, 25, 30, 50, 75, 100, 150, 200];
+  for (const c of candidates) {
+    if (max / c <= 6) return c;
+  }
+  return Math.ceil(max / 5);
+}
+
 // ---- Range band (SVG p10 – p90) -----------------------------------
 
-const RB_W = 320;
-const RB_H = 76;
-const RB_PAD_X = 16;
-const RB_BAR_Y = 28;
-const RB_BAR_H = 6;
+const RB_W = 360;
+const RB_H = 110;
+const RB_RENDER_H = 110;
+const RB_PAD_X = 24;
+const RB_BAR_Y = 44;
+const RB_BAR_H = 10;
 
 function RangeBand({
   p10,
@@ -556,20 +615,25 @@ function RangeBand({
   // They never collide vertically because they live on different rows.
   return (
     <View style={styles.rangeWrap}>
-      <Svg width="100%" height={RB_H} viewBox={`0 0 ${RB_W} ${RB_H}`} preserveAspectRatio="none">
+      <Svg
+        width="100%"
+        height={RB_RENDER_H}
+        viewBox={`0 0 ${RB_W} ${RB_H}`}
+        preserveAspectRatio="none"
+      >
         {/* Dashed tails for out-of-band cases */}
         {outsideLow && clampedCurrentPx != null ? (
           <Line
             x1={clampedCurrentPx} x2={bandStart}
             y1={RB_BAR_Y + RB_BAR_H / 2} y2={RB_BAR_Y + RB_BAR_H / 2}
-            stroke={MUTED} strokeWidth={2} strokeDasharray="3,3"
+            stroke={MUTED} strokeWidth={2} strokeDasharray="4,4"
           />
         ) : null}
         {outsideHigh && clampedCurrentPx != null ? (
           <Line
             x1={bandEnd} x2={clampedCurrentPx}
             y1={RB_BAR_Y + RB_BAR_H / 2} y2={RB_BAR_Y + RB_BAR_H / 2}
-            stroke={MUTED} strokeWidth={2} strokeDasharray="3,3"
+            stroke={MUTED} strokeWidth={2} strokeDasharray="4,4"
           />
         ) : null}
 
@@ -577,34 +641,34 @@ function RangeBand({
         <Rect
           x={bandStart} y={RB_BAR_Y}
           width={bandEnd - bandStart} height={RB_BAR_H}
-          rx={3} ry={3}
+          rx={5} ry={5}
           fill="#e7e8fa"
         />
 
         {/* End tick marks */}
-        <Line x1={bandStart} x2={bandStart} y1={RB_BAR_Y - 4} y2={RB_BAR_Y + RB_BAR_H + 4} stroke={BRAND_DIM} strokeWidth={1.5} />
-        <Line x1={bandEnd}   x2={bandEnd}   y1={RB_BAR_Y - 4} y2={RB_BAR_Y + RB_BAR_H + 4} stroke={BRAND_DIM} strokeWidth={1.5} />
+        <Line x1={bandStart} x2={bandStart} y1={RB_BAR_Y - 6} y2={RB_BAR_Y + RB_BAR_H + 6} stroke={BRAND_DIM} strokeWidth={2} />
+        <Line x1={bandEnd}   x2={bandEnd}   y1={RB_BAR_Y - 6} y2={RB_BAR_Y + RB_BAR_H + 6} stroke={BRAND_DIM} strokeWidth={2} />
 
-        {/* p10 / p90 labels (below) */}
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 16} fontSize="10" fill={SUBINK} textAnchor="middle">{p10}</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 16} fontSize="10" fill={SUBINK} textAnchor="middle">{p90}</SvgText>
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 28} fontSize="9" fill={MUTED} textAnchor="middle">p10</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 28} fontSize="9" fill={MUTED} textAnchor="middle">p90</SvgText>
+        {/* p10 / p90 labels (below) — bigger, two rows so they don't crowd the dot label */}
+        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 22} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p10}</SvgText>
+        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 22} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p90}</SvgText>
+        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 38} fontSize="10" fill={MUTED} textAnchor="middle">p10</SvgText>
+        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 38} fontSize="10" fill={MUTED} textAnchor="middle">p90</SvgText>
 
-        {/* Current-wait dot + label (above) */}
+        {/* Current-wait dot + label (above) — bigger dot, bigger number */}
         {clampedCurrentPx != null && current != null ? (
           <>
             <Circle
               cx={clampedCurrentPx} cy={RB_BAR_Y + RB_BAR_H / 2}
-              r={6}
+              r={9}
               fill="#fff"
               stroke={isDown ? RED : BRAND}
-              strokeWidth={2.5}
+              strokeWidth={3}
             />
             <SvgText
               x={clampedCurrentPx}
-              y={RB_BAR_Y - 6}
-              fontSize="11"
+              y={RB_BAR_Y - 12}
+              fontSize="14"
               fontWeight="700"
               fill={INK}
               textAnchor="middle"
@@ -664,7 +728,7 @@ const styles = StyleSheet.create({
   backArrow: { fontSize: 16, color: BRAND, fontWeight: '600' },
   headerSpacer: { flex: 1 },
 
-  body: { padding: 16, paddingBottom: 48 },
+  body: { padding: 10, paddingBottom: 48 },
 
   titleBlock: { marginBottom: 12, paddingHorizontal: 4 },
   title: { fontSize: 22, fontWeight: '700', color: INK },
@@ -707,8 +771,8 @@ const styles = StyleSheet.create({
   tile: {
     backgroundColor: '#fafaff',
     borderRadius: 12,
-    padding: 14,
-    marginTop: 12,
+    padding: 10,
+    marginTop: 10,
     borderColor: '#eef',
     borderWidth: 1,
   },
