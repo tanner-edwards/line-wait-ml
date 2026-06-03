@@ -30,6 +30,16 @@ export class WebPushNotificationService implements NotificationService {
   }
 
   async getSubscription(): Promise<ClubPushSubscription | null> {
+    return this.acquireSubscription({ forceFresh: false });
+  }
+
+  async resubscribe(): Promise<ClubPushSubscription | null> {
+    return this.acquireSubscription({ forceFresh: true });
+  }
+
+  private async acquireSubscription(
+    { forceFresh }: { forceFresh: boolean }
+  ): Promise<ClubPushSubscription | null> {
     if (!isWebPushSupported()) return null;
 
     const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
@@ -52,7 +62,22 @@ export class WebPushNotificationService implements NotificationService {
     // Wait for the SW to become active before subscribing.
     await navigator.serviceWorker.ready;
 
-    let sub = await registration.pushManager.getSubscription();
+    // If forceFresh, drop any cached subscription first. The browser
+    // doesn't know when the server has pruned a subscription (404/410
+    // from the push service) — it just hands back whatever it cached
+    // last. Without this, "toggle off + back on" keeps re-registering
+    // the same dead endpoint. This is the iOS-PWA reliability fix.
+    let existing = await registration.pushManager.getSubscription();
+    if (existing && forceFresh) {
+      try {
+        await existing.unsubscribe();
+      } catch (err) {
+        console.warn('Web Push: unsubscribe-before-resubscribe failed', err);
+      }
+      existing = null;
+    }
+
+    let sub = existing;
     if (!sub) {
       try {
         sub = await registration.pushManager.subscribe({

@@ -12,8 +12,8 @@ export type PushTokenType = 'web' | 'expo';
 export type DailyParks = 'disneyland' | 'california-adventure' | 'both';
 export const DAILY_PARKS_VALUES: readonly DailyParks[] = ['disneyland', 'california-adventure', 'both'];
 
-export type NotificationKind = 'trough' | 'closure' | 'reopen';
-export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen'];
+export type NotificationKind = 'trough' | 'closure' | 'reopen' | 'peak';
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen', 'peak'];
 
 export type NotificationTypes = Record<NotificationKind, boolean>;
 

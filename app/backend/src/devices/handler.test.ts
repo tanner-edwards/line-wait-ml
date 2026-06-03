@@ -231,21 +231,21 @@ describe('POST /v1/devices/:id/daily-parks', () => {
 });
 
 describe('POST /v1/devices/:id/notification-types', () => {
-  it('accepts all three booleans', async () => {
+  it('accepts all four booleans', async () => {
     const res = await handler(
       buildEvent('/v1/devices/abc-123/notification-types', 'POST', {
-        trough: true, closure: false, reopen: true,
+        trough: true, closure: false, reopen: true, peak: false,
       })
     );
     expect(res.statusCode).toBe(200);
     expect(mockedDevices.setNotificationTypes).toHaveBeenCalledWith('abc-123', {
-      trough: true, closure: false, reopen: true,
+      trough: true, closure: false, reopen: true, peak: false,
     });
   });
 
   it('rejects missing field', async () => {
     const res = await handler(
-      buildEvent('/v1/devices/abc-123/notification-types', 'POST', { trough: true, closure: false })
+      buildEvent('/v1/devices/abc-123/notification-types', 'POST', { trough: true, closure: false, reopen: true })
     );
     expect(res.statusCode).toBe(400);
     expect(mockedDevices.setNotificationTypes).not.toHaveBeenCalled();

@@ -1,6 +1,10 @@
 // Bottom-sheet modal showing recent notifications for this device.
-// Fetches /v1/devices/:id/notifications on every open (no caching —
-// the list is small and freshness matters more than network savings).
+//
+// Stale-while-revalidate: on open we immediately show the cached list from
+// AsyncStorage, then fetch fresh data in the background. A small loading
+// indicator at the top of the list signals the refresh without replacing the
+// content — so the user sees something instantly and isn't surprised by new
+// entries appearing.
 //
 // Each row recomposes a tight summary from the log entry's data rather
 // than persisting the OS-notification body verbatim. Tradeoff: if we
@@ -22,31 +26,40 @@ import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { ApiError, fetchDeviceNotifications } from '../api';
 import { NotificationLogEntry } from '../types';
 import { formatTimeAgo } from '../timestamp';
+import { getCachedNotifications, setCachedNotifications } from '../utils/notificationHistoryStorage';
 
-interface Props {
-  visible: boolean;
-  onClose: () => void;
-}
-
-export function NotificationHistorySheet({ visible, onClose }: Props): React.ReactElement {
+export function NotificationHistorySheet(): React.ReactElement {
   const { deviceId } = useDevice();
-  const { openDetail } = useNotificationDetail();
+  const { openDetail, historySheetOpen, closeHistorySheet } = useNotificationDetail();
+  const visible = historySheetOpen;
+  const onClose = closeHistorySheet;
   const [entries, setEntries] = useState<NotificationLogEntry[] | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!deviceId) return;
-    setLoading(true);
+
+    // Show cached entries immediately so the sheet isn't blank while we fetch.
+    const cached = await getCachedNotifications(deviceId);
+    if (cached) setEntries(cached);
+
+    // Fetch fresh data in the background; a small indicator in the list header
+    // signals the update without replacing the visible content.
+    setRefreshing(true);
     setError(null);
     try {
       const next = await fetchDeviceNotifications(deviceId);
       setEntries(next);
+      void setCachedNotifications(deviceId, next);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not load notifications';
-      setError(message);
+      // Only surface the error if we have nothing to show.
+      if (!cached) {
+        const message = err instanceof ApiError ? err.message : 'Could not load notifications';
+        setError(message);
+      }
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   }, [deviceId]);
 
@@ -65,11 +78,7 @@ export function NotificationHistorySheet({ visible, onClose }: Props): React.Rea
               <Text style={styles.closeX}>✕</Text>
             </Pressable>
           </View>
-          {loading ? (
-            <View style={styles.loading}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : error ? (
+          {error ? (
             <Text style={styles.error}>{error}</Text>
           ) : entries && entries.length > 0 ? (
             <FlatList
@@ -79,13 +88,27 @@ export function NotificationHistorySheet({ visible, onClose }: Props): React.Rea
                 <Row
                   entry={item}
                   onPress={() => {
-                    openDetail({ rideId: item.rideId, type: item.type });
-                    onClose();
+                    // openDetail closes the sheet automatically. The detail
+                    // modal's "Back" button restores it because we pass
+                    // source: 'history'.
+                    openDetail({ rideId: item.rideId, type: item.type, source: 'history' });
                   }}
                 />
               )}
+              ListHeaderComponent={
+                refreshing ? (
+                  <View style={styles.refreshRow} testID="notif-history-refreshing">
+                    <ActivityIndicator size="small" color="#999" />
+                    <Text style={styles.refreshText}>Updating…</Text>
+                  </View>
+                ) : null
+              }
               style={styles.list}
             />
+          ) : refreshing ? (
+            <View style={styles.loading}>
+              <ActivityIndicator size="small" />
+            </View>
           ) : (
             <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
           )}
@@ -125,6 +148,7 @@ function Row({
 function emojiFor(entry: NotificationLogEntry): string {
   if (entry.type === 'closure') return '🛑';
   if (entry.type === 'reopen') return '🎉';
+  if (entry.type === 'peak') return '✕';
   return entry.badge === 'star' ? '⭐' : '✅';
 }
 
@@ -136,9 +160,7 @@ function summarize(entry: NotificationLogEntry): string {
     return `Only ${wait}${compare}.`;
   }
   if (entry.type === 'closure') {
-    return entry.previousWait != null
-      ? `Just went down — was ${entry.previousWait} min.`
-      : 'Just went down.';
+    return 'Just went down.';
   }
   if (entry.type === 'reopen') {
     const wait = entry.currentWait != null ? `${entry.currentWait} min` : null;
@@ -147,6 +169,11 @@ function summarize(entry: NotificationLogEntry): string {
     if (downtime) return `Back after ${downtime}.`;
     if (wait) return `Just reopened. Wait posted at ${wait}.`;
     return 'Just reopened.';
+  }
+  if (entry.type === 'peak') {
+    const wait = entry.currentWait != null ? `${entry.currentWait} min` : 'a long wait';
+    const p90 = entry.rideStats?.p90 != null ? ` — p90 is ${entry.rideStats.p90}` : '';
+    return `At ${wait}${p90}. Now's not the time.`;
   }
   return '';
 }
@@ -174,7 +201,9 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 32,
     paddingHorizontal: 20,
-    maxHeight: '70%',
+    // Most of the screen, but leave a peek of the underlying page at top
+    // so the user still recognizes this as a dismissable sheet.
+    height: '90%',
   },
   header: {
     flexDirection: 'row',
@@ -185,6 +214,14 @@ const styles = StyleSheet.create({
   title: { fontSize: 18, fontWeight: '700', color: '#222' },
   closeX: { fontSize: 22, color: '#999' },
   list: { flexGrow: 0 },
+  refreshRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    gap: 6,
+  },
+  refreshText: { fontSize: 12, color: '#999' },
   loading: { paddingVertical: 24, alignItems: 'center' },
   error: { color: '#c41e3a', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   empty: { color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 16 },

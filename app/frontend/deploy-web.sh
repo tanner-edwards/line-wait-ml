@@ -51,8 +51,28 @@ npx expo export --platform web
 echo "==> patching dist/index.html with PWA + iOS meta tags"
 node scripts/patch-html.mjs
 
-echo "==> aws s3 sync --delete"
-aws s3 sync dist/ "s3://$BUCKET" --delete
+# Upload in two passes so the browser/PWA gets correct Cache-Control headers:
+#
+#   1. `sync` everything with long-immutable caching. Expo hashes JS/CSS
+#      filenames (e.g. entry-abc123.js), so when content changes the URL
+#      changes — safe to cache for a year.
+#   2. `cp` over index.html and sw.js with no-cache so the browser always
+#      re-fetches the entry point + service worker on every load. Without
+#      this, CloudFront's CachingOptimized policy falls back to a 1-day
+#      browser TTL and users keep seeing the old PWA after a deploy.
+echo "==> aws s3 sync --delete (long-immutable cache for hashed assets)"
+aws s3 sync dist/ "s3://$BUCKET" --delete \
+  --cache-control "public, max-age=31536000, immutable"
+
+echo "==> aws s3 cp index.html + sw.js (no-cache override)"
+aws s3 cp dist/index.html "s3://$BUCKET/index.html" \
+  --cache-control "no-cache, no-store, must-revalidate" \
+  --content-type "text/html"
+if [[ -f dist/sw.js ]]; then
+  aws s3 cp dist/sw.js "s3://$BUCKET/sw.js" \
+    --cache-control "no-cache, no-store, must-revalidate" \
+    --content-type "application/javascript"
+fi
 
 echo "==> CloudFront invalidation (forces edge cache refresh)"
 INVALIDATION_ID=$(aws cloudfront create-invalidation \

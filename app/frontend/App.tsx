@@ -8,6 +8,7 @@ import { DailyContextProvider } from './src/context/DailyContextContext';
 import { DebugModeProvider } from './src/context/DebugModeContext';
 import { NotificationDetailProvider } from './src/context/NotificationDetailContext';
 import { NotificationDetailModal } from './src/components/NotificationDetailModal';
+import { NotificationHistorySheet } from './src/components/NotificationHistorySheet';
 import { NotificationDeepLinkHandler } from './src/components/NotificationDeepLinkHandler';
 import { RootNavigator } from './src/navigation/RootNavigator';
 
@@ -23,6 +24,7 @@ export default function App() {
                   <RideProvider>
                     <NotificationDetailProvider>
                       <RootNavigator />
+                      <NotificationHistorySheet />
                       <NotificationDetailModal />
                       <NotificationDeepLinkHandler />
                     </NotificationDetailProvider>

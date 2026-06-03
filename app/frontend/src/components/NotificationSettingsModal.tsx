@@ -1,8 +1,7 @@
-// Bottom-sheet modal for per-type notification opt-ins. Three toggles:
-// trough (⭐ rare lows / ✅ good windows), closure (🛑 ride down),
-// reopen (🎉 ride back up). All on by default. Changes persist to
-// AsyncStorage and sync to the device record so the scanner respects
-// them on the next tick.
+// Bottom-sheet modal for per-type notification opt-ins. Four toggles:
+// trough (⭐/✅ good windows), closure (🛑 ride down), reopen (🎉 ride back up),
+// peak (📈 ride at p90 — off by default). Changes persist to AsyncStorage
+// and sync to the device record so the scanner respects them on the next tick.
 
 import React from 'react';
 import {
@@ -46,6 +45,12 @@ const ROWS: Row[] = [
     emoji: '🎉',
     title: 'Ride reopens',
     subtitle: "Pings you when a closed must-do ride comes back online.",
+  },
+  {
+    kind: 'peak',
+    emoji: '✕',
+    title: 'Peak wait alert',
+    subtitle: "Off by default. Alerts when a must-do ride hits its p90 — busiest it typically gets.",
   },
 ];
 

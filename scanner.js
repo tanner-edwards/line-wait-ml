@@ -43,13 +43,13 @@ function allowedParkIdsFor(device) {
   return id ? [id] : DLR_PARK_IDS;
 }
 
-// Per-type opt-in check. Default to true for legacy records that don't
-// have the field — they haven't been through the new Profile screen yet,
-// and "send everything" matches the original v1 behavior.
+// Per-type opt-in check. Legacy records without a notificationTypes object
+// default to true for trough/closure/reopen (preserving v1 behavior), but
+// peak defaults to false everywhere — it's a new opt-in type.
 function wantsNotification(device, type) {
   const types = device.notificationTypes;
-  if (!types || typeof types !== 'object') return true;
-  if (typeof types[type] !== 'boolean') return true;
+  if (!types || typeof types !== 'object') return type !== 'peak';
+  if (typeof types[type] !== 'boolean') return type !== 'peak';
   return types[type];
 }
 
@@ -466,9 +466,10 @@ function buildPayload({
     }
   } else if (type === 'closure') {
     title = `🛑 ${safeName}`;
-    body = previousWait != null
-      ? `Just went down — was ${previousWait} min.`
-      : 'Just went down.';
+    // TODO: once we have a per-ride downtime classifier, include an
+    // estimate ("expected back in ~30 min"). Until then, the bare fact
+    // of going down is the only honest thing to say.
+    body = 'Just went down.';
   } else if (type === 'reopen') {
     title = `🎉 ${safeName}`;
     const downtime = formatDuration(durationMs);
@@ -486,6 +487,11 @@ function buildPayload({
     } else {
       body = 'Just reopened.';
     }
+  } else if (type === 'peak') {
+    title = `✕ ${safeName}`;
+    const waitText = currentWait != null ? `${currentWait} min` : 'a long wait';
+    const compare = rideStats?.p90 != null ? ` — p90 is ${rideStats.p90}` : '';
+    body = `At ${waitText}${compare}. Now's not the time.`;
   } else {
     title = safeName;
     body = '';
@@ -644,7 +650,7 @@ async function run() {
   log('lookups_loaded', { historicalKeys: historical.size, statsKeys: stats.size });
 
   let considered = 0, fired = 0, skippedCooldown = 0, skippedClosed = 0;
-  let firedTrough = 0, firedClosure = 0, firedReopen = 0;
+  let firedTrough = 0, firedClosure = 0, firedReopen = 0, firedPeak = 0;
   let skippedTypeOptOut = 0;
 
   // --- First pass: ride-level status-change accounting (Phase E1) ---
@@ -703,7 +709,6 @@ async function run() {
         } else {
           const r = await fireNotification({
             db, device, currentRide: current, type: 'closure',
-            extra: { previousWait: obs.previous?.wait ?? null },
           });
           if (r.fired) { fired++; firedClosure++; }
           else if (r.reason === 'cooldown') skippedCooldown++;
@@ -749,22 +754,38 @@ async function run() {
       };
 
       const badge = scoreRide(rideForScoring);
-      if (badge !== 'star' && badge !== 'go') continue;
 
-      if (!wantsNotification(device, 'trough')) {
-        skippedTypeOptOut++;
-        continue;
+      // Trough and peak are mutually exclusive: trough fires on a good-score
+      // (low relative wait), peak fires when the wait hits p90.
+      if (badge === 'star' || badge === 'go') {
+        if (!wantsNotification(device, 'trough')) {
+          skippedTypeOptOut++;
+        } else {
+          const r = await fireNotification({
+            db, device, currentRide: current, type: 'trough', badge,
+            extra: {
+              bucket0Wait: historicalBuckets[0]?.wait ?? null,
+              rideStats: rideForScoring.rideStats,
+            },
+          });
+          if (r.fired) { fired++; firedTrough++; }
+          else if (r.reason === 'cooldown') skippedCooldown++;
+        }
+      } else {
+        const rideStats = rideForScoring.rideStats;
+        if (rideStats && rideStats.p90 > 0 && current.wait != null && current.wait >= rideStats.p90) {
+          if (!wantsNotification(device, 'peak')) {
+            skippedTypeOptOut++;
+          } else {
+            const r = await fireNotification({
+              db, device, currentRide: current, type: 'peak',
+              extra: { rideStats },
+            });
+            if (r.fired) { fired++; firedPeak++; }
+            else if (r.reason === 'cooldown') skippedCooldown++;
+          }
+        }
       }
-
-      const r = await fireNotification({
-        db, device, currentRide: current, type: 'trough', badge,
-        extra: {
-          bucket0Wait: historicalBuckets[0]?.wait ?? null,
-          rideStats: rideForScoring.rideStats,
-        },
-      });
-      if (r.fired) { fired++; firedTrough++; }
-      else if (r.reason === 'cooldown') skippedCooldown++;
     }
   }
 
@@ -774,6 +795,7 @@ async function run() {
     firedTrough,
     firedClosure,
     firedReopen,
+    firedPeak,
     skippedCooldown,
     skippedClosed,
     skippedWrongPark,

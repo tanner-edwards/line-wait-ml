@@ -146,7 +146,13 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         );
         return false;
       }
-      const sub = await svc.getSubscription();
+      // Use resubscribe (not getSubscription) so the browser drops any
+      // cached subscription before handing us a token. Without this, a
+      // dead subscription (e.g., one the push service has already 410'd
+      // and our scanner nulled in Firestore) gets handed back unchanged
+      // and we re-register the same dead endpoint — toggling off + on
+      // becomes a no-op until the user clears site data.
+      const sub = await svc.resubscribe();
       await registerDevice({
         deviceId,
         pushToken: sub?.token ?? null,

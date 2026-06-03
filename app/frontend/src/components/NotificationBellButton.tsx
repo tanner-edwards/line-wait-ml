@@ -1,28 +1,26 @@
 // Bell button rendered in the Home + Recommendations headers. Tap opens
-// the NotificationHistorySheet. Hidden when notifications are disabled —
-// no point showing a bell to users who haven't opted in.
+// the NotificationHistorySheet via NotificationDetailContext. The sheet
+// itself is rendered at the root (see App.tsx) so it can coordinate
+// with the ride detail modal — opening one closes the other.
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text } from 'react-native';
 import { useDevice } from '../context/DeviceContext';
-import { NotificationHistorySheet } from './NotificationHistorySheet';
+import { useNotificationDetail } from '../context/NotificationDetailContext';
 
 export function NotificationBellButton(): React.ReactElement | null {
   const { notificationsEnabled } = useDevice();
-  const [open, setOpen] = useState(false);
+  const { openHistorySheet } = useNotificationDetail();
   if (!notificationsEnabled) return null;
   return (
-    <>
-      <Pressable
-        onPress={() => setOpen(true)}
-        style={styles.button}
-        testID="notification-bell"
-        hitSlop={10}
-      >
-        <Text style={styles.icon}>🔔</Text>
-      </Pressable>
-      <NotificationHistorySheet visible={open} onClose={() => setOpen(false)} />
-    </>
+    <Pressable
+      onPress={openHistorySheet}
+      style={styles.button}
+      testID="notification-bell"
+      hitSlop={10}
+    >
+      <Text style={styles.icon}>🔔</Text>
+    </Pressable>
   );
 }
 

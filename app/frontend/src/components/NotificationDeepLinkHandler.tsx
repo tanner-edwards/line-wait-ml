@@ -34,7 +34,7 @@ export function NotificationDeepLinkHandler(): null {
     const params = new URLSearchParams(window.location.search);
     const detail = parseNotifParam(params.get('notif'));
     if (detail) {
-      openDetail(detail);
+      openDetail({ ...detail, source: 'deeplink' });
       // Strip the param so a page reload doesn't keep re-opening the modal.
       params.delete('notif');
       const next = params.toString();
@@ -50,7 +50,7 @@ export function NotificationDeepLinkHandler(): null {
       const data = event.data as { kind?: string; rideId?: string; type?: string } | null;
       if (!data || data.kind !== 'notification-click') return;
       const detail = parseNotifParam(`${data.rideId ?? ''}__${data.type ?? ''}`);
-      if (detail) openDetail(detail);
+      if (detail) openDetail({ ...detail, source: 'deeplink' });
     };
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);

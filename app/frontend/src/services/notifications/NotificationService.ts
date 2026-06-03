@@ -27,4 +27,12 @@ export interface NotificationService {
    * JSON string vs Expo opaque token).
    */
   getSubscription(): Promise<PushSubscription | null>;
+
+  /**
+   * Force a fresh subscription: unsubscribe any existing one and create
+   * a new endpoint. Used by the "re-enable notifications" flow so the
+   * browser doesn't hand back a cached subscription that the push
+   * service has already pruned (Web Push on iOS, mainly).
+   */
+  resubscribe(): Promise<PushSubscription | null>;
 }

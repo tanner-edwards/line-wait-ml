@@ -598,7 +598,7 @@ async function handleDeviceNotificationTypes(
   if (!deviceId) {
     return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
   }
-  let body: { trough?: unknown; closure?: unknown; reopen?: unknown };
+  let body: { trough?: unknown; closure?: unknown; reopen?: unknown; peak?: unknown };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {

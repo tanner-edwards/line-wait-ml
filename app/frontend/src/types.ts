@@ -166,11 +166,11 @@ export interface DailyContext {
   parks: DailyParks;
 }
 
-export type NotificationKind = 'trough' | 'closure' | 'reopen';
+export type NotificationKind = 'trough' | 'closure' | 'reopen' | 'peak';
 export type NotificationTypes = Record<NotificationKind, boolean>;
-export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen'];
+export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen', 'peak'];
 export function defaultNotificationTypes(): NotificationTypes {
-  return { trough: true, closure: true, reopen: true };
+  return { trough: true, closure: true, reopen: true, peak: false };
 }
 
 // Mirror of the backend's notificationLog.ts NotificationLogEntry. Used by
