@@ -27,6 +27,10 @@ import {
   getNotificationTypes,
   setNotificationTypes as writeNotificationTypes,
 } from '../utils/notificationTypesStorage';
+import {
+  getNotificationsEnabled as readNotificationsEnabled,
+  setNotificationsEnabled as writeNotificationsEnabled,
+} from '../utils/notificationsEnabledStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
 import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
 import { usePersona } from './PersonaContext';
@@ -73,13 +77,15 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [id, types] = await Promise.all([
+      const [id, types, enabled] = await Promise.all([
         getOrCreateDeviceId(),
         getNotificationTypes(),
+        readNotificationsEnabled(),
       ]);
       if (!cancelled) {
         setDeviceId(id);
         setNotificationTypesState(types);
+        setNotificationsEnabled(enabled);
       }
     })();
     return () => {
@@ -161,6 +167,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         notificationsEnabled: true,
       });
       setNotificationsEnabled(true);
+      void writeNotificationsEnabled(true);
       lastSyncedMustDoRef.current = [...(persona?.mustDoRideIds ?? [])].sort().join(',');
       return true;
     } catch (err) {
@@ -185,6 +192,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         notificationsEnabled: false,
       });
       setNotificationsEnabled(false);
+      void writeNotificationsEnabled(false);
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'Could not disable notifications';
       setError(message);
@@ -212,6 +220,20 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     setBusy(true);
     setError(null);
     try {
+      // Refresh the push subscription before stamping the date. Web Push
+      // subscriptions go stale across sessions; arming is the natural daily
+      // moment to renew so the scanner always has a live token.
+      const svc = getNotificationService();
+      const sub = await svc.resubscribe();
+      await registerDevice({
+        deviceId,
+        pushToken: sub?.token ?? null,
+        pushTokenType: (sub?.type ?? null) as PushTokenType | null,
+        mustDoRideIds: persona?.mustDoRideIds ?? [],
+        notificationsEnabled: true,
+      });
+      setNotificationsEnabled(true);
+      void writeNotificationsEnabled(true);
       const { armedDate: stamped } = await armDeviceForToday(deviceId);
       setArmedDate(stamped);
     } catch (err) {
@@ -220,7 +242,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [deviceId]);
+  }, [deviceId, persona]);
 
   return (
     <DeviceContext.Provider

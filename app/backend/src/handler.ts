@@ -166,13 +166,13 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
     })
   );
 
-  // Drop attractions explicitly flagged as non-wait-time experiences
-  // (shows, walk-throughs, transportation). The flag lives in ride_metadata
-  // and is authoritative — no need to infer from p90 stats.
+  // ride_metadata is the allowlist. Rides absent from it are walk-throughs,
+  // exhibits, or other experiences the API reports as ATTRACTION but that
+  // never have a standby queue. Rides present but flagged tracksWaitTime=false
+  // are transportation / shows we've explicitly excluded.
   const rides = allRides.filter(r => {
     const meta = lookupRideMetadata(metadataMap, r.id);
-    // tracksWaitTime absent on legacy Firestore docs → treat as true.
-    return meta?.tracksWaitTime !== false;
+    return meta != null && meta.tracksWaitTime !== false;
   });
 
   const data = shapeParkData(parkSlug, rides, now.toISOString());
