@@ -168,7 +168,7 @@ beforeEach(() => {
 });
 
 describe('Home — initial successful load', () => {
-  it('renders both park headers in order, lands sorted, rides with waits', async () => {
+  it('renders park headers and rides with waits (default: opportunity sort)', async () => {
     mockFetchWaits.mockResolvedValue(happyResponse);
 
     renderHome();
@@ -176,13 +176,13 @@ describe('Home — initial successful load', () => {
     // After load, the loaded view appears
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
+    // Park headers still render in opportunity-sort mode; land headers do
+    // not (flattenSorted emits flat rides under each park header).
     expect(screen.getByTestId('park-Disneyland')).toBeTruthy();
     expect(screen.getByTestId('park-Disney California Adventure')).toBeTruthy();
-
-    // Land headers exist
-    expect(screen.getByTestId('land-Fantasyland')).toBeTruthy();
-    expect(screen.getByTestId('land-Tomorrowland')).toBeTruthy();
-    expect(screen.getByTestId('land-Cars Land')).toBeTruthy();
+    expect(screen.queryByTestId('land-Fantasyland')).toBeNull();
+    expect(screen.queryByTestId('land-Tomorrowland')).toBeNull();
+    expect(screen.queryByTestId('land-Cars Land')).toBeNull();
 
     // Ride rows render with the right labels
     expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();

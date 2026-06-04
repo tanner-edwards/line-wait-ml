@@ -11,6 +11,11 @@ import { NotificationDetailModal } from './src/components/NotificationDetailModa
 import { NotificationHistorySheet } from './src/components/NotificationHistorySheet';
 import { NotificationDeepLinkHandler } from './src/components/NotificationDeepLinkHandler';
 import { RootNavigator } from './src/navigation/RootNavigator';
+import { installConsoleMirror } from './src/utils/logger';
+
+// Capture console.warn/error into the in-app log buffer (DebugLogModal).
+// Runs once at module load, before any component renders.
+installConsoleMirror();
 
 export default function App() {
   return (

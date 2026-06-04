@@ -28,6 +28,7 @@ import {
 } from '../components/PersonaFieldModal';
 import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
 import { DailyParkSheet } from '../components/DailyParkSheet';
+import { DebugLogModal } from '../components/DebugLogModal';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -76,6 +77,7 @@ export function Profile(): React.ReactElement {
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
   const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   if (!persona) {
     // Shouldn't happen — RootNavigator gates this screen behind persona !== null.
@@ -222,6 +224,20 @@ export function Profile(): React.ReactElement {
           <Text style={styles.rowChevron}>›</Text>
         </Pressable>
 
+        {debugMode ? (
+          <Pressable
+            onPress={() => setLogsOpen(true)}
+            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+            testID="debug-view-logs"
+          >
+            <View style={styles.rowText}>
+              <Text style={styles.rowLabel}>View logs</Text>
+              <Text style={styles.rowValue}>Session diagnostics — push, arm, errors</Text>
+            </View>
+            <Text style={styles.rowChevron}>›</Text>
+          </Pressable>
+        ) : null}
+
         <Pressable
           onPress={() => void resetForTesting()}
           style={({ pressed }) => [styles.resetButton, pressed && styles.resetButtonPressed]}
@@ -241,6 +257,7 @@ export function Profile(): React.ReactElement {
         visible={notifSettingsOpen}
         onClose={() => setNotifSettingsOpen(false)}
       />
+      <DebugLogModal visible={logsOpen} onClose={() => setLogsOpen(false)} />
     </SafeAreaView>
   );
 }

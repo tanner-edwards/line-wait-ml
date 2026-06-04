@@ -15,7 +15,6 @@ import React, {
   useState,
 } from 'react';
 import {
-  ApiError,
   armDeviceForToday,
   registerDevice,
   syncDailyParks,
@@ -32,6 +31,7 @@ import {
   setNotificationsEnabled as writeNotificationsEnabled,
 } from '../utils/notificationsEnabledStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
+import { logError, logInfo } from '../utils/logger';
 import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
 import { usePersona } from './PersonaContext';
 import { useDailyContext } from './DailyContextContext';
@@ -142,8 +142,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     setBusy(true);
     setError(null);
     try {
+      logInfo('enableNotifications: requesting permission', 'notif');
       const svc = getNotificationService();
       const permission = await svc.requestPermission();
+      logInfo(`enableNotifications: permission = ${permission}`, 'notif');
       if (permission !== 'granted') {
         setError(
           permission === 'unsupported'
@@ -159,6 +161,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       // and we re-register the same dead endpoint — toggling off + on
       // becomes a no-op until the user clears site data.
       const sub = await svc.resubscribe();
+      logInfo(`enableNotifications: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
       await registerDevice({
         deviceId,
         pushToken: sub?.token ?? null,
@@ -166,13 +169,17 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         mustDoRideIds: persona?.mustDoRideIds ?? [],
         notificationsEnabled: true,
       });
+      logInfo('enableNotifications: device registered', 'notif');
       setNotificationsEnabled(true);
       void writeNotificationsEnabled(true);
       lastSyncedMustDoRef.current = [...(persona?.mustDoRideIds ?? [])].sort().join(',');
       return true;
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not enable notifications';
-      setError(message);
+      // Full diagnostic goes to the in-app log page; the inline line stays
+      // generic so the Profile UI isn't cluttered with technical strings.
+      const detail = err instanceof Error ? err.message : String(err);
+      logError(`enableNotifications failed: ${detail}`, 'notif');
+      setError('Could not enable notifications');
       return false;
     } finally {
       setBusy(false);
@@ -193,9 +200,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       });
       setNotificationsEnabled(false);
       void writeNotificationsEnabled(false);
+      logInfo('disableNotifications: device cleared', 'notif');
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not disable notifications';
-      setError(message);
+      const detail = err instanceof Error ? err.message : String(err);
+      logError(`disableNotifications failed: ${detail}`, 'notif');
+      setError('Could not disable notifications');
     } finally {
       setBusy(false);
     }
@@ -223,8 +232,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       // Refresh the push subscription before stamping the date. Web Push
       // subscriptions go stale across sessions; arming is the natural daily
       // moment to renew so the scanner always has a live token.
+      logInfo('armForToday: refreshing push subscription', 'notif');
       const svc = getNotificationService();
       const sub = await svc.resubscribe();
+      logInfo(`armForToday: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
       await registerDevice({
         deviceId,
         pushToken: sub?.token ?? null,
@@ -235,10 +246,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       setNotificationsEnabled(true);
       void writeNotificationsEnabled(true);
       const { armedDate: stamped } = await armDeviceForToday(deviceId);
+      logInfo(`armForToday: armed for ${stamped}`, 'notif');
       setArmedDate(stamped);
     } catch (err) {
-      const message = err instanceof ApiError ? err.message : 'Could not arm device';
-      setError(message);
+      const detail = err instanceof Error ? err.message : String(err);
+      logError(`armForToday failed: ${detail}`, 'notif');
+      setError('Could not arm device');
     } finally {
       setBusy(false);
     }

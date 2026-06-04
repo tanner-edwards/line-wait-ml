@@ -4,6 +4,15 @@ Reads ride_metadata.json at the repo root, iterates entries with a non-null
 themeparks_id, and upserts each into the `ride_metadata` collection. Doc id =
 themeparks_id (the ride UUID). Idempotent — safe to re-run.
 
+MAINTENANCE — when Disney opens a new ride:
+  1. Add an entry to ride_metadata.json with a valid themeparks_id,
+     lat/lng coordinates, and tracks_wait_time: true (or false for
+     shows / walk-throughs / transportation that have no standby queue).
+  2. Re-run this script:
+       GOOGLE_APPLICATION_CREDENTIALS=../firebase-key.json python populate_ride_metadata.py
+  3. The backend ride filter (handler.ts) treats ride_metadata as an
+     allowlist — rides absent from Firestore are invisible in the app.
+
 Run locally:
     GOOGLE_APPLICATION_CREDENTIALS=/path/to/firebase-key.json python populate_ride_metadata.py
 

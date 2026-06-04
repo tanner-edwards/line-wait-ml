@@ -40,12 +40,16 @@ export class WebPushNotificationService implements NotificationService {
   private async acquireSubscription(
     { forceFresh }: { forceFresh: boolean }
   ): Promise<ClubPushSubscription | null> {
-    if (!isWebPushSupported()) return null;
+    // DIAGNOSTIC: each failure path throws a tagged, human-readable error so
+    // the reason surfaces in the Profile UI error line (console.warn is
+    // invisible on an installed PWA). Tag: "[push]".
+    if (!isWebPushSupported()) {
+      throw new Error('[push] unsupported: this browser/PWA has no serviceWorker or PushManager');
+    }
 
     const vapidPublicKey = process.env.EXPO_PUBLIC_VAPID_PUBLIC_KEY;
     if (!vapidPublicKey) {
-      console.warn('Web Push: EXPO_PUBLIC_VAPID_PUBLIC_KEY is not set');
-      return null;
+      throw new Error('[push] VAPID public key missing (EXPO_PUBLIC_VAPID_PUBLIC_KEY not set in build)');
     }
 
     // Register the service worker. Idempotent — multiple calls return the
@@ -55,8 +59,7 @@ export class WebPushNotificationService implements NotificationService {
     try {
       registration = await navigator.serviceWorker.register(SERVICE_WORKER_PATH);
     } catch (err) {
-      console.warn('Web Push: service worker registration failed', err);
-      return null;
+      throw new Error(`[push] service worker registration failed: ${describeError(err)}`);
     }
 
     // Wait for the SW to become active before subscribing.
@@ -87,16 +90,27 @@ export class WebPushNotificationService implements NotificationService {
           applicationServerKey: urlBase64ToUint8Array(vapidPublicKey) as BufferSource,
         });
       } catch (err) {
-        console.warn('Web Push: subscribe failed', err);
-        return null;
+        throw new Error(`[push] subscribe() failed: ${describeError(err)}`);
       }
     }
 
-    return {
-      token: JSON.stringify(sub.toJSON()),
-      type: 'web',
-    };
+    const token = JSON.stringify(sub.toJSON());
+    if (!token || token === '{}') {
+      throw new Error('[push] subscription produced an empty token');
+    }
+    return { token, type: 'web' };
   }
+}
+
+// Pull the most useful detail out of a thrown value. DOMExceptions from
+// PushManager carry their reason in `.name` (e.g. NotAllowedError,
+// AbortError, InvalidStateError) which is the single most diagnostic field.
+function describeError(err: unknown): string {
+  if (err instanceof Error) {
+    const name = err.name && err.name !== 'Error' ? `${err.name}: ` : '';
+    return `${name}${err.message || 'no message'}`;
+  }
+  return String(err);
 }
 
 function isWebPushSupported(): boolean {

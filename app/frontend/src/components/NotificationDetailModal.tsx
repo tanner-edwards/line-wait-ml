@@ -31,7 +31,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import Svg, { Circle, Line, Polyline, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -609,9 +609,11 @@ function niceTickStep(max: number): number {
 const RB_W = 360;
 const RB_H = 200;
 const RB_RENDER_H = 200;
-const RB_PAD_X = 24;
+// Side padding kept small so the bar genuinely spans the screen in the
+// happy path. End-cap labels are anchored at bandStart/bandEnd so they
+// follow the bar position even when it shifts for an out-of-band dot.
+const RB_PAD_X = 16;
 const RB_BAR_Y = 88;
-const RB_BAR_H = 20;
 
 function RangeBand({
   p10,
@@ -624,24 +626,57 @@ function RangeBand({
   current: number | null;
   isDown: boolean;
 }): React.ReactElement {
-  // We always draw the [p10, p90] band in the middle 60% of the visible
-  // SVG width. If `current` falls outside, we extend a dashed tail past
-  // the relevant endpoint and place the dot on it.
-  const bandStart = RB_PAD_X + (RB_W - RB_PAD_X * 2) * 0.20;
-  const bandEnd = RB_PAD_X + (RB_W - RB_PAD_X * 2) * 0.80;
-  const bandPxPerMin = (bandEnd - bandStart) / Math.max(1, p90 - p10);
-  const valueToPx = (v: number) => bandStart + (v - p10) * bandPxPerMin;
+  // Layout model:
+  //  • Happy path (p10 ≤ current ≤ p90): the bar spans the full inner width.
+  //    The dot sits on the bar proportionally between the end-caps.
+  //  • Below p10: the bar shifts right to make room for a green dashed
+  //    extension on the left. Extension length is proportional to how
+  //    far below the value is, capped at MAX_EXTENSION_FRAC of total
+  //    width so the band itself never shrinks below ~70%.
+  //  • Above p90: mirror — bar shifts left, red dashed extension on right.
+  //  • The bar is just lines (end-caps + a connector) with no interior
+  //    fill — keeps the "|—————|" feel clean.
 
-  const outsideLow = current != null && current < p10;
-  const outsideHigh = current != null && current > p90;
-  const currentPx = current != null ? valueToPx(current) : null;
-  // Clamp to a small margin from each SVG edge so the dot is never
-  // cropped, even if current is far outside the band.
-  const clampedCurrentPx =
-    currentPx != null ? Math.max(RB_PAD_X * 0.6, Math.min(RB_W - RB_PAD_X * 0.6, currentPx)) : null;
+  const innerLeft = RB_PAD_X;
+  const innerRight = RB_W - RB_PAD_X;
+  const totalW = innerRight - innerLeft;
+  const MAX_EXTENSION_FRAC = 0.30;
+  const maxExtension = totalW * MAX_EXTENSION_FRAC;
+  const range = Math.max(1, p90 - p10);
 
-  // Labels: p10/p90 numbers BELOW the bar, current wait ABOVE the bar.
-  // They never collide vertically because they live on different rows.
+  let bandStart = innerLeft;
+  let bandEnd = innerRight;
+  let dotX: number | null = null;
+  let dotColor = isDown ? RED : BRAND;
+  let extension: { x1: number; x2: number; color: string } | null = null;
+
+  if (current != null) {
+    if (current >= p10 && current <= p90) {
+      // Happy path — full-width bar, dot proportionally placed.
+      const ratio = (current - p10) / range;
+      dotX = innerLeft + ratio * totalW;
+    } else if (current < p10) {
+      // Below band — bar shifts right, green dashed extension on the left.
+      const outRatio = Math.min(1, (p10 - current) / range);
+      const extW = outRatio * maxExtension;
+      bandStart = innerLeft + extW;
+      bandEnd = innerRight;
+      dotX = innerLeft;
+      dotColor = GREEN;
+      extension = { x1: innerLeft, x2: bandStart, color: GREEN };
+    } else {
+      // Above band — bar shifts left, red dashed extension on the right.
+      const outRatio = Math.min(1, (current - p90) / range);
+      const extW = outRatio * maxExtension;
+      bandStart = innerLeft;
+      bandEnd = innerRight - extW;
+      dotX = innerRight;
+      dotColor = RED;
+      extension = { x1: bandEnd, x2: innerRight, color: RED };
+    }
+  }
+
+  const bandY = RB_BAR_Y;
   // Measure container width — see TrendGraph for the same rationale.
   const [renderW, setRenderW] = useState(0);
   return (
@@ -656,70 +691,61 @@ function RangeBand({
         viewBox={`0 0 ${RB_W} ${RB_H}`}
         preserveAspectRatio="none"
       >
-        {/* Dashed tails for out-of-band cases */}
-        {outsideLow && clampedCurrentPx != null ? (
+        {/* Out-of-band dashed extension (green for below, red for above) */}
+        {extension ? (
           <Line
-            x1={clampedCurrentPx} x2={bandStart}
-            y1={RB_BAR_Y + RB_BAR_H / 2} y2={RB_BAR_Y + RB_BAR_H / 2}
-            stroke={MUTED} strokeWidth={2} strokeDasharray="4,4"
-          />
-        ) : null}
-        {outsideHigh && clampedCurrentPx != null ? (
-          <Line
-            x1={bandEnd} x2={clampedCurrentPx}
-            y1={RB_BAR_Y + RB_BAR_H / 2} y2={RB_BAR_Y + RB_BAR_H / 2}
-            stroke={MUTED} strokeWidth={2} strokeDasharray="4,4"
+            x1={extension.x1} x2={extension.x2}
+            y1={bandY} y2={bandY}
+            stroke={extension.color} strokeWidth={3} strokeDasharray="6,5"
+            strokeLinecap="round"
           />
         ) : null}
 
-        {/* The p10–p90 band itself */}
-        <Rect
-          x={bandStart} y={RB_BAR_Y}
-          width={bandEnd - bandStart} height={RB_BAR_H}
-          rx={5} ry={5}
-          fill="#e7e8fa"
+        {/* The bar itself — left cap, connector, right cap. No fill. */}
+        <Line
+          x1={bandStart} x2={bandStart}
+          y1={bandY - 16} y2={bandY + 16}
+          stroke={BRAND} strokeWidth={3}
+          strokeLinecap="round"
+        />
+        <Line
+          x1={bandEnd} x2={bandEnd}
+          y1={bandY - 16} y2={bandY + 16}
+          stroke={BRAND} strokeWidth={3}
+          strokeLinecap="round"
+        />
+        <Line
+          x1={bandStart} x2={bandEnd}
+          y1={bandY} y2={bandY}
+          stroke={BRAND} strokeWidth={3}
+          strokeLinecap="round"
         />
 
-        {/* End tick marks — longer so they read as real anchors of the band */}
-        <Line x1={bandStart} x2={bandStart} y1={RB_BAR_Y - 14} y2={RB_BAR_Y + RB_BAR_H + 14} stroke={BRAND_DIM} strokeWidth={2.5} />
-        <Line x1={bandEnd}   x2={bandEnd}   y1={RB_BAR_Y - 14} y2={RB_BAR_Y + RB_BAR_H + 14} stroke={BRAND_DIM} strokeWidth={2.5} />
+        {/* p10 / p90 labels — sit under the relevant end-cap */}
+        <SvgText x={bandStart} y={bandY + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p10}</SvgText>
+        <SvgText x={bandEnd}   y={bandY + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p90}</SvgText>
+        <SvgText x={bandStart} y={bandY + 58} fontSize="12" fill={MUTED} textAnchor="middle">p10</SvgText>
+        <SvgText x={bandEnd}   y={bandY + 58} fontSize="12" fill={MUTED} textAnchor="middle">p90</SvgText>
 
-        {/* p10 / p90 labels (below) — large value, smaller label underneath */}
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p10}</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p90}</SvgText>
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 58} fontSize="12" fill={MUTED} textAnchor="middle">p10</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 58} fontSize="12" fill={MUTED} textAnchor="middle">p90</SvgText>
-
-        {/* Current-wait dot + label (above). Hero of the visualization —
-            big circle, large number, sits well above the bar so it never
-            crowds the p10/p90 labels regardless of where it lands. */}
-        {clampedCurrentPx != null && current != null ? (
+        {/* Current-wait dot + value label above */}
+        {dotX != null && current != null ? (
           <>
             <Circle
-              cx={clampedCurrentPx} cy={RB_BAR_Y + RB_BAR_H / 2}
+              cx={dotX} cy={bandY}
               r={14}
               fill="#fff"
-              stroke={isDown ? RED : BRAND}
+              stroke={dotColor}
               strokeWidth={3.5}
             />
             <SvgText
-              x={clampedCurrentPx}
-              y={RB_BAR_Y - 24}
+              x={dotX}
+              y={bandY - 26}
               fontSize="22"
               fontWeight="700"
               fill={INK}
               textAnchor="middle"
             >
               {current}
-            </SvgText>
-            <SvgText
-              x={clampedCurrentPx}
-              y={RB_BAR_Y - 8}
-              fontSize="11"
-              fill={MUTED}
-              textAnchor="middle"
-            >
-              right now
             </SvgText>
           </>
         ) : null}
