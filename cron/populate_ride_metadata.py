@@ -73,14 +73,20 @@ def build_records(metadata: dict) -> list[dict]:
             log.warning("Unknown park prefix for slug %r — skipping", slug)
             skipped_unknown_park += 1
             continue
-        records.append({
+        rec = {
             "rideId": ride_id,
             "parkId": park_id,
             "name": entry["name"],
             "lat": entry.get("lat"),
             "lng": entry.get("lng"),
             "source": "manual",
-        })
+            # False for shows, walk-throughs, transportation, and other
+            # experiences that never post a meaningful standby wait.
+            "tracksWaitTime": entry.get("tracks_wait_time", True),
+        }
+        if entry.get("walkPenaltyMinutes"):
+            rec["walkPenaltyMinutes"] = entry["walkPenaltyMinutes"]
+        records.append(rec)
     log.info(
         "Built %d records; skipped %d (no themeparks_id), %d (unknown park)",
         len(records), skipped_no_id, skipped_unknown_park,

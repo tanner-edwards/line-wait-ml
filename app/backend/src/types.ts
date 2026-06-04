@@ -158,6 +158,10 @@ export interface RideMetadata {
   lat: number | null;
   lng: number | null;
   source: 'manual' | 'themeparks.wiki';
+  walkPenaltyMinutes?: number;
+  // False for shows, walk-throughs, and transportation that never post a
+  // meaningful standby wait. Absent on legacy docs — treat as true.
+  tracksWaitTime?: boolean;
 }
 
 // --- v2 recommendations contract ---

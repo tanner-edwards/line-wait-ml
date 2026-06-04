@@ -21,7 +21,7 @@
 // worker deep-link (G2b). Back button closes; the context restores the
 // history sheet if that's where the user came from.
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -63,7 +63,7 @@ function walkMinsBetween(
 }
 
 export function NotificationDetailModal(): React.ReactElement {
-  const { active, closeDetail } = useNotificationDetail();
+  const { active, closeDetail, dismissAll } = useNotificationDetail();
   const { ridesById, data } = useRides();
   const { coords } = useLocation();
 
@@ -89,7 +89,14 @@ export function NotificationDetailModal(): React.ReactElement {
           >
             <Text style={styles.backArrow}>‹ Back</Text>
           </Pressable>
-          <View style={styles.headerSpacer} />
+          <Pressable
+            onPress={dismissAll}
+            style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
+            testID="ride-detail-dismiss"
+            hitSlop={12}
+          >
+            <Text style={styles.dismissX}>✕</Text>
+          </Pressable>
         </View>
         {ride ? (
           <DetailBody ride={ride} parkName={parkName} userCoords={coords} />
@@ -330,9 +337,8 @@ function TrendGraph({
   buckets: { offsetMinutes: number; timeSlot: string; wait: number | null; sampleCount: number }[] | null;
   closedAt: string | null;
 }): React.ReactElement {
-  // X axis spans -60 min to +120 min. Past observations sit on the left,
-  // forecast on the right, "now" anchored at x = 0.
-  const xMin = -60;
+  // X axis: past 30 min on the left, +2 hours on the right, "now" at x = 0.
+  const xMin = -30;
   const xMax = 120;
   const plotW = GRAPH_W - G_PAD_LEFT - G_PAD_RIGHT;
   const plotH = GRAPH_H - G_PAD_TOP - G_PAD_BOTTOM;
@@ -340,14 +346,16 @@ function TrendGraph({
 
   // Past points: recentHistory + anchor (if operating). For DOWN rides,
   // the anchor IS the wait at time of close so it still belongs on the
-  // past line.
+  // past line. Use h.timestamp (wall-clock-accurate) not minutesAgo
+  // (stale at API response time) so dots land on the correct x tick.
+  const renderNow = Date.now();
   const pastPoints: { x: number; y: number | null }[] = [];
-  for (const h of [...recentHistory].sort((a, b) => b.minutesAgo - a.minutesAgo)) {
-    pastPoints.push({
-      x: -h.minutesAgo,
-      y: h.status === 'OPERATING' && h.wait != null ? h.wait : null,
-    });
+  for (const h of recentHistory) {
+    const x = -(renderNow - new Date(h.timestamp).getTime()) / 60_000;
+    if (x < xMin) continue;
+    pastPoints.push({ x, y: h.status === 'OPERATING' && h.wait != null ? h.wait : null });
   }
+  pastPoints.sort((a, b) => a.x - b.x);
   // The "now" point is anchorWait, plotted at x=0 for operating rides
   // and at the closedAt offset for closed rides.
   let nowX = 0;
@@ -392,15 +400,22 @@ function TrendGraph({
     .map(p => `${xToPx(p.x)},${yToPx(p.y!)}`)
     .join(' ');
 
-  // X axis ticks
+  // X axis ticks — California actual times so the guest can cross-reference
+  // the graph against their schedule without mental math.
+  const ptTimeLabel = (offsetMinutes: number) =>
+    new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/Los_Angeles',
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true,
+    }).format(new Date(renderNow + offsetMinutes * 60_000));
   const xTicks: { x: number; label: string }[] = [
-    { x: -60, label: '60m ago' },
-    { x: -30, label: '30m ago' },
-    { x: 0,   label: 'now' },
-    { x: 30,  label: '+30m' },
-    { x: 60,  label: '+1h' },
-    { x: 90,  label: '+90m' },
-    { x: 120, label: '+2h' },
+    { x: -30, label: ptTimeLabel(-30) },
+    { x: 0,   label: ptTimeLabel(0) },
+    { x: 30,  label: ptTimeLabel(30) },
+    { x: 60,  label: ptTimeLabel(60) },
+    { x: 90,  label: ptTimeLabel(90) },
+    { x: 120, label: ptTimeLabel(120) },
   ];
 
   // Y axis ticks — pick a "nice" step (5/10/15/20/25/50…) so we get
@@ -411,10 +426,20 @@ function TrendGraph({
 
   const nowPx = xToPx(nowX);
 
+  // Measure the container width via onLayout — react-native-svg's
+  // width="100%" doesn't always expand correctly on Expo Web, which is
+  // what was making the graph look ~50% of screen width. Once we have
+  // a real pixel width we pass it to the Svg and let preserveAspectRatio
+  // stretch the viewBox to match.
+  const [renderW, setRenderW] = useState(0);
   return (
-    <View style={styles.graphWrap}>
+    <View
+      style={styles.graphWrap}
+      onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
+    >
+      {renderW > 0 ? (
       <Svg
-        width="100%"
+        width={renderW}
         height={GRAPH_RENDER_H}
         viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
         preserveAspectRatio="none"
@@ -535,6 +560,7 @@ function TrendGraph({
           </SvgText>
         ))}
       </Svg>
+      ) : null}
     </View>
   );
 }
@@ -577,12 +603,15 @@ function niceTickStep(max: number): number {
 
 // ---- Range band (SVG p10 – p90) -----------------------------------
 
+// Tall, chunky band — the visual is a single horizontal value, so vertical
+// height is all about giving the bar + dot + labels real presence rather
+// than a thin strip.
 const RB_W = 360;
-const RB_H = 110;
-const RB_RENDER_H = 110;
+const RB_H = 200;
+const RB_RENDER_H = 200;
 const RB_PAD_X = 24;
-const RB_BAR_Y = 44;
-const RB_BAR_H = 10;
+const RB_BAR_Y = 88;
+const RB_BAR_H = 20;
 
 function RangeBand({
   p10,
@@ -613,10 +642,16 @@ function RangeBand({
 
   // Labels: p10/p90 numbers BELOW the bar, current wait ABOVE the bar.
   // They never collide vertically because they live on different rows.
+  // Measure container width — see TrendGraph for the same rationale.
+  const [renderW, setRenderW] = useState(0);
   return (
-    <View style={styles.rangeWrap}>
+    <View
+      style={styles.rangeWrap}
+      onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
+    >
+      {renderW > 0 ? (
       <Svg
-        width="100%"
+        width={renderW}
         height={RB_RENDER_H}
         viewBox={`0 0 ${RB_W} ${RB_H}`}
         preserveAspectRatio="none"
@@ -645,39 +680,51 @@ function RangeBand({
           fill="#e7e8fa"
         />
 
-        {/* End tick marks */}
-        <Line x1={bandStart} x2={bandStart} y1={RB_BAR_Y - 6} y2={RB_BAR_Y + RB_BAR_H + 6} stroke={BRAND_DIM} strokeWidth={2} />
-        <Line x1={bandEnd}   x2={bandEnd}   y1={RB_BAR_Y - 6} y2={RB_BAR_Y + RB_BAR_H + 6} stroke={BRAND_DIM} strokeWidth={2} />
+        {/* End tick marks — longer so they read as real anchors of the band */}
+        <Line x1={bandStart} x2={bandStart} y1={RB_BAR_Y - 14} y2={RB_BAR_Y + RB_BAR_H + 14} stroke={BRAND_DIM} strokeWidth={2.5} />
+        <Line x1={bandEnd}   x2={bandEnd}   y1={RB_BAR_Y - 14} y2={RB_BAR_Y + RB_BAR_H + 14} stroke={BRAND_DIM} strokeWidth={2.5} />
 
-        {/* p10 / p90 labels (below) — bigger, two rows so they don't crowd the dot label */}
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 22} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p10}</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 22} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p90}</SvgText>
-        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 38} fontSize="10" fill={MUTED} textAnchor="middle">p10</SvgText>
-        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 38} fontSize="10" fill={MUTED} textAnchor="middle">p90</SvgText>
+        {/* p10 / p90 labels (below) — large value, smaller label underneath */}
+        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p10}</SvgText>
+        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p90}</SvgText>
+        <SvgText x={bandStart} y={RB_BAR_Y + RB_BAR_H + 58} fontSize="12" fill={MUTED} textAnchor="middle">p10</SvgText>
+        <SvgText x={bandEnd}   y={RB_BAR_Y + RB_BAR_H + 58} fontSize="12" fill={MUTED} textAnchor="middle">p90</SvgText>
 
-        {/* Current-wait dot + label (above) — bigger dot, bigger number */}
+        {/* Current-wait dot + label (above). Hero of the visualization —
+            big circle, large number, sits well above the bar so it never
+            crowds the p10/p90 labels regardless of where it lands. */}
         {clampedCurrentPx != null && current != null ? (
           <>
             <Circle
               cx={clampedCurrentPx} cy={RB_BAR_Y + RB_BAR_H / 2}
-              r={9}
+              r={14}
               fill="#fff"
               stroke={isDown ? RED : BRAND}
-              strokeWidth={3}
+              strokeWidth={3.5}
             />
             <SvgText
               x={clampedCurrentPx}
-              y={RB_BAR_Y - 12}
-              fontSize="14"
+              y={RB_BAR_Y - 24}
+              fontSize="22"
               fontWeight="700"
               fill={INK}
               textAnchor="middle"
             >
               {current}
             </SvgText>
+            <SvgText
+              x={clampedCurrentPx}
+              y={RB_BAR_Y - 8}
+              fontSize="11"
+              fill={MUTED}
+              textAnchor="middle"
+            >
+              right now
+            </SvgText>
           </>
         ) : null}
       </Svg>
+      ) : null}
     </View>
   );
 }
@@ -726,7 +773,7 @@ const styles = StyleSheet.create({
   backButton: { paddingHorizontal: 12, paddingVertical: 6 },
   backButtonPressed: { opacity: 0.5 },
   backArrow: { fontSize: 16, color: BRAND, fontWeight: '600' },
-  headerSpacer: { flex: 1 },
+  dismissX: { fontSize: 16, color: MUTED, fontWeight: '600' },
 
   body: { padding: 10, paddingBottom: 48 },
 
@@ -786,10 +833,10 @@ const styles = StyleSheet.create({
   },
   tileBody: { fontSize: 14, color: INK, lineHeight: 20 },
 
-  graphWrap: { alignItems: 'stretch' },
+  graphWrap: { alignItems: 'stretch', minHeight: GRAPH_RENDER_H, width: '100%' },
   tinyHint: { fontSize: 12, color: SUBINK, marginTop: 6, fontStyle: 'italic' },
 
-  rangeWrap: { alignItems: 'stretch' },
+  rangeWrap: { alignItems: 'stretch', minHeight: RB_RENDER_H, width: '100%' },
 
   rightNowLine: { fontSize: 15, color: INK },
   rightNowNumber: { fontWeight: '700' },

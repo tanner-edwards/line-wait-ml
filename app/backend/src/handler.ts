@@ -166,15 +166,13 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
     })
   );
 
-  // Filter out chronic walk-ons / walkthroughs / non-ride experiences:
-  // rides whose p90 has stayed below 5 min across many observations are
-  // never going to produce a meaningful wait. Closed-but-real rides
-  // (refurbishment, scheduled closures) pass because their stats are
-  // populated. Rides with <= 100 samples pass too — we err on showing.
+  // Drop attractions explicitly flagged as non-wait-time experiences
+  // (shows, walk-throughs, transportation). The flag lives in ride_metadata
+  // and is authoritative — no need to infer from p90 stats.
   const rides = allRides.filter(r => {
-    if (!r.rideStats) return true;
-    if (r.rideStats.sampleCount <= 100) return true;
-    return r.rideStats.p90 >= 5;
+    const meta = lookupRideMetadata(metadataMap, r.id);
+    // tracksWaitTime absent on legacy Firestore docs → treat as true.
+    return meta?.tracksWaitTime !== false;
   });
 
   const data = shapeParkData(parkSlug, rides, now.toISOString());

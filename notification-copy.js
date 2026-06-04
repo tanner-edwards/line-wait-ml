@@ -57,7 +57,7 @@ export function notificationBody({ type, badge = null, currentWait = null, bucke
     const waitText = currentWait != null ? `${currentWait} min` : null;
     const longDowntime = durationMs != null && durationMs >= 60 * 60_000;
     const lowWait = rideStats?.p50 != null && currentWait != null && currentWait < rideStats.p50 * 0.7;
-    if (downtime && longDowntime && lowWait) return `Back after ${downtime} — wait only ${waitText}!`;
+    if (downtime && longDowntime && lowWait) return `Back after ${downtime} — that wait is only ${waitText}!`;
     if (downtime && waitText) return `Back after ${downtime}. Wait posted at ${waitText}.`;
     if (downtime) return `Back after ${downtime}.`;
     if (waitText) return `Back up. Wait posted at ${waitText}.`;
@@ -65,7 +65,7 @@ export function notificationBody({ type, badge = null, currentWait = null, bucke
   }
   if (type === 'peak') {
     const waitText = currentWait != null ? `${currentWait} min` : 'a long wait';
-    const compare = rideStats?.p90 != null ? ` — p90 is ${rideStats.p90}` : '';
+    const compare = rideStats?.p50 != null ? ` — average is ${rideStats.p50} min` : '';
     return `At ${waitText}${compare}. Now's not the time.`;
   }
   return '';

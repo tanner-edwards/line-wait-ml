@@ -30,7 +30,6 @@ import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
-import { ParkTogglePill } from '../components/ParkTogglePill';
 import { filterByDailyParks } from '../utils/parkFilter';
 import type { ScoreResult } from '../types';
 
@@ -64,7 +63,7 @@ export function Home() {
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
-  const [sortBy, setSortBy] = useState<SortBy | null>(null);
+  const [sortBy, setSortBy] = useState<SortBy | null>('opportunity');
   const [showSortMenu, setShowSortMenu] = useState(false);
 
   const onRefresh = useCallback(() => {
@@ -94,7 +93,7 @@ export function Home() {
     );
   }
 
-  const walkOrigin = sortBy === 'distance' ? locationCoords : null;
+  const walkOrigin = (sortBy === 'distance' || sortBy === 'opportunity') ? locationCoords : null;
 
   // Apply daily-park filter before flattening so the list (and any sort)
   // only sees rides in the selected park scope.
@@ -159,9 +158,6 @@ export function Home() {
             <Text style={styles.refreshButtonText}>Refresh</Text>
           )}
         </Pressable>
-      </View>
-      <View style={styles.toggleRow}>
-        <ParkTogglePill />
       </View>
       <FlatList
         data={items}

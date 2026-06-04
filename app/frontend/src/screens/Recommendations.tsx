@@ -24,7 +24,6 @@ import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useLocation } from '../context/LocationContext';
 import { useDebugMode } from '../context/DebugModeContext';
-import { ParkTogglePill } from '../components/ParkTogglePill';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { NotificationBellButton } from '../components/NotificationBellButton';
@@ -274,10 +273,6 @@ export function Recommendations(): React.ReactElement {
             <Text style={styles.changeButtonText}>Change location</Text>
           </Pressable>
         )}
-      </View>
-
-      <View style={styles.toggleRow}>
-        <ParkTogglePill />
       </View>
 
       {(status === 'idle' || status === 'locating') && !debugMode ? (

@@ -96,7 +96,7 @@ export async function buildRecommendations(
       const otherMeta = lookupRideMetadata(metadataMap, ride.id);
       return {
         ride,
-        walkMinutes: walkingMinutes(userCoords, otherMeta),
+        walkMinutes: walkingMinutes(userCoords, otherMeta, otherMeta?.walkPenaltyMinutes ?? 0),
         walkYards: walkingYards(userCoords, otherMeta),
       };
     });

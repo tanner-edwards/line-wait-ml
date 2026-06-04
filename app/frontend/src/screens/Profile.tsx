@@ -27,6 +27,7 @@ import {
   PersonaFieldModal,
 } from '../components/PersonaFieldModal';
 import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
+import { DailyParkSheet } from '../components/DailyParkSheet';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -44,6 +45,12 @@ const RIDE_CATEGORY_LABELS: Record<RideCategory, string> = {
   'first-time': 'First time',
 };
 
+const DAILY_PARKS_LABELS: Record<string, string> = {
+  disneyland: 'Disneyland',
+  'california-adventure': 'Disney California Adventure',
+  both: 'Both parks (hopping)',
+};
+
 const ACCESSIBILITY_LABELS: Record<AccessibilityNeed, string> = {
   stroller: 'Stroller',
   wheelchair: 'Wheelchair / scooter',
@@ -54,7 +61,7 @@ const ACCESSIBILITY_LABELS: Record<AccessibilityNeed, string> = {
 
 export function Profile(): React.ReactElement {
   const { persona, clearPersona } = usePersona();
-  const { clearDailyContext } = useDailyContext();
+  const { context: dailyCtx, clearDailyContext } = useDailyContext();
   const { debugMode, setDebugMode } = useDebugMode();
   const {
     notificationsEnabled,
@@ -78,6 +85,8 @@ export function Profile(): React.ReactElement {
       </SafeAreaView>
     );
   }
+
+  const [parkPickerOpen, setParkPickerOpen] = useState(false);
 
   const resetForTesting = async () => {
     await Promise.all([clearPersona(), clearDailyContext()]);
@@ -135,6 +144,11 @@ export function Profile(): React.ReactElement {
               : persona.accessibilityNeeds.map(n => ACCESSIBILITY_LABELS[n]).join(', ')
           }
           onPress={() => setEditing('accessibilityNeeds')}
+        />
+        <Row
+          label="Today's parks"
+          value={DAILY_PARKS_LABELS[dailyCtx?.parks ?? 'both']}
+          onPress={() => setParkPickerOpen(true)}
         />
 
         <Pressable
@@ -218,6 +232,11 @@ export function Profile(): React.ReactElement {
       </ScrollView>
 
       <PersonaFieldModal field={editing} onClose={() => setEditing(null)} />
+      <DailyParkSheet
+        visible={parkPickerOpen}
+        onSelect={() => setParkPickerOpen(false)}
+        onCancel={() => setParkPickerOpen(false)}
+      />
       <NotificationSettingsModal
         visible={notifSettingsOpen}
         onClose={() => setNotifSettingsOpen(false)}

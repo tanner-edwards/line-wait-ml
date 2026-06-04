@@ -22,24 +22,38 @@ const OPTIONS: { value: DailyParks; title: string; subtitle?: string }[] = [
 
 interface Props {
   visible: boolean;
+  onSelect?: () => void;
+  onCancel?: () => void;
 }
 
-export function DailyParkSheet({ visible }: Props): React.ReactElement {
+export function DailyParkSheet({ visible, onSelect, onCancel }: Props): React.ReactElement {
   const { setDailyParks } = useDailyContext();
 
   return (
-    <Modal visible={visible} transparent animationType="slide">
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onCancel}>
       <View style={styles.backdrop}>
+        {onCancel ? (
+          <Pressable style={styles.dismissArea} onPress={onCancel} />
+        ) : (
+          <View style={styles.dismissArea} />
+        )}
         <View style={styles.card}>
           <View style={styles.grabber} />
-          <Text style={styles.title}>Which parks today?</Text>
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>Which parks today?</Text>
+            {onCancel ? (
+              <Pressable onPress={onCancel} hitSlop={12} testID="daily-park-cancel">
+                <Text style={styles.cancelX}>✕</Text>
+              </Pressable>
+            ) : null}
+          </View>
           <Text style={styles.subtitle}>
             We'll filter rides and recommendations to where you're spending the day.
           </Text>
           {OPTIONS.map(opt => (
             <Pressable
               key={opt.value}
-              onPress={() => void setDailyParks(opt.value)}
+              onPress={() => { void setDailyParks(opt.value); onSelect?.(); }}
               style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
               testID={`daily-park-${opt.value}`}
             >
@@ -62,6 +76,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'flex-end',
   },
+  dismissArea: { flex: 1 },
   card: {
     backgroundColor: '#fff',
     borderTopLeftRadius: 20,
@@ -78,12 +93,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#ddd',
     marginBottom: 16,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
   title: {
     fontSize: 22,
     fontWeight: '700',
     color: '#111',
-    marginBottom: 6,
   },
+  cancelX: { fontSize: 20, color: '#999' },
   subtitle: {
     fontSize: 14,
     color: '#666',

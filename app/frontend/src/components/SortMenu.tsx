@@ -11,8 +11,9 @@ interface SortMenuProps {
 }
 
 const OPTIONS: { label: string; value: SortBy | null; hint?: string }[] = [
-  { label: 'A–Z',                   value: null },
-  { label: 'Badge',                value: 'badge' },
+  { label: 'Opportunity',          value: 'opportunity' },
+  { label: 'A–Z by land',          value: null },
+  { label: 'Badge only',           value: 'badge' },
   { label: 'Shortest wait',        value: 'wait' },
   { label: 'Most popular',         value: 'demand' },
   { label: 'Distance from here',   value: 'distance' },

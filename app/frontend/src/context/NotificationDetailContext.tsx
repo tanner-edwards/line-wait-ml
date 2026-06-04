@@ -30,6 +30,7 @@ interface NotificationDetailContextValue {
   closeHistorySheet: () => void;
   openDetail: (detail: ActiveDetail) => void;
   closeDetail: () => void;
+  dismissAll: () => void;
 }
 
 const NotificationDetailContext = createContext<NotificationDetailContextValue | null>(null);
@@ -58,6 +59,11 @@ export function NotificationDetailProvider({ children }: { children: React.React
     });
   }, []);
 
+  const dismissAll = useCallback(() => {
+    setActive(null);
+    setHistorySheetOpen(false);
+  }, []);
+
   const value = useMemo(
     () => ({
       active,
@@ -66,8 +72,9 @@ export function NotificationDetailProvider({ children }: { children: React.React
       closeHistorySheet,
       openDetail,
       closeDetail,
+      dismissAll,
     }),
-    [active, historySheetOpen, openHistorySheet, closeHistorySheet, openDetail, closeDetail]
+    [active, historySheetOpen, openHistorySheet, closeHistorySheet, openDetail, closeDetail, dismissAll]
   );
 
   return (

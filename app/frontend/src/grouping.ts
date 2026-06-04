@@ -90,7 +90,7 @@ export function successfulParks(response: CombinedResponse): ParkData[] {
 
 // --- Sort support ---
 
-export type SortBy = 'badge' | 'wait' | 'demand' | 'distance';
+export type SortBy = 'opportunity' | 'badge' | 'wait' | 'demand' | 'distance';
 
 const BADGE_RANK: Record<string, number> = { star: 0, go: 1, skip: 3 };
 function badgeRank(badge: string | null | undefined): number {
@@ -132,6 +132,25 @@ export function flattenSorted(
     if (isParkError(entry)) continue;
 
     const sorted = [...entry.rides].sort((a, b) => {
+      if (sortBy === 'opportunity') {
+        // Operating before closed.
+        const aOpen = a.status === 'OPERATING';
+        const bOpen = b.status === 'OPERATING';
+        if (aOpen !== bOpen) return aOpen ? -1 : 1;
+        // Primary: badge rank.
+        const diff = badgeRank(a.score?.badge) - badgeRank(b.score?.badge);
+        if (diff !== 0) return diff;
+        // Secondary: distance (if we have a fix) or land name.
+        if (origin) {
+          const aDist = a.lat != null && a.lng != null ? haversineMeters(origin.lat, origin.lng, a.lat, a.lng) : Infinity;
+          const bDist = b.lat != null && b.lng != null ? haversineMeters(origin.lat, origin.lng, b.lat, b.lng) : Infinity;
+          if (aDist !== bDist) return aDist - bDist;
+        } else {
+          const landDiff = a.land.localeCompare(b.land);
+          if (landDiff !== 0) return landDiff;
+        }
+        return a.name.localeCompare(b.name);
+      }
       if (sortBy === 'badge') {
         const diff = badgeRank(a.score?.badge) - badgeRank(b.score?.badge);
         return diff !== 0 ? diff : a.name.localeCompare(b.name);

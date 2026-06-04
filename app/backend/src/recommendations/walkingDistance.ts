@@ -55,11 +55,12 @@ export function haversineMeters(
  */
 export function walkingMinutes(
   from: { lat: number | null; lng: number | null } | null,
-  to: { lat: number | null; lng: number | null } | null
+  to: { lat: number | null; lng: number | null } | null,
+  penaltyMinutes = 0
 ): number | null {
   const meters = pathMeters(from, to);
   if (meters === null) return null;
-  return Math.max(1, Math.round(meters / WALKING_METERS_PER_MIN));
+  return Math.max(1, Math.round(meters / WALKING_METERS_PER_MIN)) + penaltyMinutes;
 }
 
 /**

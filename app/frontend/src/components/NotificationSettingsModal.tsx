@@ -50,7 +50,7 @@ const ROWS: Row[] = [
     kind: 'peak',
     emoji: '✕',
     title: 'Peak wait alert',
-    subtitle: "Off by default. Alerts when a must-do ride hits its p90 — busiest it typically gets.",
+    subtitle: "Off by default. Alerts when a must-do ride hits peak crowd levels — well above its typical wait.",
   },
 ];
 
