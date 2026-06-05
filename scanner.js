@@ -524,6 +524,10 @@ async function fireNotification({ db, device, currentRide, type, badge = null, e
     firedAt,
     expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
     currentWait: currentRide.wait,
+    // Persist the exact body we sent so the in-app history sheet shows
+    // the same phrasing the user got pushed — rather than re-rolling a
+    // different random tagline on every render.
+    body: payload.body,
     delivered: result.sent,
     deliveryError: result.sent ? null : result.reason,
     ...extra,

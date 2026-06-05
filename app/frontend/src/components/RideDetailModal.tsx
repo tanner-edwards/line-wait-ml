@@ -35,8 +35,12 @@ import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
+import { usePersona } from '../context/PersonaContext';
+import { useDebugMode } from '../context/DebugModeContext';
+import { DebugCard } from './DebugCard';
 import { haversineMeters } from '../grouping';
-import { formatHHMM, formatTimeAgo } from '../timestamp';
+import { formatBucketTimeSlot, formatHHMM, formatTimeAgo } from '../timestamp';
+import { formatDuration } from '../../../../notification-copy';
 import { RecommendationBadge } from './RecommendationBadge';
 import { isWalkOnRide } from '../utils/walkOn';
 import { isParkError, Ride } from '../types';
@@ -53,6 +57,12 @@ const WALK_SPEED_MPM = 83;
 function walkPathMultiplier(m: number) {
   return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3;
 }
+function reopenedWithinLastHour(closedAt: string | null, durationMs: number | null): boolean {
+  if (!closedAt || durationMs == null) return false;
+  const reopenTime = new Date(closedAt).getTime() + durationMs;
+  return Date.now() - reopenTime < 60 * 60_000;
+}
+
 function walkMinsBetween(
   origin: { lat: number; lng: number },
   ride: { lat: number | null; lng: number | null }
@@ -62,7 +72,7 @@ function walkMinsBetween(
   return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
 }
 
-export function NotificationDetailModal(): React.ReactElement {
+export function RideDetailModal(): React.ReactElement {
   const { active, closeDetail, dismissAll } = useNotificationDetail();
   const { ridesById, data } = useRides();
   const { coords } = useLocation();
@@ -101,7 +111,13 @@ export function NotificationDetailModal(): React.ReactElement {
           </Pressable>
         </View>
         {ride ? (
-          <DetailBody ride={ride} parkName={parkName} userCoords={coords} />
+          <DetailBody
+            ride={ride}
+            parkName={parkName}
+            userCoords={coords}
+            notifDurationMs={active?.durationMs ?? null}
+            notifClosedAt={active?.closedAt ?? null}
+          />
         ) : active ? (
           <View style={styles.fallbackBlock}>
             <Text style={styles.fallback}>
@@ -118,15 +134,30 @@ function DetailBody({
   ride,
   parkName,
   userCoords,
+  notifDurationMs,
+  notifClosedAt,
 }: {
   ride: Ride;
   parkName: string | null;
   userCoords: { lat: number; lng: number } | null;
+  notifDurationMs: number | null;
+  notifClosedAt: string | null;
 }): React.ReactElement {
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const badge = ride.score?.badge ?? null;
+
+  const { persona, setPersona } = usePersona();
+  const { debugMode } = useDebugMode();
+  const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
+  const onToggleWatch = () => {
+    if (!persona) return;
+    const next = isWatching
+      ? persona.mustDoRideIds.filter(id => id !== ride.id)
+      : [...persona.mustDoRideIds, ride.id];
+    void setPersona({ ...persona, mustDoRideIds: next });
+  };
 
   const buckets = ride.historicalAverage?.buckets;
   const bucket0Wait = buckets?.[0]?.wait ?? null;
@@ -159,11 +190,25 @@ function DetailBody({
           <Text style={styles.subtitle}>
             {ride.land}{parkName ? ` · ${parkName}` : ''}
           </Text>
-          {walkMins != null ? (
-            <View style={styles.walkPill}>
-              <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
-            </View>
-          ) : null}
+          <View style={styles.titleMetaRight}>
+            <Pressable
+              onPress={onToggleWatch}
+              hitSlop={10}
+              style={styles.bellPressable}
+              testID={`detail-bell-${ride.id}`}
+              accessibilityRole="button"
+              accessibilityLabel={isWatching ? 'Remove alert' : 'Set alert'}
+            >
+              <Text style={[styles.bell, isWatching ? styles.bellActive : styles.bellInactive]}>
+                {isWatching ? '🔔' : '🔕'}
+              </Text>
+            </Pressable>
+            {walkMins != null ? (
+              <View style={styles.walkPill}>
+                <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
       </View>
 
@@ -207,7 +252,6 @@ function DetailBody({
             anchorWait={anchorWait}
             isDown={isDown}
             buckets={buckets ?? null}
-            closedAt={ride.closedAt ?? null}
           />
           <TrendCaption
             anchorWait={anchorWait}
@@ -217,10 +261,10 @@ function DetailBody({
         </Tile>
       ) : null}
 
-      {/* Range band — p10 ... p90 */}
+      {/* Range band — min/max range with current marker */}
       {ride.rideStats ? (
         <Tile>
-          <TileLabel>Typical range (p10 – p90)</TileLabel>
+          <TileLabel>Where it sits in this ride's range</TileLabel>
           <RangeBand
             p10={ride.rideStats.p10}
             p90={ride.rideStats.p90}
@@ -230,22 +274,53 @@ function DetailBody({
         </Tile>
       ) : null}
 
-      {/* Closure tile */}
-      {isDown ? (
+      {/* Closure tile — always shown for currently-down rides; for reopened
+          rides, only shown within 1 hour of the reopen (info is decision-
+          relevant while the crowd is still catching on, trivia after that). */}
+      {(isDown || reopenedWithinLastHour(notifClosedAt, notifDurationMs)) ? (
         <Tile>
           <TileLabel>Closure</TileLabel>
-          {ride.closedAt ? (
-            <Text style={styles.closureLine}>
-              Closed at <Text style={styles.bold}>{formatHHMM(ride.closedAt)}</Text>
-              {' '}({formatTimeAgo(ride.closedAt)})
-            </Text>
-          ) : (
+          {/* Currently-down ride: show when it closed + live duration. */}
+          {isDown && ride.closedAt ? (
+            <>
+              <Text style={styles.closureLine}>
+                Closed at <Text style={styles.bold}>{formatHHMM(ride.closedAt)}</Text>
+              </Text>
+              <Text style={styles.closureLine}>
+                Down for <Text style={styles.bold}>{formatTimeAgo(ride.closedAt)}</Text>
+              </Text>
+            </>
+          ) : isDown ? (
             <Text style={styles.closureLine}>Currently down.</Text>
-          )}
-          <Text style={styles.closureFutureHint}>
-            Reopen estimate — coming soon.
-          </Text>
+          ) : null}
+          {/* Reopened ride: show closed-at + total downtime from the log entry. */}
+          {!isDown && notifClosedAt ? (
+            <Text style={styles.closureLine}>
+              Closed at <Text style={styles.bold}>{formatHHMM(notifClosedAt)}</Text>
+            </Text>
+          ) : null}
+          {notifDurationMs != null ? (
+            <Text style={styles.closureLine}>
+              Was down for{' '}
+              <Text style={styles.bold}>{formatDuration(notifDurationMs) ?? `${Math.round(notifDurationMs / 60_000)} min`}</Text>
+            </Text>
+          ) : null}
+          {isDown ? (
+            <Text style={styles.closureFutureHint}>
+              Reopen estimate — coming soon.
+            </Text>
+          ) : null}
         </Tile>
+      ) : null}
+
+      {/* Scoring breakdown — debug-only. Same DebugCard the Browse list
+          expands inline; reusing it keeps the scoring view consistent
+          everywhere. */}
+      {debugMode && ride.score ? (
+        <View style={styles.debugSection}>
+          <Text style={styles.debugSectionLabel}>Scoring (debug)</Text>
+          <DebugCard ride={ride} result={ride.score} />
+        </View>
       ) : null}
 
     </ScrollView>
@@ -312,252 +387,139 @@ function StatusRow({
 }
 
 // ---- Trend graph (SVG) --------------------------------------------
+//
+// Mirrors the inline DebugCard sparkline approach: 7 evenly-spaced
+// columns (t-40, t-20, now, +30, +60, +90, +120). Per column we show a
+// time label + the wait number above the sparkline. Auto-scaled Y axis
+// based on the actual values plotted. The "now" point gets a slightly
+// larger dot to anchor visual attention.
 
-const GRAPH_W = 360;
-const GRAPH_H = 140;
-const GRAPH_RENDER_H = 140;
-const G_PAD_LEFT = 36;   // room for Y axis labels (3 digits + tick)
-const G_PAD_RIGHT = 12;
-const G_PAD_TOP = 20;
-const G_PAD_BOTTOM = 28;
+const GRAPH_RENDER_H = 90;
+const COLUMN_COUNT = 7;
 
 function TrendGraph({
   recentHistory,
   anchorWait,
   isDown,
   buckets,
-  closedAt,
 }: {
   recentHistory: { timestamp: string; minutesAgo: number; wait: number | null; status: string }[];
   anchorWait: number | null;
   isDown: boolean;
   buckets: { offsetMinutes: number; timeSlot: string; wait: number | null; sampleCount: number }[] | null;
-  closedAt: string | null;
 }): React.ReactElement {
-  // X axis: past 30 min on the left, +2 hours on the right, "now" at x = 0.
-  const xMin = -30;
-  const xMax = 120;
-  const plotW = GRAPH_W - G_PAD_LEFT - G_PAD_RIGHT;
-  const plotH = GRAPH_H - G_PAD_TOP - G_PAD_BOTTOM;
-  const xToPx = (xMin_: number) => G_PAD_LEFT + ((xMin_ - xMin) / (xMax - xMin)) * plotW;
+  // Pull the most-recent and second-most-recent OPERATING observations
+  // from recentHistory (the backend returns most-recent-first).
+  const tMinus20 = recentHistory[0] ?? null;
+  const tMinus40 = recentHistory[1] ?? null;
 
-  // Past points: recentHistory + anchor (if operating). For DOWN rides,
-  // the anchor IS the wait at time of close so it still belongs on the
-  // past line. Use h.timestamp (wall-clock-accurate) not minutesAgo
-  // (stale at API response time) so dots land on the correct x tick.
-  const renderNow = Date.now();
-  const pastPoints: { x: number; y: number | null }[] = [];
-  for (const h of recentHistory) {
-    const x = -(renderNow - new Date(h.timestamp).getTime()) / 60_000;
-    if (x < xMin) continue;
-    pastPoints.push({ x, y: h.status === 'OPERATING' && h.wait != null ? h.wait : null });
-  }
-  pastPoints.sort((a, b) => a.x - b.x);
-  // The "now" point is anchorWait, plotted at x=0 for operating rides
-  // and at the closedAt offset for closed rides.
-  let nowX = 0;
-  if (isDown && closedAt) {
-    const minutesSinceClose = Math.round((Date.now() - new Date(closedAt).getTime()) / 60_000);
-    // closedAt sits in the past, so x is negative.
-    nowX = -minutesSinceClose;
-  }
-  if (anchorWait != null) {
-    pastPoints.push({ x: nowX, y: anchorWait });
-  }
-
-  // Future points: historical buckets, anchored to "now" via anchorWait
-  // if we have one (smooth transition). For DOWN rides we still draw
-  // the future curve, just grayed out.
-  const futurePoints: { x: number; y: number | null }[] = [];
-  if (anchorWait != null && !isDown) {
-    futurePoints.push({ x: 0, y: anchorWait });
-  }
-  if (buckets) {
-    for (const b of buckets) {
-      if (b.offsetMinutes === 0) continue;
-      futurePoints.push({ x: b.offsetMinutes, y: b.wait });
-    }
-  }
-
-  // Y scale: pick a range that comfortably fits everything we'll plot.
-  const allWaits: number[] = [];
-  for (const p of pastPoints) if (p.y != null) allWaits.push(p.y);
-  for (const p of futurePoints) if (p.y != null) allWaits.push(p.y);
-  const yMax = Math.max(20, ...allWaits) * 1.15;
-  const yMin = 0;
-  const yToPx = (y: number) => G_PAD_TOP + (1 - (y - yMin) / (yMax - yMin)) * plotH;
-
-  // Build polyline strings. Drop null points so the lines skip gaps.
-  const pastPath = pastPoints
-    .filter(p => p.y != null)
-    .map(p => `${xToPx(p.x)},${yToPx(p.y!)}`)
-    .join(' ');
-  const futurePath = futurePoints
-    .filter(p => p.y != null)
-    .map(p => `${xToPx(p.x)},${yToPx(p.y!)}`)
-    .join(' ');
-
-  // X axis ticks — California actual times so the guest can cross-reference
-  // the graph against their schedule without mental math.
-  const ptTimeLabel = (offsetMinutes: number) =>
-    new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Los_Angeles',
-      hour: 'numeric',
-      minute: '2-digit',
-      hour12: true,
-    }).format(new Date(renderNow + offsetMinutes * 60_000));
-  const xTicks: { x: number; label: string }[] = [
-    { x: -30, label: ptTimeLabel(-30) },
-    { x: 0,   label: ptTimeLabel(0) },
-    { x: 30,  label: ptTimeLabel(30) },
-    { x: 60,  label: ptTimeLabel(60) },
-    { x: 90,  label: ptTimeLabel(90) },
-    { x: 120, label: ptTimeLabel(120) },
+  // Seven evenly-spaced columns. nowIdx is the "now" position; values
+  // before it are actuals, after are typical-at-this-hour.
+  const nowIdx = 2;
+  const values: (number | null)[] = [
+    tMinus40?.status === 'OPERATING' ? tMinus40.wait : null,
+    tMinus20?.status === 'OPERATING' ? tMinus20.wait : null,
+    anchorWait,
+    buckets?.[1]?.wait ?? null,
+    buckets?.[2]?.wait ?? null,
+    buckets?.[3]?.wait ?? null,
+    buckets?.[4]?.wait ?? null,
+  ];
+  const columnLabels: string[] = [
+    formatHHMM(tMinus40?.timestamp ?? null),
+    formatHHMM(tMinus20?.timestamp ?? null),
+    'now',
+    buckets?.[1]?.timeSlot ? formatBucketTimeSlot(buckets[1].timeSlot) : '+30m',
+    buckets?.[2]?.timeSlot ? formatBucketTimeSlot(buckets[2].timeSlot) : '+1h',
+    buckets?.[3]?.timeSlot ? formatBucketTimeSlot(buckets[3].timeSlot) : '+90m',
+    buckets?.[4]?.timeSlot ? formatBucketTimeSlot(buckets[4].timeSlot) : '+2h',
   ];
 
-  // Y axis ticks — pick a "nice" step (5/10/15/20/25/50…) so we get
-  // roughly 4–6 evenly-spaced labels covering the data range.
-  const yTickStep = niceTickStep(yMax);
-  const yTicks: number[] = [];
-  for (let v = 0; v <= yMax; v += yTickStep) yTicks.push(v);
-
-  const nowPx = xToPx(nowX);
-
-  // Measure the container width via onLayout — react-native-svg's
-  // width="100%" doesn't always expand correctly on Expo Web, which is
-  // what was making the graph look ~50% of screen width. Once we have
-  // a real pixel width we pass it to the Svg and let preserveAspectRatio
-  // stretch the viewBox to match.
+  // Measure the actual rendered width — react-native-svg's width="100%"
+  // doesn't always expand correctly on Expo Web. Pass a real pixel value.
   const [renderW, setRenderW] = useState(0);
+  // The header above the SVG uses flex columns (each renderW/7 wide,
+  // text centered inside each). To stay aligned, dots sit at the CENTER
+  // of their column, not at PAD_X + i * step (which would track edges
+  // of the inner width, not column centers — that was the misalignment).
+  // Vertical padding still needed so dots at the extremes don't clip.
+  const PAD_Y = 8;
+  const innerH = GRAPH_RENDER_H - PAD_Y * 2;
+  const colWidth = renderW > 0 ? renderW / COLUMN_COUNT : 0;
+  const xAt = (i: number) => (i + 0.5) * colWidth;
+
+  // Auto-scale Y based on actuals present.
+  const valid = values.filter((v): v is number => v != null);
+  const minV = valid.length ? Math.min(...valid) : 0;
+  const maxV = valid.length ? Math.max(...valid) : 1;
+  const range = maxV - minV || 1;
+  const toY = (v: number) => PAD_Y + innerH - ((v - minV) / range) * innerH;
+
+  // Build polyline strings, splitting on null gaps so the line skips them.
+  const pastSegments: string[] = [];
+  const futureSegments: string[] = [];
+  let cur: string[] = [];
+  let segIsPast = true;
+  for (let i = 0; i < values.length; i++) {
+    const v = values[i];
+    if (v == null) {
+      if (cur.length >= 2) (segIsPast ? pastSegments : futureSegments).push(cur.join(' '));
+      cur = [];
+      continue;
+    }
+    cur.push(`${xAt(i)},${toY(v)}`);
+    if (i === nowIdx && cur.length >= 2) {
+      // Anchor the past segment at "now"; start a fresh future segment
+      // beginning at the same point so the lines visually meet.
+      pastSegments.push(cur.join(' '));
+      cur = [`${xAt(i)},${toY(v)}`];
+      segIsPast = false;
+    }
+  }
+  if (cur.length >= 2) (segIsPast ? pastSegments : futureSegments).push(cur.join(' '));
+
   return (
-    <View
-      style={styles.graphWrap}
-      onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
-    >
-      {renderW > 0 ? (
-      <Svg
-        width={renderW}
-        height={GRAPH_RENDER_H}
-        viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
-        preserveAspectRatio="none"
-      >
-        {/* Horizontal gridlines + Y-axis tick labels */}
-        {yTicks.map(v => (
-          <React.Fragment key={`y-${v}`}>
-            <Line
-              x1={G_PAD_LEFT} x2={GRAPH_W - G_PAD_RIGHT}
-              y1={yToPx(v)} y2={yToPx(v)}
-              stroke="#f0f0f5" strokeWidth={1}
-            />
-            <SvgText
-              x={G_PAD_LEFT - 6}
-              y={yToPx(v) + 3}
-              fontSize="10"
-              fill={SUBINK}
-              textAnchor="end"
-            >
-              {v}
-            </SvgText>
-          </React.Fragment>
+    <View onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}>
+      {/* Column header: time labels + wait values */}
+      <View style={styles.columnsRow}>
+        {values.map((v, i) => (
+          <View key={`col-${i}`} style={styles.column}>
+            <Text style={[styles.columnLabel, i === nowIdx && styles.columnLabelNow]} numberOfLines={1}>
+              {columnLabels[i]}
+            </Text>
+            <Text style={[styles.columnValue, i === nowIdx && styles.columnValueNow]}>
+              {v == null ? '—' : v}
+            </Text>
+          </View>
         ))}
+      </View>
 
-        {/* Y axis line itself */}
-        <Line
-          x1={G_PAD_LEFT} x2={G_PAD_LEFT}
-          y1={G_PAD_TOP - 4} y2={GRAPH_H - G_PAD_BOTTOM}
-          stroke="#ddd" strokeWidth={1}
-        />
-
-        {/* Baseline (X axis) */}
-        <Line
-          x1={G_PAD_LEFT} x2={GRAPH_W - G_PAD_RIGHT}
-          y1={GRAPH_H - G_PAD_BOTTOM} y2={GRAPH_H - G_PAD_BOTTOM}
-          stroke="#ddd" strokeWidth={1}
-        />
-
-        {/* "Now" vertical marker */}
-        <Line
-          x1={nowPx} x2={nowPx}
-          y1={G_PAD_TOP - 4} y2={GRAPH_H - G_PAD_BOTTOM + 4}
-          stroke={MUTED} strokeWidth={1} strokeDasharray="2,3"
-        />
-
-        {/* Past line (solid) */}
-        {pastPath.split(' ').length >= 2 ? (
-          <Polyline
-            points={pastPath}
-            fill="none"
-            stroke={BRAND}
-            strokeWidth={2}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
+      {/* Sparkline */}
+      <View style={{ height: GRAPH_RENDER_H }}>
+        {renderW > 0 && valid.length >= 2 ? (
+          <Svg width={renderW} height={GRAPH_RENDER_H}>
+            {pastSegments.map((p, i) => (
+              <Polyline key={`past-${i}`} points={p} fill="none" stroke={BRAND} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+            ))}
+            {futureSegments.map((p, i) => (
+              <Polyline key={`future-${i}`} points={p} fill="none" stroke={isDown ? MUTED : BRAND_DIM} strokeWidth={2} strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+            ))}
+            {values.map((v, i) =>
+              v == null ? null : (
+                <Circle
+                  key={`dot-${i}`}
+                  cx={xAt(i)}
+                  cy={toY(v)}
+                  r={i === nowIdx ? 5 : 3}
+                  fill={i === nowIdx ? '#fff' : (i < nowIdx ? BRAND : BRAND_DIM)}
+                  stroke={i === nowIdx ? (isDown ? RED : BRAND) : 'none'}
+                  strokeWidth={i === nowIdx ? 2 : 0}
+                />
+              )
+            )}
+          </Svg>
         ) : null}
-
-        {/* Future line (dashed). Grayed when ride is down — we don't
-            know when it'll reopen. */}
-        {futurePath.split(' ').length >= 2 ? (
-          <Polyline
-            points={futurePath}
-            fill="none"
-            stroke={isDown ? MUTED : BRAND_DIM}
-            strokeWidth={2}
-            strokeDasharray="4,4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        ) : null}
-
-        {/* Past data points (small dots) */}
-        {pastPoints
-          .filter(p => p.y != null)
-          .map((p, i) => (
-            <Circle
-              key={`past-${i}`}
-              cx={xToPx(p.x)} cy={yToPx(p.y!)}
-              r={2.5}
-              fill={BRAND}
-            />
-          ))}
-
-        {/* "Now" dot — bigger */}
-        {anchorWait != null ? (
-          <>
-            <Circle
-              cx={nowPx} cy={yToPx(anchorWait)}
-              r={6}
-              fill="#fff"
-              stroke={isDown ? RED : BRAND}
-              strokeWidth={2.5}
-            />
-            <SvgText
-              x={nowPx}
-              y={yToPx(anchorWait) - 11}
-              fontSize="11"
-              fontWeight="700"
-              fill={INK}
-              textAnchor="middle"
-            >
-              {anchorWait}
-            </SvgText>
-          </>
-        ) : null}
-
-        {/* X-axis tick labels */}
-        {xTicks.map(t => (
-          <SvgText
-            key={t.label}
-            x={xToPx(t.x)}
-            y={GRAPH_H - 8}
-            fontSize="10"
-            fill={SUBINK}
-            textAnchor="middle"
-          >
-            {t.label}
-          </SvgText>
-        ))}
-      </Svg>
-      ) : null}
+      </View>
     </View>
   );
 }
@@ -604,13 +566,13 @@ function niceTickStep(max: number): number {
 // height is all about giving the bar + dot + labels real presence rather
 // than a thin strip.
 const RB_W = 360;
-const RB_H = 200;
-const RB_RENDER_H = 200;
+const RB_H = 80;
+const RB_RENDER_H = 80;
 // Side padding kept small so the bar genuinely spans the screen in the
 // happy path. End-cap labels are anchored at bandStart/bandEnd so they
 // follow the bar position even when it shifts for an out-of-band dot.
 const RB_PAD_X = 16;
-const RB_BAR_Y = 88;
+const RB_BAR_Y = 36;
 
 function RangeBand({
   p10,
@@ -693,55 +655,27 @@ function RangeBand({
           <Line
             x1={extension.x1} x2={extension.x2}
             y1={bandY} y2={bandY}
-            stroke={extension.color} strokeWidth={3} strokeDasharray="6,5"
+            stroke={extension.color} strokeWidth={1.5} strokeDasharray="4,3"
             strokeLinecap="round"
           />
         ) : null}
 
-        {/* The bar itself — left cap, connector, right cap. No fill. */}
-        <Line
-          x1={bandStart} x2={bandStart}
-          y1={bandY - 16} y2={bandY + 16}
-          stroke={BRAND} strokeWidth={3}
-          strokeLinecap="round"
-        />
-        <Line
-          x1={bandEnd} x2={bandEnd}
-          y1={bandY - 16} y2={bandY + 16}
-          stroke={BRAND} strokeWidth={3}
-          strokeLinecap="round"
-        />
-        <Line
-          x1={bandStart} x2={bandEnd}
-          y1={bandY} y2={bandY}
-          stroke={BRAND} strokeWidth={3}
-          strokeLinecap="round"
-        />
+        {/* The bar itself — left cap, connector, right cap. Thin & clean. */}
+        <Line x1={bandStart} x2={bandStart} y1={bandY - 7} y2={bandY + 7} stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
+        <Line x1={bandEnd}   x2={bandEnd}   y1={bandY - 7} y2={bandY + 7} stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
+        <Line x1={bandStart} x2={bandEnd}   y1={bandY}     y2={bandY}     stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
 
-        {/* p10 / p90 labels — sit under the relevant end-cap */}
-        <SvgText x={bandStart} y={bandY + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p10}</SvgText>
-        <SvgText x={bandEnd}   y={bandY + 38} fontSize="20" fontWeight="700" fill={INK} textAnchor="middle">{p90}</SvgText>
-        <SvgText x={bandStart} y={bandY + 58} fontSize="12" fill={MUTED} textAnchor="middle">p10</SvgText>
-        <SvgText x={bandEnd}   y={bandY + 58} fontSize="12" fill={MUTED} textAnchor="middle">p90</SvgText>
+        {/* min / max labels under the end-caps — value on one row, label on the next */}
+        <SvgText x={bandStart} y={bandY + 21} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p10}</SvgText>
+        <SvgText x={bandStart} y={bandY + 35} fontSize="11" fill={MUTED} textAnchor="middle">min</SvgText>
+        <SvgText x={bandEnd}   y={bandY + 21} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p90}</SvgText>
+        <SvgText x={bandEnd}   y={bandY + 35} fontSize="11" fill={MUTED} textAnchor="middle">max</SvgText>
 
-        {/* Current-wait dot + value label above */}
+        {/* Current-wait dot + value label above. Small dot, light typography. */}
         {dotX != null && current != null ? (
           <>
-            <Circle
-              cx={dotX} cy={bandY}
-              r={14}
-              fill="#fff"
-              stroke={dotColor}
-              strokeWidth={3.5}
-            />
-            <SvgText
-              x={dotX}
-              y={bandY - 26}
-              fontSize="22"
-              fontWeight="700"
-              fill={INK}
-              textAnchor="middle"
-            >
+            <Circle cx={dotX} cy={bandY} r={6} fill={dotColor} />
+            <SvgText x={dotX} y={bandY - 12} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">
               {current}
             </SvgText>
           </>
@@ -809,6 +743,18 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 4,
   },
+  titleMetaRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bellPressable: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  bell: { fontSize: 18 },
+  bellActive: { opacity: 1 },
+  bellInactive: { opacity: 0.4 },
   walkPill: {
     backgroundColor: '#eef0fa',
     paddingHorizontal: 10,
@@ -872,9 +818,19 @@ const styles = StyleSheet.create({
   tileBody: { fontSize: 14, color: INK, lineHeight: 20 },
 
   graphWrap: { alignItems: 'stretch', minHeight: GRAPH_RENDER_H, width: '100%' },
+  columnsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 6,
+  },
+  column: { flex: 1, alignItems: 'center' },
+  columnLabel: { fontSize: 10, color: SUBINK },
+  columnLabelNow: { color: BRAND, fontWeight: '700' },
+  columnValue: { fontSize: 13, fontWeight: '600', color: INK, marginTop: 1 },
+  columnValueNow: { color: BRAND, fontSize: 14 },
   tinyHint: { fontSize: 12, color: SUBINK, marginTop: 6, fontStyle: 'italic' },
 
-  rangeWrap: { alignItems: 'stretch', minHeight: RB_RENDER_H, width: '100%' },
+  rangeWrap: { alignItems: 'stretch', height: RB_RENDER_H, width: '100%' },
 
   rightNowLine: { fontSize: 15, color: INK },
   rightNowNumber: { fontWeight: '700' },
@@ -883,6 +839,16 @@ const styles = StyleSheet.create({
 
   closureLine: { fontSize: 14, color: INK },
   closureFutureHint: { fontSize: 12, color: MUTED, marginTop: 6, fontStyle: 'italic' },
+  debugSection: { marginTop: 16 },
+  debugSectionLabel: {
+    fontSize: 11,
+    color: SUBINK,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    fontWeight: '600',
+    paddingHorizontal: 4,
+  },
   bold: { fontWeight: '700' },
 
   fallbackBlock: { flex: 1, justifyContent: 'center', padding: 32 },

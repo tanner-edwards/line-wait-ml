@@ -186,6 +186,10 @@ export interface NotificationLogEntry {
   currentWait: number | null;
   delivered: boolean;
   deliveryError: string | null;
+  /** The body text the scanner sent in the push payload. Optional for
+   *  back-compat with entries written before the field was added; the
+   *  history sheet falls back to recomposing if absent. */
+  body?: string | null;
   bucket0Wait?: number | null;
   rideStats?: { p10: number; p50: number; p90: number; sampleCount: number } | null;
   previousWait?: number | null;

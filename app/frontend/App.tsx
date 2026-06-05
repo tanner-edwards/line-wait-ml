@@ -7,7 +7,7 @@ import { DeviceProvider } from './src/context/DeviceContext';
 import { DailyContextProvider } from './src/context/DailyContextContext';
 import { DebugModeProvider } from './src/context/DebugModeContext';
 import { NotificationDetailProvider } from './src/context/NotificationDetailContext';
-import { NotificationDetailModal } from './src/components/NotificationDetailModal';
+import { RideDetailModal } from './src/components/RideDetailModal';
 import { NotificationHistorySheet } from './src/components/NotificationHistorySheet';
 import { NotificationDeepLinkHandler } from './src/components/NotificationDeepLinkHandler';
 import { RootNavigator } from './src/navigation/RootNavigator';
@@ -30,7 +30,7 @@ export default function App() {
                     <NotificationDetailProvider>
                       <RootNavigator />
                       <NotificationHistorySheet />
-                      <NotificationDetailModal />
+                      <RideDetailModal />
                       <NotificationDeepLinkHandler />
                     </NotificationDetailProvider>
                   </RideProvider>

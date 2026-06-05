@@ -92,7 +92,13 @@ export function NotificationHistorySheet(): React.ReactElement {
                     // openDetail closes the sheet automatically. The detail
                     // modal's "Back" button restores it because we pass
                     // source: 'history'.
-                    openDetail({ rideId: item.rideId, type: item.type, source: 'history' });
+                    openDetail({
+                      rideId: item.rideId,
+                      type: item.type,
+                      source: 'history',
+                      durationMs: item.durationMs ?? null,
+                      closedAt: item.closedAt ?? null,
+                    });
                   }}
                 />
               )}
@@ -128,7 +134,11 @@ function Row({
   onPress: () => void;
 }): React.ReactElement {
   const emoji = emojiFor(entry);
-  const body = notificationBody(entry);
+  // Prefer the persisted body so the history matches the OS notification
+  // the user actually got. Older entries (pre-body field) fall back to
+  // recomposing — they'll see a fresh random tagline each render, but
+  // those entries age out within 2 hours.
+  const body = entry.body ?? notificationBody(entry);
   const when = formatTimeAgo(entry.firedAt);
   return (
     <Pressable

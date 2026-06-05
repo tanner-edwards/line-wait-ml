@@ -21,6 +21,10 @@ export interface ActiveDetail {
   rideId: string;
   type: NotificationKind;
   source: DetailSource;
+  /** Downtime in ms — present on reopen notifications, null otherwise. */
+  durationMs?: number | null;
+  /** ISO timestamp of when the ride closed — from the reopen log entry. */
+  closedAt?: string | null;
 }
 
 interface NotificationDetailContextValue {

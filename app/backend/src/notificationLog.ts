@@ -26,6 +26,10 @@ export interface NotificationLogEntry {
   currentWait: number | null;
   delivered: boolean;
   deliveryError: string | null;
+  // The body the scanner sent in the push payload. Persisted so the
+  // in-app history shows the same text the user got, rather than
+  // re-rolling a random tagline on every render.
+  body?: string | null;
   // Type-specific extras — present on some types only.
   bucket0Wait?: number | null;
   rideStats?: { p10: number; p50: number; p90: number; sampleCount: number } | null;

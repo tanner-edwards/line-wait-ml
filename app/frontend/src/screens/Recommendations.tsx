@@ -263,7 +263,6 @@ export function Recommendations(): React.ReactElement {
             </Text>
           ) : null}
         </View>
-        <NotificationBellButton />
         {debugMode && (
           <Pressable
             onPress={() => setDebugPickerOpen(true)}
