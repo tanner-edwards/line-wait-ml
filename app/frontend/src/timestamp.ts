@@ -38,10 +38,11 @@ export function formatTimeAgo(iso: string | null, now: Date = new Date()): strin
   const then = new Date(iso).getTime();
   if (!Number.isFinite(then)) return '';
   const minutesAgo = Math.max(0, Math.round((now.getTime() - then) / 60_000));
-  if (minutesAgo < 60) return `~${minutesAgo}m ago`;
-  const hoursAgo = minutesAgo / 60;
-  if (hoursAgo < 10) return `~${Math.round(hoursAgo * 10) / 10}h ago`;
-  return `~${Math.round(hoursAgo)}h ago`;
+  if (minutesAgo < 60) return `${minutesAgo}m ago`;
+  const hrs = Math.floor(minutesAgo / 60);
+  const mins = minutesAgo % 60;
+  if (mins === 0) return `${hrs}h ago`;
+  return `${hrs}h ${mins}m ago`;
 }
 
 /**

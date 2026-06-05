@@ -43,10 +43,12 @@ export function NotificationDetailProvider({ children }: { children: React.React
   const closeHistorySheet = useCallback(() => setHistorySheetOpen(false), []);
 
   const openDetail = useCallback((detail: ActiveDetail) => {
-    // Close the history sheet so the detail page is what the user sees.
-    // If we left the sheet open, it would render on top of the detail and
-    // the tap would look like a no-op.
-    setHistorySheetOpen(false);
+    // Sheet stays open underneath — the detail modal is mounted after
+    // the sheet in App.tsx so it renders on top, and leaving the sheet
+    // open means Back from the detail naturally reveals it again with
+    // no extra coordination. For deep-link entries we also open the
+    // sheet explicitly (see NotificationDeepLinkHandler) so the user
+    // lands in the same in-app state regardless of how they got here.
     setActive(detail);
   }, []);
 

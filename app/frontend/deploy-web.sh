@@ -22,6 +22,22 @@ cd "$(dirname "$0")"
 export AWS_PROFILE=club32
 export NODE_EXTRA_CA_CERTS="${NODE_EXTRA_CA_CERTS:-$HOME/.zscaler-ca.pem}"
 
+# Explicitly source .env.local so EXPO_PUBLIC_* vars are in the shell
+# before `expo export` runs. Expo is supposed to auto-discover .env.local,
+# but that relies on the working directory at export time — sourcing here
+# guarantees the vars are always present regardless of shell/tool quirks.
+if [[ -f .env.local ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source .env.local
+  set +a
+fi
+
+if [[ -z "${EXPO_PUBLIC_VAPID_PUBLIC_KEY:-}" ]]; then
+  echo "Error: EXPO_PUBLIC_VAPID_PUBLIC_KEY is not set. Add it to .env.local." >&2
+  exit 1
+fi
+
 echo "==> Looking up bucket name + CloudFront distribution from stack outputs"
 BUCKET=$(aws cloudformation describe-stacks \
   --stack-name club32-backend \

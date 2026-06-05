@@ -147,9 +147,9 @@ function Row({
 }
 
 function emojiFor(entry: NotificationLogEntry): string {
-  if (entry.type === 'closure') return '🛑';
+  if (entry.type === 'closure') return '✕';
   if (entry.type === 'reopen') return '🎉';
-  if (entry.type === 'peak') return '✕';
+  if (entry.type === 'peak') return '🛑';
   return entry.badge === 'star' ? '⭐' : '✅';
 }
 

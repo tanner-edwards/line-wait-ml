@@ -89,6 +89,8 @@ export function NotificationDetailModal(): React.ReactElement {
           >
             <Text style={styles.backArrow}>‹ Back</Text>
           </Pressable>
+          {/* Spacer pushes the dismiss-all X to the right edge. */}
+          <View style={styles.headerSpacer} />
           <Pressable
             onPress={dismissAll}
             style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
@@ -149,12 +151,20 @@ function DetailBody({
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
-      {/* Title block */}
+      {/* Title block — name + land · park, with a small walk-time pill
+          when we have user GPS + ride coordinates (mirrors the list view). */}
       <View style={styles.titleBlock}>
         <Text style={styles.title}>{ride.name}</Text>
-        <Text style={styles.subtitle}>
-          {ride.land}{parkName ? ` · ${parkName}` : ''}
-        </Text>
+        <View style={styles.titleMetaRow}>
+          <Text style={styles.subtitle}>
+            {ride.land}{parkName ? ` · ${parkName}` : ''}
+          </Text>
+          {walkMins != null ? (
+            <View style={styles.walkPill}>
+              <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
+            </View>
+          ) : null}
+        </View>
       </View>
 
       {/* Status row — wait/closed + badge + below-normal pill */}
@@ -238,15 +248,6 @@ function DetailBody({
         </Tile>
       ) : null}
 
-      {/* Walk distance */}
-      {walkMins != null ? (
-        <Tile>
-          <TileLabel>From here</TileLabel>
-          <Text style={styles.tileBody}>
-            ~{walkMins} min walk from your current location.
-          </Text>
-        </Tile>
-      ) : null}
     </ScrollView>
   );
 }
@@ -312,17 +313,13 @@ function StatusRow({
 
 // ---- Trend graph (SVG) --------------------------------------------
 
-// Trend graph dimensions — tall enough to give the Y axis room to breathe.
-// Width is "100%" via the SVG attribute; the internal viewBox is just the
-// coordinate system. Height is fixed in pixels so the graph occupies a
-// real, readable chunk of the screen.
 const GRAPH_W = 360;
-const GRAPH_H = 280;
-const GRAPH_RENDER_H = 280;
-const G_PAD_LEFT = 40;   // room for Y axis labels (3 digits + tick)
-const G_PAD_RIGHT = 16;
-const G_PAD_TOP = 28;
-const G_PAD_BOTTOM = 32;
+const GRAPH_H = 140;
+const GRAPH_RENDER_H = 140;
+const G_PAD_LEFT = 36;   // room for Y axis labels (3 digits + tick)
+const G_PAD_RIGHT = 12;
+const G_PAD_TOP = 20;
+const G_PAD_BOTTOM = 28;
 
 function TrendGraph({
   recentHistory,
@@ -800,12 +797,27 @@ const styles = StyleSheet.create({
   backButtonPressed: { opacity: 0.5 },
   backArrow: { fontSize: 16, color: BRAND, fontWeight: '600' },
   dismissX: { fontSize: 16, color: MUTED, fontWeight: '600' },
+  headerSpacer: { flex: 1 },
 
   body: { padding: 10, paddingBottom: 48 },
 
   titleBlock: { marginBottom: 12, paddingHorizontal: 4 },
+  titleMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    marginTop: 4,
+  },
+  walkPill: {
+    backgroundColor: '#eef0fa',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  walkPillText: { fontSize: 12, color: BRAND, fontWeight: '600' },
   title: { fontSize: 22, fontWeight: '700', color: INK },
-  subtitle: { fontSize: 13, color: SUBINK, marginTop: 4 },
+  subtitle: { fontSize: 13, color: SUBINK, flexShrink: 1 },
 
   statusRow: {
     flexDirection: 'row',

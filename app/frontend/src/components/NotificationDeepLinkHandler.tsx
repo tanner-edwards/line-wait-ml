@@ -26,7 +26,7 @@ function parseNotifParam(value: string | null): { rideId: string; type: Notifica
 }
 
 export function NotificationDeepLinkHandler(): null {
-  const { openDetail } = useNotificationDetail();
+  const { openDetail, openHistorySheet } = useNotificationDetail();
 
   // 1. Launch-time URL param check (PWA only — RN native ignores).
   useEffect(() => {
@@ -34,14 +34,19 @@ export function NotificationDeepLinkHandler(): null {
     const params = new URLSearchParams(window.location.search);
     const detail = parseNotifParam(params.get('notif'));
     if (detail) {
-      openDetail({ ...detail, source: 'deeplink' });
+      // Open the history sheet first so it's visible underneath the
+      // detail modal. Tapping Back on the detail then reveals the
+      // sheet — same end-state as if the user had opened the sheet
+      // themselves and tapped the row.
+      openHistorySheet();
+      openDetail({ ...detail, source: 'history' });
       // Strip the param so a page reload doesn't keep re-opening the modal.
       params.delete('notif');
       const next = params.toString();
       const url = window.location.pathname + (next ? `?${next}` : '') + window.location.hash;
       window.history.replaceState(null, '', url);
     }
-  }, [openDetail]);
+  }, [openDetail, openHistorySheet]);
 
   // 2. Service-worker message channel — for taps while the app tab is open.
   useEffect(() => {
@@ -50,11 +55,14 @@ export function NotificationDeepLinkHandler(): null {
       const data = event.data as { kind?: string; rideId?: string; type?: string } | null;
       if (!data || data.kind !== 'notification-click') return;
       const detail = parseNotifParam(`${data.rideId ?? ''}__${data.type ?? ''}`);
-      if (detail) openDetail({ ...detail, source: 'deeplink' });
+      if (detail) {
+        openHistorySheet();
+        openDetail({ ...detail, source: 'history' });
+      }
     };
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
-  }, [openDetail]);
+  }, [openDetail, openHistorySheet]);
 
   return null;
 }

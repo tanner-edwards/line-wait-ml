@@ -191,6 +191,7 @@ export interface NotificationLogEntry {
   previousWait?: number | null;
   closedAt?: string | null;
   durationMs?: number | null;
+  waitAtClose?: number | null;
 }
 
 export function emptyPersona(): Persona {

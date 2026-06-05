@@ -25,9 +25,9 @@ export function formatDuration(ms) {
 export function notificationTitle(type, rideName, badge) {
   const safeName = rideName ?? 'Ride';
   if (type === 'trough') return `${badge === 'star' ? '⭐' : '✅'} ${safeName}`;
-  if (type === 'closure') return `🛑 ${safeName}`;
+  if (type === 'closure') return `✕ ${safeName}`;
   if (type === 'reopen') return `🎉 ${safeName}`;
-  if (type === 'peak') return `✕ ${safeName}`;
+  if (type === 'peak') return `🛑 ${safeName}`;
   return safeName;
 }
 
@@ -39,10 +39,11 @@ export function notificationTitle(type, rideName, badge) {
  *   bucket0Wait?: number|null,
  *   rideStats?: { p50?: number, p90?: number }|null,
  *   durationMs?: number|null,
+ *   waitAtClose?: number|null,
  * }} params
  * @returns {string}
  */
-export function notificationBody({ type, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, durationMs = null }) {
+export function notificationBody({ type, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, durationMs = null, waitAtClose = null }) {
   if (type === 'trough') {
     const waitText = currentWait != null ? `${currentWait} min` : 'a short wait';
     const compare = bucket0Wait != null ? ` — usually ${bucket0Wait} around now` : '';
@@ -54,14 +55,13 @@ export function notificationBody({ type, badge = null, currentWait = null, bucke
   }
   if (type === 'reopen') {
     const downtime = formatDuration(durationMs);
-    const waitText = currentWait != null ? `${currentWait} min` : null;
-    const longDowntime = durationMs != null && durationMs >= 60 * 60_000;
-    const lowWait = rideStats?.p50 != null && currentWait != null && currentWait < rideStats.p50 * 0.7;
-    if (downtime && longDowntime && lowWait) return `Back after ${downtime} — that wait is only ${waitText}!`;
-    if (downtime && waitText) return `Back after ${downtime}. Wait posted at ${waitText}.`;
-    if (downtime) return `Back after ${downtime}.`;
-    if (waitText) return `Back up. Wait posted at ${waitText}.`;
-    return 'Back up.';
+    const nowText = currentWait != null ? `${currentWait} min` : null;
+    const closedText = waitAtClose != null ? `${waitAtClose} min` : null;
+    const base = downtime ? `Back after ${downtime}.` : 'Back up.';
+    if (closedText && nowText) return `${base} Was ${closedText} at close — now ${nowText}.`;
+    if (closedText) return `${base} Was ${closedText} when it closed.`;
+    if (nowText) return `${base} Wait posted at ${nowText}.`;
+    return base;
   }
   if (type === 'peak') {
     const waitText = currentWait != null ? `${currentWait} min` : 'a long wait';

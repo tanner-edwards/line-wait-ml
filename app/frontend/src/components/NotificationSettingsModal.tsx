@@ -1,5 +1,5 @@
 // Bottom-sheet modal for per-type notification opt-ins. Four toggles:
-// trough (⭐/✅ good windows), closure (🛑 ride down), reopen (🎉 ride back up),
+// trough (⭐/✅ good windows), closure (✕ ride down), reopen (🎉 ride back up),
 // peak (📈 ride at p90 — off by default). Changes persist to AsyncStorage
 // and sync to the device record so the scanner respects them on the next tick.
 
@@ -36,7 +36,7 @@ const ROWS: Row[] = [
   },
   {
     kind: 'closure',
-    emoji: '🛑',
+    emoji: '✕',
     title: 'Ride closes',
     subtitle: "Heads-up when one of your must-do rides goes down.",
   },
@@ -48,7 +48,7 @@ const ROWS: Row[] = [
   },
   {
     kind: 'peak',
-    emoji: '✕',
+    emoji: '🛑',
     title: 'Peak wait alert',
     subtitle: "Off by default. Alerts when a must-do ride hits peak crowd levels — well above its typical wait.",
   },

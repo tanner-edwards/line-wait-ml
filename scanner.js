@@ -359,6 +359,7 @@ async function recordClosureStart(db, current) {
     rideId: current.rideId,
     rideName: current.name,
     closedAt: new Date().toISOString(),
+    waitAtClose: current.wait ?? null,
   });
 }
 
@@ -422,10 +423,10 @@ function stripUndefined(value) {
 // matching closure event.
 
 // Build the user-facing notification payload. Copy lives in notification-copy.js.
-function buildPayload({ type, rideId, rideName, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, previousWait = null, durationMs = null }) {
+function buildPayload({ type, rideId, rideName, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, previousWait = null, durationMs = null, waitAtClose = null }) {
   return {
     title: notificationTitle(type, rideName, badge),
-    body: notificationBody({ type, badge, currentWait, bucket0Wait, rideStats, durationMs }),
+    body: notificationBody({ type, badge, currentWait, bucket0Wait, rideStats, durationMs, waitAtClose }),
     rideId,
     type,
     badge,
@@ -605,7 +606,7 @@ async function run() {
       const closure = await readAndClearClosure(db, rideId);
       const closedAt = closure?.closedAt ?? null;
       const durationMs = closedAt ? Date.now() - new Date(closedAt).getTime() : null;
-      statusChanges.set(rideId, { kind: 'reopen', closedAt, durationMs });
+      statusChanges.set(rideId, { kind: 'reopen', closedAt, durationMs, waitAtClose: closure?.waitAtClose ?? null });
     }
   }
   log('status_changes', {
@@ -655,6 +656,7 @@ async function run() {
             extra: {
               closedAt: change.closedAt,
               durationMs: change.durationMs,
+              waitAtClose: change.waitAtClose,
               rideStats: stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null,
             },
           });
