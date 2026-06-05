@@ -35,7 +35,7 @@ export async function fetchRecentHistory(
     };
     const rideId = d.ride_id;
     const existing = map.get(rideId) ?? [];
-    if (existing.length >= 2) return;
+    if (existing.length >= 4) return;
     const ts = d.timestamp_utc.toDate();
     existing.push({
       timestamp: ts.toISOString(),

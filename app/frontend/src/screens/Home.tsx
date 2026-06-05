@@ -50,6 +50,7 @@ const SUPPRESSED_SCORE: ScoreResult = {
     vsRange: null,
     projectedChange: null,
     nearTermChange: null,
+    rapidChange: null,
   },
 };
 

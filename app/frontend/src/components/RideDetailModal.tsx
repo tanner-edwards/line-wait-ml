@@ -105,7 +105,7 @@ export function RideDetailModal(): React.ReactElement {
 
   return (
     <Modal visible={visible} animationType="slide" transparent onRequestClose={closeDetail}>
-      <View style={styles.backdrop}>
+      <View style={[styles.backdrop, active?.source === 'history' && styles.backdropClear]}>
         <SafeAreaView style={styles.container}>
           <View style={styles.dragHandleRow} {...panResponder.panHandlers}>
             <View style={styles.dragPill} />
@@ -477,10 +477,12 @@ function TrendGraph({
   isDown: boolean;
   buckets: { offsetMinutes: number; timeSlot: string; wait: number | null; sampleCount: number }[] | null;
 }): React.ReactElement {
-  // Pull the most-recent and second-most-recent OPERATING observations
-  // from recentHistory (the backend returns most-recent-first).
-  const tMinus20 = recentHistory[0] ?? null;
-  const tMinus40 = recentHistory[1] ?? null;
+  // Pull the ~20-min-ago and ~40-min-ago observations from recentHistory.
+  // The backend returns up to 4 entries most-recent-first at 10-min cron
+  // intervals, so [1] ≈ 20 min ago and [3] ≈ 40 min ago. Skipping [0] and
+  // [2] gives 20-min visual steps that match the 40-min lookback intent.
+  const tMinus20 = recentHistory[1] ?? null;
+  const tMinus40 = recentHistory[3] ?? null;
 
   // Seven evenly-spaced columns. nowIdx is the "now" position; values
   // before it are actuals, after are typical-at-this-hour.
@@ -804,6 +806,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.4)',
     justifyContent: 'flex-end',
+  },
+  backdropClear: {
+    backgroundColor: 'transparent',
   },
   container: {
     height: '90%',

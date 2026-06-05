@@ -28,38 +28,44 @@ function buildMockDb(snap: object) {
 }
 
 const REFERENCE_DATE = new Date('2026-05-22T01:00:00Z');
+const T_MINUS_10 = new Date('2026-05-22T00:50:00Z');  // 10 min before ref
 const T_MINUS_20 = new Date('2026-05-22T00:40:00Z');  // 20 min before ref
 const T_MINUS_35 = new Date('2026-05-22T00:25:00Z');  // 35 min before ref
+const T_MINUS_43 = new Date('2026-05-22T00:17:00Z');  // 43 min before ref
 
 const RIDE_A = 'ride-a-uuid';
 const RIDE_B = 'ride-b-uuid';
 
 describe('fetchRecentHistory', () => {
-  it('returns a map with up to 2 snapshots per ride, most recent first', async () => {
+  it('returns a map with up to 4 snapshots per ride, most recent first', async () => {
     const snap = makeSnap([
+      { ride_id: RIDE_A, wait_minutes: 20, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_10) },
       { ride_id: RIDE_A, wait_minutes: 25, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_20) },
-      { ride_id: RIDE_A, wait_minutes: 30, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_35) },
+      { ride_id: RIDE_A, wait_minutes: 28, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_35) },
+      { ride_id: RIDE_A, wait_minutes: 30, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_43) },
     ]);
     mockedGetFirestore.mockReturnValue(buildMockDb(snap) as any);
 
     const map = await fetchRecentHistory('disneyland', REFERENCE_DATE);
     const history = map.get(RIDE_A)!;
-    expect(history).toHaveLength(2);
-    expect(history[0].wait).toBe(25);
-    expect(history[1].wait).toBe(30);
+    expect(history).toHaveLength(4);
+    expect(history[0].wait).toBe(20);
+    expect(history[3].wait).toBe(30);
   });
 
-  it('caps at 2 entries per ride even when the query returns more docs', async () => {
-    const t3 = new Date('2026-05-22T00:15:00Z');
+  it('caps at 4 entries per ride even when the query returns more docs', async () => {
+    const t5 = new Date('2026-05-22T00:08:00Z');
     const snap = makeSnap([
-      { ride_id: RIDE_A, wait_minutes: 20, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_20) },
-      { ride_id: RIDE_A, wait_minutes: 25, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_35) },
-      { ride_id: RIDE_A, wait_minutes: 30, status: 'OPERATING', timestamp_utc: makeTimestamp(t3) },
+      { ride_id: RIDE_A, wait_minutes: 20, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_10) },
+      { ride_id: RIDE_A, wait_minutes: 25, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_20) },
+      { ride_id: RIDE_A, wait_minutes: 28, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_35) },
+      { ride_id: RIDE_A, wait_minutes: 30, status: 'OPERATING', timestamp_utc: makeTimestamp(T_MINUS_43) },
+      { ride_id: RIDE_A, wait_minutes: 35, status: 'OPERATING', timestamp_utc: makeTimestamp(t5) },
     ]);
     mockedGetFirestore.mockReturnValue(buildMockDb(snap) as any);
 
     const map = await fetchRecentHistory('disneyland', REFERENCE_DATE);
-    expect(map.get(RIDE_A)).toHaveLength(2);
+    expect(map.get(RIDE_A)).toHaveLength(4);
   });
 
   it('handles multiple rides independently', async () => {
