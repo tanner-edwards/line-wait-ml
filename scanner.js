@@ -191,6 +191,22 @@ function classifyDayType(now) {
 
 // --- scoring (ported from app/backend/src/scoring/score.ts) ---
 
+// Piecewise linear curve that scales the "is this delta meaningful?" floor
+// with typical wait. MUST match absoluteFloorForTypical in score.ts so
+// Browse badges and notifications agree on what counts as a real drop/rise.
+//   typical ≤ 20  → 5 min
+//   typical = 50  → 10 min
+//   typical = 90  → 15 min
+//   typical ≥ 120 → 20 min (capped)
+// Between anchors the floor interpolates linearly (e.g. typical=40 → 8.3).
+function absoluteFloorForTypical(typical) {
+  if (typical <= 20)  return 5;
+  if (typical <= 50)  return 5  + (typical - 20) / 30 * 5;
+  if (typical <= 90)  return 10 + (typical - 50) / 40 * 5;
+  if (typical <= 120) return 15 + (typical - 90) / 30 * 5;
+  return 20;
+}
+
 // Returns 'star' | 'go' | 'skip' | null. Only 'star' and 'go' fire alerts.
 function scoreRide(ride) {
   const { currentWait, status, historicalAverage, rideStats } = ride;
@@ -212,11 +228,12 @@ function scoreRide(ride) {
   const [b0, b1, , b3, b4] = historicalAverage.buckets;
   if (b0.sampleCount < 1) return null;
 
-  // Factor 1: current vs t+0 bucket average (±2)
+  // Factor 1: current vs t+0 bucket average (±2). Absolute-difference
+  // floor scales with typical wait — see absoluteFloorForTypical() below.
   let vsAvgDelta = null, f1 = 0;
   if (b0.wait !== null && b0.wait !== 0) {
     vsAvgDelta = (currentWait - b0.wait) / b0.wait;
-    if (Math.abs(currentWait - b0.wait) >= 5) {
+    if (Math.abs(currentWait - b0.wait) >= absoluteFloorForTypical(b0.wait)) {
       if      (vsAvgDelta < -0.25) f1 = +2;
       else if (vsAvgDelta < -0.10) f1 = +1;
       else if (vsAvgDelta >  0.25) f1 = -2;

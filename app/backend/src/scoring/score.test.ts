@@ -79,33 +79,36 @@ describe('suppression', () => {
 // --- Factor 1: vs. current-bucket average ---
 
 describe('Factor 1 — vs average', () => {
+  // Fixtures use bucket0=50 so the new typical-wait-scaled absolute floor
+  // (10 min at typical=50) doesn't shave off the borderline cases. Pre-
+  // existing tests were tuned for a fixed 5-min floor.
   it('+2 when >25% below average', () => {
-    // currentWait=20, bucket0=30: delta = -33%
-    const r = scoreRide(makeRide({ currentWait: 20, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // currentWait=30, bucket0=50: delta = -40%, diff = 20 (>= floor 10)
+    const r = scoreRide(makeRide({ currentWait: 30, historicalAverage: makeHA(50, 50, 50), rideStats: null }));
     expect(r.factors.vsAvg?.points).toBe(2);
   });
 
   it('+1 when 10-25% below average', () => {
-    // currentWait=25, bucket0=30: delta = -16.7%
-    const r = scoreRide(makeRide({ currentWait: 25, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // currentWait=40, bucket0=50: delta = -20%, diff = 10 (>= floor 10)
+    const r = scoreRide(makeRide({ currentWait: 40, historicalAverage: makeHA(50, 50, 50), rideStats: null }));
     expect(r.factors.vsAvg?.points).toBe(1);
   });
 
   it('0 when within ±10%', () => {
-    // currentWait=30, bucket0=30: delta = 0%
-    const r = scoreRide(makeRide({ currentWait: 30, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // currentWait=50, bucket0=50: delta = 0%
+    const r = scoreRide(makeRide({ currentWait: 50, historicalAverage: makeHA(50, 50, 50), rideStats: null }));
     expect(r.factors.vsAvg?.points).toBe(0);
   });
 
   it('-1 when 10-25% above average', () => {
-    // currentWait=35, bucket0=30: delta = +16.7%
-    const r = scoreRide(makeRide({ currentWait: 35, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // currentWait=60, bucket0=50: delta = +20%, diff = 10 (>= floor 10)
+    const r = scoreRide(makeRide({ currentWait: 60, historicalAverage: makeHA(50, 50, 50), rideStats: null }));
     expect(r.factors.vsAvg?.points).toBe(-1);
   });
 
   it('-2 when >25% above average', () => {
-    // currentWait=45, bucket0=30: delta = +50%
-    const r = scoreRide(makeRide({ currentWait: 45, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // currentWait=80, bucket0=50: delta = +60%, diff = 30 (>= floor 10)
+    const r = scoreRide(makeRide({ currentWait: 80, historicalAverage: makeHA(50, 50, 50), rideStats: null }));
     expect(r.factors.vsAvg?.points).toBe(-2);
   });
 
@@ -367,15 +370,17 @@ describe('badge thresholds', () => {
   });
 
   it('no badge when score is +1', () => {
-    // F1: currentWait=25 vs avg=30 → +1. total +1
-    const r = scoreRide(makeRide({ currentWait: 25, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // F1: currentWait=40 vs b0=50 → +1 (diff=10 ≥ floor 10). b1=40 keeps F3
+    // and F4 at 0 so the score is exactly +1.
+    const r = scoreRide(makeRide({ currentWait: 40, historicalAverage: makeHA(50, 40, 40), rideStats: null }));
     expect(r.badge).toBeNull();
     expect(r.score).toBe(1);
   });
 
   it('no badge when score is -1', () => {
-    // F1: currentWait=35 vs avg=30 → -1. total -1
-    const r = scoreRide(makeRide({ currentWait: 35, historicalAverage: makeHA(30, 30, 30), rideStats: null }));
+    // Mirror — b0=50, currentWait=60 (diff=10 ≥ floor 10) → F1=-1.
+    // b1=60 keeps F3/F4 at 0.
+    const r = scoreRide(makeRide({ currentWait: 60, historicalAverage: makeHA(50, 60, 60), rideStats: null }));
     expect(r.badge).toBeNull();
     expect(r.score).toBe(-1);
   });

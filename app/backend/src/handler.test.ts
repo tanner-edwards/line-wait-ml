@@ -23,6 +23,20 @@ jest.mock('./recentHistory', () => ({
   _resetForTests: jest.fn(),
 }));
 
+// ride_metadata is now an allowlist — rides absent from it are filtered
+// out of /v0/waits. Tests need a populated map for the fixture ride IDs.
+jest.mock('./recommendations/rideMetadata', () => {
+  const map = new Map<string, { rideId: string; parkId: string; name: string; lat: number | null; lng: number | null; source: 'manual'; tracksWaitTime?: boolean }>([
+    ['9167db1d-e5e7-46da-a07f-ae30a87bc4c4', { rideId: '9167db1d-e5e7-46da-a07f-ae30a87bc4c4', parkId: 'dlr', name: 'Hyperspace Mountain', lat: null, lng: null, source: 'manual' }],
+    ['c23af6ba-8515-406a-8a48-d0818ba0bfc9', { rideId: 'c23af6ba-8515-406a-8a48-d0818ba0bfc9', parkId: 'dlr', name: "Peter Pan's Flight", lat: null, lng: null, source: 'manual' }],
+    ['c60c768b-3461-465c-8f4f-b44b087506fc', { rideId: 'c60c768b-3461-465c-8f4f-b44b087506fc', parkId: 'dca', name: 'Radiator Springs Racers', lat: null, lng: null, source: 'manual' }],
+  ]);
+  return {
+    ensureRideMetadataLoaded: jest.fn().mockResolvedValue(map),
+    lookupRideMetadata: jest.fn((m: typeof map, id: string) => m.get(id) ?? null),
+  };
+});
+
 const mockedClient = themeparksClient as jest.Mocked<typeof themeparksClient>;
 const mockedHistorical = historicalAverages as jest.Mocked<typeof historicalAverages>;
 

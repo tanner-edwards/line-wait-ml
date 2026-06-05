@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -30,6 +30,8 @@ import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
+import { usePersona } from '../context/PersonaContext';
+import { useDevice } from '../context/DeviceContext';
 import { filterByDailyParks } from '../utils/parkFilter';
 import type { ScoreResult } from '../types';
 
@@ -59,6 +61,22 @@ export function Home() {
   const { data, error, loading, refreshing, lastRefreshedAt, refresh, ridesById } = useRides();
   const { coords: locationCoords, status: locationStatus } = useLocation();
   const { context: dailyContext } = useDailyContext();
+  const { persona, setPersona } = usePersona();
+  const { notificationsEnabled } = useDevice();
+
+  const mustDoIds = useMemo(
+    () => new Set(persona?.mustDoRideIds ?? []),
+    [persona]
+  );
+
+  const onToggleWatch = useCallback((rideId: string) => {
+    if (!persona) return;
+    const has = persona.mustDoRideIds.includes(rideId);
+    const next = has
+      ? persona.mustDoRideIds.filter(id => id !== rideId)
+      : [...persona.mustDoRideIds, rideId];
+    void setPersona({ ...persona, mustDoRideIds: next });
+  }, [persona, setPersona]);
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
@@ -170,6 +188,8 @@ export function Home() {
             onToggleExpand={id =>
               setExpandedRideId(prev => (prev === id ? null : id))
             }
+            mustDoIds={notificationsEnabled ? mustDoIds : null}
+            onToggleWatch={notificationsEnabled ? onToggleWatch : null}
           />
         )}
         refreshControl={
@@ -208,11 +228,15 @@ function ListRow({
   expandedRideId,
   walkOrigin,
   onToggleExpand,
+  mustDoIds,
+  onToggleWatch,
 }: {
   item: ListItem;
   expandedRideId: string | null;
   walkOrigin: { lat: number; lng: number } | null;
   onToggleExpand: (id: string) => void;
+  mustDoIds: Set<string> | null;
+  onToggleWatch: ((id: string) => void) | null;
 }) {
   if (item.kind === 'park-header') {
     return (
@@ -251,6 +275,7 @@ function ListRow({
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const isExpanded = expandedRideId === ride.id;
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
+  const isWatching = mustDoIds?.has(ride.id) ?? false;
 
   return (
     <>
@@ -268,6 +293,17 @@ function ListRow({
           <Text style={styles.rideName} numberOfLines={1}>
             {ride.name}
           </Text>
+          <View style={styles.rideRowRight}>
+          {mustDoIds !== null && (
+            <Pressable
+              onPress={() => onToggleWatch?.(ride.id)}
+              hitSlop={10}
+              style={styles.bellPressable}
+              testID={`bell-${ride.id}`}
+            >
+              <Text style={[styles.bell, isWatching && styles.bellActive]}>🔔</Text>
+            </Pressable>
+          )}
           <View style={styles.rideRight}>
             <View style={styles.waitRow}>
               <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
@@ -295,6 +331,7 @@ function ListRow({
               </Text>
             ) : null}
           </View>
+          </View>{/* rideRowRight */}
         </View>
       </Pressable>
       {isExpanded && <DebugCard ride={ride} result={scoreResult} />}
@@ -380,6 +417,17 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   rideName: { flex: 1, fontSize: 15, marginRight: 12 },
+  rideRowRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  bellPressable: {
+    justifyContent: 'center',
+    paddingHorizontal: 4,
+  },
+  bell: { fontSize: 15, opacity: 0.25 },
+  bellActive: { opacity: 1 },
   rideRight: {
     alignItems: 'flex-end',
   },

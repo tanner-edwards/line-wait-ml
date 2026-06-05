@@ -44,8 +44,11 @@ export function scoreRide(ride: Ride): ScoreResult {
   let f1 = 0;
   if (bucket0.wait !== null && bucket0.wait !== 0) {
     const delta = (currentWait - bucket0.wait) / bucket0.wait;
-    // Require ≥5 min absolute difference to avoid noise on short-wait rides
-    if (Math.abs(currentWait - bucket0.wait) >= 5) {
+    // Absolute-difference floor scales with typical wait so an 8-min drop
+    // on a 68-min headliner doesn't look the same as an 8-min drop on a
+    // 15-min ride. Anchors: 20→5, 50→10, 90→15, 120→20, with linear
+    // interpolation between. Caps at 20 above typical=120.
+    if (Math.abs(currentWait - bucket0.wait) >= absoluteFloorForTypical(bucket0.wait)) {
       if      (delta < -0.25) f1 = +2;
       else if (delta < -0.10) f1 = +1;
       else if (delta >  0.25) f1 = -2;
@@ -135,4 +138,21 @@ export function scoreRide(ride: Ride): ScoreResult {
       nearTermChange,
     },
   };
+}
+
+// Piecewise linear curve that scales the "is this delta meaningful?" floor
+// with typical wait. Anchors:
+//   typical ≤ 20  → 5 min   (short-wait rides: 5-min jitter shouldn't count)
+//   typical = 50  → 10 min
+//   typical = 90  → 15 min
+//   typical = 120 → 20 min  (and capped here above)
+// Between anchors the floor interpolates linearly, e.g. typical=40 → 8.3.
+// Exported because both the Browse badge logic (here) and scanner.js (its
+// JS port) need the exact same threshold to stay consistent.
+export function absoluteFloorForTypical(typical: number): number {
+  if (typical <= 20)  return 5;
+  if (typical <= 50)  return 5  + (typical - 20) / 30 * 5;
+  if (typical <= 90)  return 10 + (typical - 50) / 40 * 5;
+  if (typical <= 120) return 15 + (typical - 90) / 30 * 5;
+  return 20;
 }
