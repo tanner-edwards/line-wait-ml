@@ -22,7 +22,6 @@ import { formatHHMM, formatTimeAgo, olderLastUpdated } from '../timestamp';
 import { TrendArrow } from '../components/TrendArrow';
 import { BelowNormalBadge } from '../components/BelowNormalBadge';
 import { RecommendationBadge } from '../components/RecommendationBadge';
-import { DebugCard } from '../components/DebugCard';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
@@ -31,6 +30,7 @@ import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { usePersona } from '../context/PersonaContext';
+import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { filterByDailyParks } from '../utils/parkFilter';
 import type { ScoreResult } from '../types';
 
@@ -61,7 +61,6 @@ export function Home() {
   const { coords: locationCoords, status: locationStatus } = useLocation();
   const { context: dailyContext } = useDailyContext();
 
-  const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
@@ -165,14 +164,7 @@ export function Home() {
         data={items}
         keyExtractor={item => item.key}
         renderItem={({ item }) => (
-          <ListRow
-            item={item}
-            expandedRideId={expandedRideId}
-            walkOrigin={walkOrigin}
-            onToggleExpand={id =>
-              setExpandedRideId(prev => (prev === id ? null : id))
-            }
-          />
+          <ListRow item={item} walkOrigin={walkOrigin} />
         )}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -207,16 +199,13 @@ export function Home() {
 
 function ListRow({
   item,
-  expandedRideId,
   walkOrigin,
-  onToggleExpand,
 }: {
   item: ListItem;
-  expandedRideId: string | null;
   walkOrigin: { lat: number; lng: number } | null;
-  onToggleExpand: (id: string) => void;
 }) {
   const { persona } = usePersona();
+  const { openDetail } = useNotificationDetail();
   const mustDoIds = useMemo(
     () => new Set(persona?.mustDoRideIds ?? []),
     [persona]
@@ -256,16 +245,14 @@ function ListRow({
   const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
-  const isExpanded = expandedRideId === ride.id;
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
   const isWatching = mustDoIds.has(ride.id);
 
   return (
-    <>
-      <Pressable
-        onPress={() => onToggleExpand(ride.id)}
-        testID={`ride-${ride.id}`}
-      >
+    <Pressable
+      onPress={() => openDetail({ rideId: ride.id, type: null, source: 'browse' })}
+      testID={`ride-${ride.id}`}
+    >
         <View style={styles.rideRow}>
           {scoreResult.badge === 'star'
             ? <RecommendationBadge badge="star" />
@@ -315,9 +302,7 @@ function ListRow({
           </View>
           </View>{/* rideRowRight */}
         </View>
-      </Pressable>
-      {isExpanded && <DebugCard ride={ride} result={scoreResult} />}
-    </>
+    </Pressable>
   );
 }
 

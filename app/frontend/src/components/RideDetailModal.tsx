@@ -21,7 +21,7 @@
 // worker deep-link (G2b). Back button closes; the context restores the
 // history sheet if that's where the user came from.
 
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Pressable,
@@ -37,13 +37,16 @@ import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDebugMode } from '../context/DebugModeContext';
+import { useDevice } from '../context/DeviceContext';
 import { DebugCard } from './DebugCard';
 import { haversineMeters } from '../grouping';
 import { formatBucketTimeSlot, formatHHMM, formatTimeAgo } from '../timestamp';
-import { formatDuration } from '../../../../notification-copy';
+import { formatDuration, notificationBody } from '../../../../notification-copy';
 import { RecommendationBadge } from './RecommendationBadge';
 import { isWalkOnRide } from '../utils/walkOn';
-import { isParkError, Ride } from '../types';
+import { fetchDeviceNotifications } from '../api';
+import { getCachedNotifications } from '../utils/notificationHistoryStorage';
+import { isParkError, NotificationLogEntry, Ride } from '../types';
 
 const BRAND = '#4a4ec7';
 const BRAND_DIM = '#a3a5e4';
@@ -150,6 +153,7 @@ function DetailBody({
 
   const { persona, setPersona } = usePersona();
   const { debugMode } = useDebugMode();
+  const { deviceId } = useDevice();
   const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
   const onToggleWatch = () => {
     if (!persona) return;
@@ -179,6 +183,30 @@ function DetailBody({
 
   const walkMins = userCoords ? walkMinsBetween(userCoords, ride) : null;
   const aboveBelow = computeAboveBelow(anchorWait, bucket0Wait);
+
+  // Per-ride notification history — latest entry per type for this ride.
+  //
+  // TRIAL: We're using the latest-per-type overwrite model (notification_log
+  // doc ID = deviceId__rideId__type, overwritten each cooldown cycle). This
+  // means at most 4 entries per ride ever appear here. If this tile proves
+  // useful, replace with an append-only notification_history collection so
+  // users see a real audit log. For now this is good enough to validate the
+  // feature. — unknown date, flagged for follow-up.
+  const [rideNotifs, setRideNotifs] = useState<NotificationLogEntry[]>([]);
+  const loadRideNotifs = useCallback(async () => {
+    if (!deviceId) return;
+    const cached = await getCachedNotifications(deviceId);
+    const base = cached ?? [];
+    const filtered = base.filter(e => e.rideId === ride.id);
+    if (filtered.length) setRideNotifs(filtered);
+    try {
+      const fresh = await fetchDeviceNotifications(deviceId);
+      setRideNotifs(fresh.filter(e => e.rideId === ride.id));
+    } catch {
+      // already showing cached or nothing — silent fail
+    }
+  }, [deviceId, ride.id]);
+  useEffect(() => { void loadRideNotifs(); }, [loadRideNotifs]);
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
@@ -313,6 +341,30 @@ function DetailBody({
         </Tile>
       ) : null}
 
+      {/* Per-ride notification history — latest alert per type for this ride.
+          See the TRIAL comment above loadRideNotifs for schema limitations. */}
+      {rideNotifs.length > 0 ? (
+        <Tile>
+          <TileLabel>Recent alerts</TileLabel>
+          {rideNotifs.map(entry => {
+            const emoji = entry.type === 'closure' ? '✕'
+              : entry.type === 'reopen' ? '🎉'
+              : entry.type === 'peak' ? '🛑'
+              : entry.badge === 'star' ? '⭐' : '✅';
+            const body = entry.body ?? notificationBody(entry);
+            return (
+              <View key={`${entry.type}-${entry.firedAt}`} style={styles.notifHistoryRow}>
+                <Text style={styles.notifHistoryEmoji}>{emoji}</Text>
+                <View style={styles.notifHistoryText}>
+                  <Text style={styles.notifHistoryBody}>{body}</Text>
+                </View>
+                <Text style={styles.notifHistoryWhen}>{formatTimeAgo(entry.firedAt)}</Text>
+              </View>
+            );
+          })}
+        </Tile>
+      ) : null}
+
       {/* Scoring breakdown — debug-only. Same DebugCard the Browse list
           expands inline; reusing it keeps the scoring view consistent
           everywhere. */}
@@ -416,23 +468,34 @@ function TrendGraph({
   // Seven evenly-spaced columns. nowIdx is the "now" position; values
   // before it are actuals, after are typical-at-this-hour.
   const nowIdx = 2;
+
+  // If we're within 5 minutes of the next 30-min slot, shift all future
+  // bucket indices forward by one: use buckets[2..5] instead of buckets[1..4].
+  // This avoids the unrealistic drop (e.g. -15 min in 2 minutes) AND keeps
+  // the full 2-hour lookahead intact by consuming the new t+150 bucket.
+  // The backend always returns 6 buckets (t+0..t+150) for exactly this reason.
+  const minutesUntilNextSlot = 30 - (new Date().getMinutes() % 30);
+  const clamping = minutesUntilNextSlot <= 5;
+  // fi(i) maps future column i (0=+30, 1=+60, 2=+90, 3=+120) to buckets index.
+  const fi = (i: number) => i + 1 + (clamping ? 1 : 0);
+
   const values: (number | null)[] = [
     tMinus40?.status === 'OPERATING' ? tMinus40.wait : null,
     tMinus20?.status === 'OPERATING' ? tMinus20.wait : null,
     anchorWait,
-    buckets?.[1]?.wait ?? null,
-    buckets?.[2]?.wait ?? null,
-    buckets?.[3]?.wait ?? null,
-    buckets?.[4]?.wait ?? null,
+    buckets?.[fi(0)]?.wait ?? null,
+    buckets?.[fi(1)]?.wait ?? null,
+    buckets?.[fi(2)]?.wait ?? null,
+    buckets?.[fi(3)]?.wait ?? null,
   ];
   const columnLabels: string[] = [
     formatHHMM(tMinus40?.timestamp ?? null),
     formatHHMM(tMinus20?.timestamp ?? null),
     'now',
-    buckets?.[1]?.timeSlot ? formatBucketTimeSlot(buckets[1].timeSlot) : '+30m',
-    buckets?.[2]?.timeSlot ? formatBucketTimeSlot(buckets[2].timeSlot) : '+1h',
-    buckets?.[3]?.timeSlot ? formatBucketTimeSlot(buckets[3].timeSlot) : '+90m',
-    buckets?.[4]?.timeSlot ? formatBucketTimeSlot(buckets[4].timeSlot) : '+2h',
+    buckets?.[fi(0)]?.timeSlot ? formatBucketTimeSlot(buckets[fi(0)].timeSlot) : '+30m',
+    buckets?.[fi(1)]?.timeSlot ? formatBucketTimeSlot(buckets[fi(1)].timeSlot) : '+1h',
+    buckets?.[fi(2)]?.timeSlot ? formatBucketTimeSlot(buckets[fi(2)].timeSlot) : '+90m',
+    buckets?.[fi(3)]?.timeSlot ? formatBucketTimeSlot(buckets[fi(3)].timeSlot) : '+2h',
   ];
 
   // Measure the actual rendered width — react-native-svg's width="100%"
@@ -456,6 +519,9 @@ function TrendGraph({
   const toY = (v: number) => PAD_Y + innerH - ((v - minV) / range) * innerH;
 
   // Build polyline strings, splitting on null gaps so the line skips them.
+  // We always transition past→future at nowIdx even if there's only one past
+  // point — the old `cur.length >= 2` guard meant rides with no recentHistory
+  // never flipped segIsPast, so future dots were drawn solid instead of dashed.
   const pastSegments: string[] = [];
   const futureSegments: string[] = [];
   let cur: string[] = [];
@@ -465,13 +531,12 @@ function TrendGraph({
     if (v == null) {
       if (cur.length >= 2) (segIsPast ? pastSegments : futureSegments).push(cur.join(' '));
       cur = [];
+      if (i === nowIdx) segIsPast = false;
       continue;
     }
     cur.push(`${xAt(i)},${toY(v)}`);
-    if (i === nowIdx && cur.length >= 2) {
-      // Anchor the past segment at "now"; start a fresh future segment
-      // beginning at the same point so the lines visually meet.
-      pastSegments.push(cur.join(' '));
+    if (i === nowIdx) {
+      if (cur.length >= 2) pastSegments.push(cur.join(' '));
       cur = [`${xAt(i)},${toY(v)}`];
       segIsPast = false;
     }
@@ -850,6 +915,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   bold: { fontWeight: '700' },
+
+  notifHistoryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    paddingVertical: 8,
+    borderBottomColor: '#eef',
+    borderBottomWidth: 1,
+  },
+  notifHistoryEmoji: { fontSize: 16, marginRight: 8, marginTop: 1 },
+  notifHistoryText: { flex: 1, paddingRight: 8 },
+  notifHistoryBody: { fontSize: 13, color: INK },
+  notifHistoryWhen: { fontSize: 11, color: MUTED, marginTop: 2 },
 
   fallbackBlock: { flex: 1, justifyContent: 'center', padding: 32 },
   fallback: { fontSize: 14, color: SUBINK, textAlign: 'center' },

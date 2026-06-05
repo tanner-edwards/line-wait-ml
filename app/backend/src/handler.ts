@@ -78,24 +78,26 @@ async function buildHistoricalAverage(
   }
 
   const dayType = classifyDayType(now);
-  const [b0, b30, b60, b90, b120] = bucketsAroundNow(now);
+  const [b0, b30, b60, b90, b120, b150] = bucketsAroundNow(now);
   const v0   = lookupAverage(averages, parkSlug, rideId, b0,   dayType);
   const v30  = lookupAverage(averages, parkSlug, rideId, b30,  dayType);
   const v60  = lookupAverage(averages, parkSlug, rideId, b60,  dayType);
   const v90  = lookupAverage(averages, parkSlug, rideId, b90,  dayType);
   const v120 = lookupAverage(averages, parkSlug, rideId, b120, dayType);
+  const v150 = lookupAverage(averages, parkSlug, rideId, b150, dayType);
 
   // Spec: historicalAverage is null when no average exists for the ride's
-  // CURRENT bucket on the current day type. (We still return the t+30…t+120
+  // CURRENT bucket on the current day type. (We still return the t+30…t+150
   // entries inside the buckets array even if individually missing.)
   if (v0 === null) return null;
 
-  const buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket] = [
+  const buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket] = [
     bucketEntry(0,   b0,   v0),
     bucketEntry(30,  b30,  v30),
     bucketEntry(60,  b60,  v60),
     bucketEntry(90,  b90,  v90),
     bucketEntry(120, b120, v120),
+    bucketEntry(150, b150, v150),
   ];
   return { dayType, buckets };
 }

@@ -65,7 +65,7 @@ export function lookupAverage(
  * "missing" shape (wait: null, sampleCount: 0).
  */
 export function bucketEntry(
-  offsetMinutes: 0 | 30 | 60 | 90 | 120,
+  offsetMinutes: 0 | 30 | 60 | 90 | 120 | 150,
   timeSlot: string,
   value: LookupValue | null
 ): HistoricalBucket {

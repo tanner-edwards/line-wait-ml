@@ -43,23 +43,27 @@ export function bucketOf(date: Date, timezone: string = DEFAULT_TZ): string {
 }
 
 /**
- * Returns the five buckets [t+0, t+30, t+60, t+90, t+120] starting from the given Date.
+ * Returns the six buckets [t+0, t+30, t+60, t+90, t+120, t+150] starting from the given Date.
  * Used by the waits handler at request time to look up the current and
- * near-future historical averages for a ride.
+ * near-future historical averages for a ride. The extra t+150 bucket lets
+ * the frontend maintain a full 2-hour lookahead when it shifts the window
+ * forward because the next slot is imminent (within 5 minutes).
  */
 export function bucketsAroundNow(
   now: Date,
   timezone: string = DEFAULT_TZ
-): [string, string, string, string, string] {
+): [string, string, string, string, string, string] {
   const plus30  = new Date(now.getTime() +  30 * 60_000);
   const plus60  = new Date(now.getTime() +  60 * 60_000);
   const plus90  = new Date(now.getTime() +  90 * 60_000);
   const plus120 = new Date(now.getTime() + 120 * 60_000);
+  const plus150 = new Date(now.getTime() + 150 * 60_000);
   return [
     bucketOf(now, timezone),
     bucketOf(plus30, timezone),
     bucketOf(plus60, timezone),
     bucketOf(plus90, timezone),
     bucketOf(plus120, timezone),
+    bucketOf(plus150, timezone),
   ];
 }

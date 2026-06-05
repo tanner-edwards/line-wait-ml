@@ -15,11 +15,12 @@
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { NotificationKind } from '../types';
 
-export type DetailSource = 'history' | 'deeplink';
+export type DetailSource = 'history' | 'deeplink' | 'browse';
 
 export interface ActiveDetail {
   rideId: string;
-  type: NotificationKind;
+  /** Null when opened from the browse list (no associated notification). */
+  type: NotificationKind | null;
   source: DetailSource;
   /** Downtime in ms — present on reopen notifications, null otherwise. */
   durationMs?: number | null;

@@ -112,7 +112,8 @@ describe('parseAndValidate', () => {
         { offsetMinutes: 60,  timeSlot: '12:00-12:30', wait: 60, sampleCount: 20 },
         { offsetMinutes: 90,  timeSlot: '12:30-13:00', wait: 65, sampleCount: 20 },
         { offsetMinutes: 120, timeSlot: '13:00-13:30', wait: 70, sampleCount: 20 },
-      ] as [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket],
+        { offsetMinutes: 150, timeSlot: '13:30-14:00', wait: 72, sampleCount: 20 },
+      ] as [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket],
     };
     const candidatesWithHA = [
       { ride: { ...makeRide('r1', 'Ride 1', 10), historicalAverage: ha }, walkMinutes: 6, walkYards: 480 },

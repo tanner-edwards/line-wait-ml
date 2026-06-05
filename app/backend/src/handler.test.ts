@@ -279,12 +279,13 @@ describe('handler — per-park endpoint', () => {
     const body = JSON.parse(result.body) as ParkData;
     const space = body.rides.find(r => r.name === 'Hyperspace Mountain')!;
     expect(space.historicalAverage).not.toBeNull();
-    expect(space.historicalAverage!.buckets).toHaveLength(5);
+    expect(space.historicalAverage!.buckets).toHaveLength(6);
     expect(space.historicalAverage!.buckets[0].offsetMinutes).toBe(0);
     expect(space.historicalAverage!.buckets[1].offsetMinutes).toBe(30);
     expect(space.historicalAverage!.buckets[2].offsetMinutes).toBe(60);
     expect(space.historicalAverage!.buckets[3].offsetMinutes).toBe(90);
     expect(space.historicalAverage!.buckets[4].offsetMinutes).toBe(120);
+    expect(space.historicalAverage!.buckets[5].offsetMinutes).toBe(150);
     expect(['weekday','weekend','holiday']).toContain(space.historicalAverage!.dayType);
   });
 
