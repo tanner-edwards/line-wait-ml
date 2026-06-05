@@ -64,6 +64,7 @@ function makeHistoricalAverage(
       { offsetMinutes: 60,  timeSlot: '11:00-11:30', wait: bucket2.wait, sampleCount: bucket2.sampleCount },
       { offsetMinutes: 90,  timeSlot: '11:30-12:00', wait: bucket3.wait, sampleCount: bucket3.sampleCount },
       { offsetMinutes: 120, timeSlot: '12:00-12:30', wait: bucket4.wait, sampleCount: bucket4.sampleCount },
+      { offsetMinutes: 150, timeSlot: '12:30-13:00', wait: 30, sampleCount: 100 },
     ],
   };
 }

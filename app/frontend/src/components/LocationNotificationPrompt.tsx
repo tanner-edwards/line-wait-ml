@@ -1,16 +1,16 @@
-// Banner that prompts the user to enable or disable notifications based on
-// whether their GPS location is near Disneyland Resort.
+// Blocking modal that prompts the user to enable or disable notifications
+// based on whether their GPS location is near Disneyland Resort.
 //
 // Two cases:
 //   • At the park, notifications off → "Looks like you're at the park. Turn on?"
 //   • Away from park, notifications on → "You're not at the park. Turn off?"
 //
 // Shown at most once per calendar day (persisted in AsyncStorage). Never shown
-// if GPS is unavailable.
+// if GPS is unavailable. Blocks interaction — user must answer Yes or No.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocation } from '../context/LocationContext';
 import { useDevice } from '../context/DeviceContext';
 import { haversineMeters } from '../grouping';
@@ -50,13 +50,13 @@ function isAtDisneyland(lat: number, lng: number): boolean {
 
 type PromptKind = 'enable' | 'disable';
 
-export function LocationNotificationPrompt(): React.ReactElement | null {
+export function LocationNotificationPrompt(): React.ReactElement {
   const { coords } = useLocation();
   const { notificationsEnabled, enableNotifications, disableNotifications } = useDevice();
   const [dismissed, setDismissed] = useState(true); // default true until storage check clears it
   const [kind, setKind] = useState<PromptKind | null>(null);
 
-  // Check AsyncStorage on mount — hide if already prompted today.
+  // Check AsyncStorage on mount — skip if already prompted today.
   useEffect(() => {
     void hasPromptedToday().then(already => {
       if (!already) setDismissed(false);
@@ -75,8 +75,6 @@ export function LocationNotificationPrompt(): React.ReactElement | null {
     }
   }, [coords, notificationsEnabled, dismissed]);
 
-  if (dismissed || !kind) return null;
-
   const dismiss = () => {
     void markPromptedToday();
     setDismissed(true);
@@ -88,55 +86,82 @@ export function LocationNotificationPrompt(): React.ReactElement | null {
     else await disableNotifications();
   };
 
+  const visible = !dismissed && kind !== null;
+
   return (
-    <View style={styles.banner}>
-      <Text style={styles.message}>
-        {kind === 'enable'
-          ? "Looks like you're at the park. Turn on ride notifications?"
-          : "You're not at the park. Turn off ride notifications?"}
-      </Text>
-      <View style={styles.actions}>
-        <Pressable
-          onPress={onYes}
-          style={({ pressed }) => [styles.btn, styles.btnYes, pressed && styles.pressed]}
-          testID="location-prompt-yes"
-        >
-          <Text style={styles.btnYesText}>Yes</Text>
-        </Pressable>
-        <Pressable
-          onPress={dismiss}
-          style={({ pressed }) => [styles.btn, styles.btnNo, pressed && styles.pressed]}
-          testID="location-prompt-no"
-        >
-          <Text style={styles.btnNoText}>No</Text>
-        </Pressable>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={dismiss}
+    >
+      <View style={styles.backdrop}>
+        <View style={styles.card}>
+          <Text style={styles.title}>
+            {kind === 'enable' ? '📍 You\'re at the park!' : '🏠 You\'re not at the park'}
+          </Text>
+          <Text style={styles.message}>
+            {kind === 'enable'
+              ? 'Want to turn on ride notifications? We\'ll let you know when your must-do rides hit a short wait or go down.'
+              : 'You have ride notifications turned on. Want to turn them off while you\'re away?'}
+          </Text>
+          {kind === 'enable' ? (
+            <Text style={styles.hint}>You can always manage this in Profile → Notifications.</Text>
+          ) : null}
+          <View style={styles.actions}>
+            <Pressable
+              onPress={onYes}
+              style={({ pressed }) => [styles.btn, styles.btnYes, pressed && styles.pressed]}
+              testID="location-prompt-yes"
+            >
+              <Text style={styles.btnYesText}>Yes</Text>
+            </Pressable>
+            <Pressable
+              onPress={dismiss}
+              style={({ pressed }) => [styles.btn, styles.btnNo, pressed && styles.pressed]}
+              testID="location-prompt-no"
+            >
+              <Text style={styles.btnNoText}>Not now</Text>
+            </Pressable>
+          </View>
+        </View>
       </View>
-      {kind === 'enable' ? (
-        <Text style={styles.hint}>You can manage this in Profile → Notifications.</Text>
-      ) : null}
-    </View>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  banner: {
-    backgroundColor: '#f0f0ff',
-    borderBottomColor: '#d0d0f0',
-    borderBottomWidth: 1,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
   },
-  message: { fontSize: 14, color: '#222', marginBottom: 10 },
-  actions: { flexDirection: 'row', gap: 10 },
+  card: {
+    backgroundColor: '#fff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  title: { fontSize: 20, fontWeight: '700', color: '#222', marginBottom: 12 },
+  message: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 10 },
+  hint: { fontSize: 12, color: '#888', marginBottom: 20 },
+  actions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btn: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
   },
   btnYes: { backgroundColor: '#4a4ec7' },
-  btnYesText: { color: '#fff', fontWeight: '600', fontSize: 14 },
-  btnNo: { backgroundColor: '#e5e5e5' },
-  btnNoText: { color: '#444', fontWeight: '600', fontSize: 14 },
+  btnYesText: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnNo: { backgroundColor: '#f0f0f0' },
+  btnNoText: { color: '#555', fontWeight: '600', fontSize: 16 },
   pressed: { opacity: 0.7 },
-  hint: { fontSize: 11, color: '#888', marginTop: 8 },
 });

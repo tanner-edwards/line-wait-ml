@@ -44,9 +44,10 @@ describe('olderLastUpdated', () => {
 });
 
 describe('formatHHMM', () => {
-  it('formats a valid ISO timestamp as h:MM AM/PM', () => {
-    // Just assert the shape — actual hours/minutes depend on the test runner's timezone.
-    expect(formatHHMM('2026-05-15T20:00:00Z')).toMatch(/^\d{1,2}:\d{2} (AM|PM)$/);
+  it('formats a valid ISO timestamp in PT regardless of runner timezone', () => {
+    // 2026-05-15T20:00:00Z = 1:00 PM PDT (UTC-7). Pin the exact value so a
+    // runner in a non-PT timezone still produces a consistent PT label.
+    expect(formatHHMM('2026-05-15T20:00:00Z')).toBe('1:00 PM');
   });
 
   it('returns "—" for null input', () => {

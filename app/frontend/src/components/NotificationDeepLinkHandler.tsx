@@ -14,8 +14,9 @@
 import { useEffect } from 'react';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { NotificationKind } from '../types';
+import { logInfo, logWarn } from '../utils/logger';
 
-const VALID_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen'];
+const VALID_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen', 'peak'];
 
 function parseNotifParam(value: string | null): { rideId: string; type: NotificationKind } | null {
   if (!value) return null;
@@ -30,34 +31,45 @@ export function NotificationDeepLinkHandler(): null {
 
   // 1. Launch-time URL param check (PWA only — RN native ignores).
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.location?.search) return;
+    if (typeof window === 'undefined' || !window.location?.search) {
+      logInfo(`deeplink/url: no search string (url="${typeof window !== 'undefined' ? window.location?.href : 'no window'}")`, 'deeplink');
+      return;
+    }
     const params = new URLSearchParams(window.location.search);
-    const detail = parseNotifParam(params.get('notif'));
+    const raw = params.get('notif');
+    logInfo(`deeplink/url: search="${window.location.search}" notif param="${raw ?? '(none)'}"`, 'deeplink');
+    const detail = parseNotifParam(raw);
     if (detail) {
-      // Open the history sheet first so it's visible underneath the
-      // detail modal. Tapping Back on the detail then reveals the
-      // sheet — same end-state as if the user had opened the sheet
-      // themselves and tapped the row.
+      logInfo(`deeplink/url: opening detail rideId=${detail.rideId} type=${detail.type}`, 'deeplink');
       openHistorySheet();
       openDetail({ ...detail, source: 'history' });
-      // Strip the param so a page reload doesn't keep re-opening the modal.
       params.delete('notif');
       const next = params.toString();
       const url = window.location.pathname + (next ? `?${next}` : '') + window.location.hash;
       window.history.replaceState(null, '', url);
+    } else if (raw) {
+      logWarn(`deeplink/url: notif param present but failed to parse: "${raw}"`, 'deeplink');
     }
   }, [openDetail, openHistorySheet]);
 
   // 2. Service-worker message channel — for taps while the app tab is open.
   useEffect(() => {
-    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
+      logWarn('deeplink/sw: serviceWorker not available', 'deeplink');
+      return;
+    }
+    logInfo('deeplink/sw: message listener registered', 'deeplink');
     const handler = (event: MessageEvent) => {
       const data = event.data as { kind?: string; rideId?: string; type?: string } | null;
+      logInfo(`deeplink/sw: message received kind="${data?.kind ?? '(none)'}" rideId="${data?.rideId ?? ''}" type="${data?.type ?? ''}"`, 'deeplink');
       if (!data || data.kind !== 'notification-click') return;
       const detail = parseNotifParam(`${data.rideId ?? ''}__${data.type ?? ''}`);
       if (detail) {
+        logInfo(`deeplink/sw: opening detail rideId=${detail.rideId} type=${detail.type}`, 'deeplink');
         openHistorySheet();
         openDetail({ ...detail, source: 'history' });
+      } else {
+        logWarn(`deeplink/sw: notification-click message but failed to parse rideId/type`, 'deeplink');
       }
     };
     navigator.serviceWorker.addEventListener('message', handler);

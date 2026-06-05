@@ -8,6 +8,7 @@ const SUPPRESSED: ScoreResult = {
     vsRange: null,
     projectedChange: null,
     nearTermChange: null,
+    rapidChange: null,
   },
 };
 
@@ -107,6 +108,26 @@ export function scoreRide(ride: Ride): ScoreResult {
 
   const score = f1 + f2 + f3 + f4;
 
+  // Rapid change: ≥40% swing from the previous OPERATING snapshot. Fires
+  // 'go'/'skip' as an override even when score-based factors are neutral
+  // (e.g., a wait that's still above average but dropped dramatically).
+  // Guard: previousStatus must be 'OPERATING' to exclude reopen-from-DOWN
+  // scenarios where a jump from 0 → 45 min looks like a +Inf% spike.
+  const previousWait   = ride.recentHistory?.[0]?.wait   ?? null;
+  const previousStatus = ride.recentHistory?.[0]?.status ?? null;
+  let rapidChange: FactorBreakdown['rapidChange'] = null;
+  let isRapidDrop  = false;
+  let isRapidSpike = false;
+  if (previousWait !== null && previousWait > 0 && previousStatus === 'OPERATING') {
+    const delta   = (currentWait - previousWait) / previousWait;
+    const absDiff = Math.abs(currentWait - previousWait);
+    if (absDiff >= 10) {
+      isRapidDrop  = delta <= -0.40;
+      isRapidSpike = delta >= +0.40;
+    }
+    rapidChange = { delta, points: isRapidDrop ? +2 : isRapidSpike ? -2 : 0 };
+  }
+
   // Gold star: rare exceptional opportunity. All four conditions must hold.
   // The p50 >= 25 guard prevents low-demand walk-on rides from earning a star
   // just because their already-short wait dipped slightly lower than usual.
@@ -120,9 +141,11 @@ export function scoreRide(ride: Ride): ScoreResult {
   let badge: Badge;
   if (isGoldStar) {
     badge = 'star';
+  } else if (isRapidDrop) {
+    badge = 'go';
   } else if (score >= 2) {
     badge = (projectedChange !== null && projectedChange.delta < -0.30) ? null : 'go';
-  } else if (score <= -2) {
+  } else if (isRapidSpike || score <= -2) {
     badge = 'skip';
   } else {
     badge = null;
@@ -136,6 +159,7 @@ export function scoreRide(ride: Ride): ScoreResult {
       vsRange,
       projectedChange,
       nearTermChange,
+      rapidChange,
     },
   };
 }

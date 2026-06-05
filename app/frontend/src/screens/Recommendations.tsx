@@ -60,7 +60,6 @@ export function Recommendations(): React.ReactElement {
   const [recsError, setRecsError] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
-  const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [debugPickerOpen, setDebugPickerOpen] = useState(false);
 
   const inFlightAbort = useRef<AbortController | null>(null);
@@ -107,7 +106,6 @@ export function Recommendations(): React.ReactElement {
     setRecsLoading(true);
     setRecsError(null);
     setLoadMoreError(null);
-    setExpandedRideId(null);
     loadMoreAbort.current?.abort();
     try {
       const res = await fetchRecommendations({ park, userLat: lat, userLng: lng, persona, signal: controller.signal });
@@ -312,13 +310,9 @@ export function Recommendations(): React.ReactElement {
         <RecsList
           recs={recs}
           ridesById={ridesById}
-          expandedRideId={expandedRideId}
           loadingMore={loadingMore}
           loadMoreError={loadMoreError}
           onShowMore={() => void loadMore()}
-          onToggleExpand={(rideId) =>
-            setExpandedRideId(prev => (prev === rideId ? null : rideId))
-          }
         />
       ) : null}
 
@@ -345,19 +339,15 @@ export function Recommendations(): React.ReactElement {
 function RecsList({
   recs,
   ridesById,
-  expandedRideId,
   loadingMore,
   loadMoreError,
   onShowMore,
-  onToggleExpand,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
-  expandedRideId: string | null;
   loadingMore: boolean;
   loadMoreError: string | null;
   onShowMore: () => void;
-  onToggleExpand: (rideId: string) => void;
 }): React.ReactElement {
   if (recs.recommendations.length === 0) {
     return (
@@ -378,8 +368,6 @@ function RecsList({
         <RecommendationCard
           rec={item}
           ride={ridesById.get(item.rideId)}
-          expanded={expandedRideId === item.rideId}
-          onPress={() => onToggleExpand(item.rideId)}
         />
       )}
       ListHeaderComponent={

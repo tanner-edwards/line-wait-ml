@@ -21,9 +21,10 @@
 // worker deep-link (G2b). Back button closes; the context restores the
 // history sheet if that's where the user came from.
 
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Modal,
+  PanResponder,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -80,6 +81,18 @@ export function RideDetailModal(): React.ReactElement {
   const { ridesById, data } = useRides();
   const { coords } = useLocation();
 
+  const closeDetailRef = useRef(closeDetail);
+  useEffect(() => { closeDetailRef.current = closeDetail; }, [closeDetail]);
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        gs.dy > 10 && gs.dy > Math.abs(gs.dx),
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dy > 80 || gs.vy > 0.8) closeDetailRef.current();
+      },
+    })
+  ).current;
+
   const ride = active ? ridesById.get(active.rideId) ?? null : null;
   const parkName = useMemo(() => {
     if (!ride || !data) return null;
@@ -91,44 +104,48 @@ export function RideDetailModal(): React.ReactElement {
   const visible = active !== null;
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={closeDetail}>
-      <SafeAreaView style={styles.container}>
-        <View style={styles.headerBar}>
-          <Pressable
-            onPress={closeDetail}
-            style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
-            testID="ride-detail-back"
-            hitSlop={12}
-          >
-            <Text style={styles.backArrow}>‹ Back</Text>
-          </Pressable>
-          {/* Spacer pushes the dismiss-all X to the right edge. */}
-          <View style={styles.headerSpacer} />
-          <Pressable
-            onPress={dismissAll}
-            style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
-            testID="ride-detail-dismiss"
-            hitSlop={12}
-          >
-            <Text style={styles.dismissX}>✕</Text>
-          </Pressable>
-        </View>
-        {ride ? (
-          <DetailBody
-            ride={ride}
-            parkName={parkName}
-            userCoords={coords}
-            notifDurationMs={active?.durationMs ?? null}
-            notifClosedAt={active?.closedAt ?? null}
-          />
-        ) : active ? (
-          <View style={styles.fallbackBlock}>
-            <Text style={styles.fallback}>
-              That ride isn't in the current snapshot. Check the Browse tab for the latest status.
-            </Text>
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={closeDetail}>
+      <View style={styles.backdrop}>
+        <SafeAreaView style={styles.container}>
+          <View style={styles.dragHandleRow} {...panResponder.panHandlers}>
+            <View style={styles.dragPill} />
           </View>
-        ) : null}
-      </SafeAreaView>
+          <View style={styles.headerBar}>
+            <Pressable
+              onPress={closeDetail}
+              style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
+              testID="ride-detail-back"
+              hitSlop={12}
+            >
+              <Text style={styles.backArrow}>‹ Back</Text>
+            </Pressable>
+            <View style={styles.headerSpacer} />
+            <Pressable
+              onPress={dismissAll}
+              style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
+              testID="ride-detail-dismiss"
+              hitSlop={12}
+            >
+              <Text style={styles.dismissX}>✕</Text>
+            </Pressable>
+          </View>
+          {ride ? (
+            <DetailBody
+              ride={ride}
+              parkName={parkName}
+              userCoords={coords}
+              notifDurationMs={active?.durationMs ?? null}
+              notifClosedAt={active?.closedAt ?? null}
+            />
+          ) : active ? (
+            <View style={styles.fallbackBlock}>
+              <Text style={styles.fallback}>
+                That ride isn't in the current snapshot. Check the Browse tab for the latest status.
+              </Text>
+            </View>
+          ) : null}
+        </SafeAreaView>
+      </View>
     </Modal>
   );
 }
@@ -783,7 +800,29 @@ function computeAboveBelow(current: number | null, typical: number | null): Abov
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  backdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-end',
+  },
+  container: {
+    height: '90%',
+    backgroundColor: '#fff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    overflow: 'hidden',
+  },
+  dragHandleRow: {
+    alignItems: 'center',
+    paddingVertical: 10,
+    backgroundColor: '#fff',
+  },
+  dragPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#ddd',
+  },
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',

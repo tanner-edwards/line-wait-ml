@@ -115,7 +115,7 @@ function bucketOf(date) {
 
 function bucketsAroundNow(now) {
   const at = offsetMin => bucketOf(new Date(now.getTime() + offsetMin * 60_000));
-  return [at(0), at(30), at(60), at(90), at(120)];
+  return [at(0), at(30), at(60), at(90), at(120), at(150)];
 }
 
 // Day-type classifier — kept in sync by hand with app/backend/src/dayType.ts
@@ -280,6 +280,23 @@ function scoreRide(ride) {
 
   const score = f1 + f2 + f3 + f4;
 
+  // Rapid change: ≥40% swing from the previous OPERATING snapshot overrides
+  // score-based badge assignment. Guard: previousStatus must be 'OPERATING'
+  // to exclude reopen-from-DOWN (where 0 → 45 min looks like a huge spike).
+  const prev = ride.recentHistory?.[0] ?? null;
+  const previousWait   = prev?.wait   ?? null;
+  const previousStatus = prev?.status ?? null;
+  let isRapidDrop  = false;
+  let isRapidSpike = false;
+  if (previousWait !== null && previousWait > 0 && previousStatus === 'OPERATING') {
+    const delta   = (currentWait - previousWait) / previousWait;
+    const absDiff = Math.abs(currentWait - previousWait);
+    if (absDiff >= 10) {
+      isRapidDrop  = delta <= -0.40;
+      isRapidSpike = delta >= +0.40;
+    }
+  }
+
   const isGoldStar =
     rideStats &&
     rideStats.p50 >= 25 &&
@@ -288,8 +305,9 @@ function scoreRide(ride) {
     projDelta !== null && projDelta > 0.10;
 
   if (isGoldStar) return 'star';
+  if (isRapidDrop) return 'go';
   if (score >= 2) return (projDelta !== null && projDelta < -0.30) ? null : 'go';
-  if (score <= -2) return 'skip';
+  if (isRapidSpike || score <= -2) return 'skip';
   return null;
 }
 
@@ -692,12 +710,13 @@ async function run() {
       const historicalBuckets = buckets.map((bucket, i) => {
         const v = historical.get(`${current.parkId}__${rideId}__${bucket}__${dayType}`);
         return {
-          offsetMinutes: [0, 30, 60, 90, 120][i],
+          offsetMinutes: [0, 30, 60, 90, 120, 150][i],
           timeSlot: bucket,
           wait: v?.wait ?? null,
           sampleCount: v?.sampleCount ?? 0,
         };
       });
+      const prev = obs.previous;
       const rideForScoring = {
         currentWait: current.wait,
         status: current.status,
@@ -705,6 +724,9 @@ async function run() {
           ? null
           : { dayType, buckets: historicalBuckets },
         rideStats: stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null,
+        recentHistory: prev
+          ? [{ wait: prev.wait, status: prev.status, timestamp: new Date(prev.ts).toISOString(), minutesAgo: Math.round((Date.now() - prev.ts) / 60_000) }]
+          : null,
       };
 
       const badge = scoreRide(rideForScoring);

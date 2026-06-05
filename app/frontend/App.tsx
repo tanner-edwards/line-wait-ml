@@ -10,6 +10,7 @@ import { NotificationDetailProvider } from './src/context/NotificationDetailCont
 import { RideDetailModal } from './src/components/RideDetailModal';
 import { NotificationHistorySheet } from './src/components/NotificationHistorySheet';
 import { NotificationDeepLinkHandler } from './src/components/NotificationDeepLinkHandler';
+import { LocationNotificationPrompt } from './src/components/LocationNotificationPrompt';
 import { RootNavigator } from './src/navigation/RootNavigator';
 import { installConsoleMirror } from './src/utils/logger';
 
@@ -32,6 +33,7 @@ export default function App() {
                       <NotificationHistorySheet />
                       <RideDetailModal />
                       <NotificationDeepLinkHandler />
+                      <LocationNotificationPrompt />
                     </NotificationDetailProvider>
                   </RideProvider>
                 </LocationProvider>

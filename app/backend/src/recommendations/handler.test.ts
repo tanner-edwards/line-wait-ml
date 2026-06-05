@@ -63,6 +63,7 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
         vsRange: null,
         projectedChange: null,
         nearTermChange: null,
+        rapidChange: null,
       },
     },
   };

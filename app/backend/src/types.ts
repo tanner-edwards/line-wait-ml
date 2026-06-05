@@ -96,6 +96,10 @@ export interface FactorBreakdown {
   vsRange:         { pct: number;  points: number } | null;
   projectedChange: { delta: number; points: number } | null;
   nearTermChange:  { delta: number; points: number } | null;
+  // ≥40% swing from the previous observed wait (previous must have been
+  // OPERATING — excludes reopens from DOWN). Override: fires 'go'/'skip'
+  // badge even when score-based factors don't reach the ±2 threshold.
+  rapidChange:     { delta: number; points: number } | null;
 }
 
 export interface ScoreResult {

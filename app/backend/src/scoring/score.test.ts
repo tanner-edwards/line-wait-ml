@@ -19,14 +19,15 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
   };
 }
 
-// b0=t+0, b1=t+30, b2=t+60, b3=t+90, b4=t+120
-// Factor 3 uses: earlyAvg=avg(b0,b1) vs lateAvg=avg(b3,b4)
+// b0=t+0, b1=t+30, b2=t+60, b3=t+90, b4=t+120, b5=t+150
+// Factor 3 uses: earlyAvg=avg(currentWait,b1) vs lateAvg=avg(b3,b4)
 function makeHA(
   b0Wait: number | null,
   b1Wait: number | null,
   b2Wait: number | null,
   b3Wait: number | null = b2Wait,
   b4Wait: number | null = b2Wait,
+  b5Wait: number | null = b4Wait,
   sampleCount = 50
 ): HistoricalAverage {
   return {
@@ -37,6 +38,7 @@ function makeHA(
       { offsetMinutes: 60,  timeSlot: '11:00-11:30', wait: b2Wait, sampleCount },
       { offsetMinutes: 90,  timeSlot: '11:30-12:00', wait: b3Wait, sampleCount },
       { offsetMinutes: 120, timeSlot: '12:00-12:30', wait: b4Wait, sampleCount },
+      { offsetMinutes: 150, timeSlot: '12:30-13:00', wait: b5Wait, sampleCount },
     ],
   };
 }
@@ -67,7 +69,7 @@ describe('suppression', () => {
     // Factor 1 (-50% below avg) so we can prove suppression actually fires.
     const r = scoreRide(makeRide({
       currentWait: 15,
-      historicalAverage: makeHA(30, 30, 30, 30, 30, 0),
+      historicalAverage: makeHA(30, 30, 30, 30, 30, 30, 0),
       rideStats: null,
     }));
     expect(r.badge).toBeNull();
@@ -486,5 +488,101 @@ describe('gold star', () => {
       rideStats: makeStats(10, 40, 200, 18),  // p50=18 < 25
     });
     expect(r.badge).not.toBe('star');
+  });
+});
+
+// --- Rapid change factor ---
+
+describe('rapid change factor', () => {
+  function makeRideWithHistory(currentWait: number, previousWait: number | null, previousStatus = 'OPERATING'): Ride {
+    return makeRide({
+      currentWait,
+      historicalAverage: makeHA(50, 50, 50),  // avg=50, neutral score unless wait diverges significantly
+      rideStats: null,
+      recentHistory: previousWait !== null
+        ? [{ timestamp: '2026-06-05T18:00:00Z', minutesAgo: 10, wait: previousWait, status: previousStatus }]
+        : null,
+    });
+  }
+
+  it('null when recentHistory is null', () => {
+    const r = scoreRide(makeRide({ recentHistory: null }));
+    expect(r.factors.rapidChange).toBeNull();
+  });
+
+  it('null when recentHistory is empty', () => {
+    const r = scoreRide(makeRide({ recentHistory: [] }));
+    expect(r.factors.rapidChange).toBeNull();
+  });
+
+  it('null when previousStatus is DOWN (excludes reopen-from-closure)', () => {
+    // previousWait=0 during closure → don't fire rapid change on reopen
+    const r = scoreRide(makeRideWithHistory(45, 0, 'DOWN'));
+    expect(r.factors.rapidChange).toBeNull();
+  });
+
+  it('points=0 when absolute diff < 10 min (noise floor)', () => {
+    // previousWait=40, currentWait=35: -12.5% and |diff|=5 < 10 → stored with 0pts
+    // Use avg=35 so F1 is neutral and the badge can only come from rapidChange.
+    const r = scoreRide({
+      ...makeRide({ currentWait: 35, historicalAverage: makeHA(35, 35, 35), rideStats: null }),
+      recentHistory: [{ timestamp: '2026-06-05T18:00:00Z', minutesAgo: 10, wait: 40, status: 'OPERATING' }],
+    });
+    expect(r.factors.rapidChange?.points).toBe(0);
+    expect(r.badge).toBeNull();
+  });
+
+  it('rapidChange stored with 0 pts when delta is between -40% and +40%', () => {
+    // previousWait=50, currentWait=35: -30%, |diff|=15 >= 10 → stored but no badge
+    const r = scoreRide(makeRideWithHistory(35, 50));
+    expect(r.factors.rapidChange?.delta).toBeCloseTo(-0.30, 5);
+    expect(r.factors.rapidChange?.points).toBe(0);
+  });
+
+  it('fires go badge on ≥40% drop', () => {
+    // previousWait=80, currentWait=45: -43.75%, |diff|=35 → isRapidDrop
+    const r = scoreRide(makeRideWithHistory(45, 80));
+    expect(r.factors.rapidChange?.points).toBe(2);
+    expect(r.badge).toBe('go');
+  });
+
+  it('fires skip badge on ≥40% spike', () => {
+    // previousWait=45, currentWait=80: +77.8%, |diff|=35 → isRapidSpike
+    const r = scoreRide(makeRideWithHistory(80, 45));
+    expect(r.factors.rapidChange?.points).toBe(-2);
+    expect(r.badge).toBe('skip');
+  });
+
+  it('go badge fires even when score-based factors are neutral (overrides suppression)', () => {
+    // currentWait=45 vs avg=50: only -10%, F1=+1. score=1, would be no badge
+    // but rapid drop from 80 → 45 overrides.
+    const r = scoreRide(makeRideWithHistory(45, 80));
+    expect(r.score).toBeLessThan(2);
+    expect(r.badge).toBe('go');
+  });
+
+  it('go badge fires even when score-based factors are negative', () => {
+    // currentWait=65 vs avg=50: above avg so F1=-1/-2. But rapid drop fires 'go'.
+    const r = scoreRide({
+      ...makeRideWithHistory(65, 110),  // -40.9%, |diff|=45 → rapid drop
+      historicalAverage: makeHA(50, 50, 50),
+    });
+    expect(r.factors.rapidChange?.points).toBe(2);
+    expect(r.badge).toBe('go');
+  });
+
+  it('gold star still takes priority over rapid drop', () => {
+    // Build a gold-star ride and inject a rapid-drop history — star wins.
+    const goldStarBase: Ride = {
+      id: 'ride-1', name: 'Test Ride', land: 'Testland',
+      status: 'OPERATING', currentWait: 20,
+      historicalAverage: makeHA(50, 50, 50, 60, 60),
+      rideStats: makeStats(20, 80),
+      prediction: null,
+      recentHistory: [{ timestamp: '2026-06-05T18:00:00Z', minutesAgo: 10, wait: 35, status: 'OPERATING' }],
+      lat: null, lng: null, closedAt: null,
+    };
+    const r = scoreRide(goldStarBase);
+    expect(r.badge).toBe('star');
   });
 });

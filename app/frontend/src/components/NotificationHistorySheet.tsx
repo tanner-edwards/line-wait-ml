@@ -12,11 +12,13 @@
 // automatically.
 
 import { notificationBody } from '../../../../notification-copy';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Modal,
+  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -68,11 +70,37 @@ export function NotificationHistorySheet(): React.ReactElement {
     if (visible) void load();
   }, [visible, load]);
 
+  const translateY = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (visible) translateY.setValue(0);
+  }, [visible, translateY]);
+
+  const panResponder = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gs) =>
+        gs.dy > 5 && gs.dy > Math.abs(gs.dx),
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy > 0) translateY.setValue(gs.dy);
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (gs.dy > 80 || gs.vy > 0.8) {
+          translateY.setValue(0);
+          onClose();
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
         <Pressable style={styles.dismissArea} onPress={onClose} testID="notif-history-backdrop" />
-        <View style={styles.card}>
+        <Animated.View style={[styles.card, { transform: [{ translateY }] }]}>
+          <View style={styles.dragHandleRow} {...panResponder.panHandlers}>
+            <View style={styles.dragPill} />
+          </View>
           <View style={styles.header}>
             <Text style={styles.title}>Recent notifications</Text>
             <Pressable onPress={onClose} hitSlop={12} testID="notif-history-close">
@@ -120,7 +148,7 @@ export function NotificationHistorySheet(): React.ReactElement {
             <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
           )}
           <Text style={styles.footer}>Shows the last 2 hours of activity.</Text>
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -175,12 +203,22 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff',
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
-    paddingTop: 16,
+    paddingTop: 0,
     paddingBottom: 32,
     paddingHorizontal: 20,
     // Most of the screen, but leave a peek of the underlying page at top
     // so the user still recognizes this as a dismissable sheet.
-    height: '90%',
+    height: '75%',
+  },
+  dragHandleRow: {
+    alignItems: 'center',
+    paddingVertical: 12,
+  },
+  dragPill: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: '#ddd',
   },
   header: {
     flexDirection: 'row',

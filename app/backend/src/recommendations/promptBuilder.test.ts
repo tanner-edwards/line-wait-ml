@@ -29,6 +29,7 @@ function makeHA(): HistoricalAverage {
       { offsetMinutes: 60,  timeSlot: '12:00-12:30', wait: 50, sampleCount: 27 },
       { offsetMinutes: 90,  timeSlot: '12:30-13:00', wait: 55, sampleCount: 27 },
       { offsetMinutes: 120, timeSlot: '13:00-13:30', wait: 60, sampleCount: 27 },
+      { offsetMinutes: 150, timeSlot: '13:30-14:00', wait: 60, sampleCount: 27 },
     ],
   };
 }
@@ -42,6 +43,7 @@ function makeScore(): ScoreResult {
       vsRange: { pct: 0.4, points: 0 },
       projectedChange: { delta: 0.5, points: 2 },
       nearTermChange: { delta: 0.1, points: -1 },
+      rapidChange: null,
     },
   };
 }

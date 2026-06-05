@@ -15,17 +15,25 @@ export function olderLastUpdated(response: CombinedResponse): string | null {
 }
 
 /**
- * Formats an ISO timestamp as "h:MM AM/PM" in the user's local time zone.
- * Returns "—" if the input is null or unparseable.
+ * Formats an ISO timestamp as "h:MM AM/PM" in California (America/Los_Angeles)
+ * time. All time labels in the app are park-context — showing a ride observation
+ * in the user's local timezone would produce mismatched labels next to bucket
+ * timeSlots (which are always PT). Returns "—" if the input is null or unparseable.
  */
 export function formatHHMM(iso: string | null): string {
   if (!iso) return '—';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '—';
-  const h = date.getHours() % 12 || 12;
-  const mm = String(date.getMinutes()).padStart(2, '0');
-  const ampm = date.getHours() < 12 ? 'AM' : 'PM';
-  return `${h}:${mm} ${ampm}`;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Los_Angeles',
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true,
+  }).formatToParts(date);
+  const h  = parts.find(p => p.type === 'hour')?.value   ?? '?';
+  const mm = parts.find(p => p.type === 'minute')?.value ?? '00';
+  const ap = parts.find(p => p.type === 'dayPeriod')?.value ?? '';
+  return ap ? `${h}:${mm} ${ap}` : `${h}:${mm}`;
 }
 
 /**

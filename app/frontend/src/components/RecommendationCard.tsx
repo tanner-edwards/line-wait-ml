@@ -13,9 +13,9 @@ import { Recommendation, Ride, ScoreResult } from '../types';
 import { RecommendationBadge } from './RecommendationBadge';
 import { TrendArrow } from './TrendArrow';
 import { BelowNormalBadge } from './BelowNormalBadge';
-import { DebugCard } from './DebugCard';
 import { isWalkOnRide } from '../utils/walkOn';
 import { rideWaitLabel } from '../grouping';
+import { useNotificationDetail } from '../context/NotificationDetailContext';
 
 const SUPPRESSED_SCORE: ScoreResult = {
   score: 0,
@@ -31,11 +31,10 @@ const SUPPRESSED_SCORE: ScoreResult = {
 interface RecommendationCardProps {
   rec: Recommendation;
   ride: Ride | undefined;          // resolved from RideContext; undefined = ride list still loading
-  expanded: boolean;
-  onPress: () => void;
 }
 
-export function RecommendationCard({ rec, ride, expanded, onPress }: RecommendationCardProps): React.ReactElement {
+export function RecommendationCard({ rec, ride }: RecommendationCardProps): React.ReactElement {
+  const { openDetail } = useNotificationDetail();
   // Skeleton when ride context hasn't resolved the rideId yet — keeps the
   // card height stable instead of popping rows in.
   if (!ride) {
@@ -69,7 +68,10 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
 
   return (
     <View testID={`rec-card-${rec.rideId}`}>
-      <Pressable onPress={onPress} style={styles.card}>
+      <Pressable
+        onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse' })}
+        style={styles.card}
+      >
         <View style={styles.headerRow}>
           {badge === 'star'
             ? <RecommendationBadge badge="star" />
@@ -98,7 +100,7 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
           </View>
         </View>
 
-        <Text style={styles.oneLiner} numberOfLines={expanded ? undefined : 2}>{rec.oneLiner}</Text>
+        <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
 
         {walkLabel ? (
           <View style={styles.walkPill} testID={`rec-walk-${rec.rideId}`}>
@@ -107,19 +109,6 @@ export function RecommendationCard({ rec, ride, expanded, onPress }: Recommendat
         ) : null}
       </Pressable>
 
-      {expanded ? (
-        <View testID={`rec-expanded-${rec.rideId}`}>
-          {/* [DROPPED] LLM paragraph render — removed to halve LLM output
-              tokens and speed up first paint. Bring back when paragraph
-              ships as a separate on-demand fetch. Styles paragraphContainer
-              / paragraph are left in StyleSheet below for the restoration.
-              See backend promptBuilder.ts TODO(paragraph). */}
-          {/* <View style={styles.paragraphContainer}>
-            <Text style={styles.paragraph}>{rec.paragraph}</Text>
-          </View> */}
-          <DebugCard ride={ride} result={scoreResult} />
-        </View>
-      ) : null}
     </View>
   );
 }
