@@ -389,10 +389,9 @@ async function readAndClearClosure(db, rideId) {
   return data;
 }
 
-async function loadArmedDevices(db, today) {
+async function loadArmedDevices(db) {
   const snap = await db.collection('devices')
     .where('notificationsEnabled', '==', true)
-    .where('armedDate', '==', today)
     .get();
   const list = [];
   snap.forEach(doc => list.push(doc.data()));
@@ -580,13 +579,12 @@ async function run() {
 
   const db = getFirestore();
 
-  // Bail early if no devices are armed — saves Firestore reads.
-  const devices = await loadArmedDevices(db, today);
+  const devices = await loadArmedDevices(db);
   if (devices.length === 0) {
-    log('no_armed_devices', { today });
+    log('no_enabled_devices');
     return;
   }
-  log('armed_devices', { count: devices.length });
+  log('enabled_devices', { count: devices.length });
 
   // Pre-flight park-open check across all DLR parks. If both are closed,
   // skip the heavy reads entirely.

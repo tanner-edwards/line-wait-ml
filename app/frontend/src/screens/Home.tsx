@@ -25,6 +25,7 @@ import { RecommendationBadge } from '../components/RecommendationBadge';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
+import { LocationNotificationPrompt } from '../components/LocationNotificationPrompt';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -160,6 +161,7 @@ export function Home() {
           )}
         </Pressable>
       </View>
+      <LocationNotificationPrompt />
       <FlatList
         data={items}
         keyExtractor={item => item.key}

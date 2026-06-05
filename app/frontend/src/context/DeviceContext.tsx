@@ -30,6 +30,10 @@ import {
   getNotificationsEnabled as readNotificationsEnabled,
   setNotificationsEnabled as writeNotificationsEnabled,
 } from '../utils/notificationsEnabledStorage';
+import {
+  getDebugKeepArmed,
+  setDebugKeepArmed as writeDebugKeepArmed,
+} from '../utils/debugKeepArmedStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
 import { logError, logInfo } from '../utils/logger';
 import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
@@ -57,6 +61,9 @@ interface DeviceContextValue {
   armForToday: () => Promise<void>;
   /** Toggle a single notification kind on/off. Persists locally + syncs. */
   setNotificationTypeEnabled: (kind: NotificationKind, enabled: boolean) => Promise<void>;
+  /** Debug-only: auto-arm + refresh token on every app launch. */
+  debugKeepArmed: boolean;
+  setDebugKeepArmed: (on: boolean) => Promise<void>;
 }
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
@@ -70,28 +77,41 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [notificationTypes, setNotificationTypesState] = useState<NotificationTypes>(defaultNotificationTypes());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [debugKeepArmed, setDebugKeepArmedState] = useState(false);
 
   // Resolve the deviceId once on mount — generated on first launch and
-  // persisted in AsyncStorage thereafter. Also hydrate the cached
-  // notificationTypes from AsyncStorage.
+  // persisted in AsyncStorage thereafter. Also hydrate cached flags.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [id, types, enabled] = await Promise.all([
+      const [id, types, enabled, keepArmed] = await Promise.all([
         getOrCreateDeviceId(),
         getNotificationTypes(),
         readNotificationsEnabled(),
+        getDebugKeepArmed(),
       ]);
       if (!cancelled) {
         setDeviceId(id);
         setNotificationTypesState(types);
         setNotificationsEnabled(enabled);
+        setDebugKeepArmedState(keepArmed);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  // Auto-arm: when debugKeepArmed is on and the deviceId is ready, silently
+  // arm + refresh the push token on every launch. Runs once per mount.
+  const autoArmed = useRef(false);
+  useEffect(() => {
+    if (!debugKeepArmed || !deviceId || autoArmed.current) return;
+    autoArmed.current = true;
+    logInfo('debugKeepArmed: auto-arming on launch', 'notif');
+    void armForTodayFn(deviceId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debugKeepArmed, deviceId]);
 
   // Sync mustDoRideIds to backend whenever the persona's list changes,
   // but only after enable has been turned on (no point creating server
@@ -224,30 +244,34 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     [deviceId, notificationsEnabled, notificationTypes]
   );
 
+  // Core arm logic — called by both armForToday (user-triggered) and the
+  // auto-arm effect (debugKeepArmed). Separated so the effect can call it
+  // without needing the useCallback wrapper or the busy/error UI state.
+  const armForTodayFn = useCallback(async (id: string): Promise<void> => {
+    logInfo('armForToday: refreshing push subscription', 'notif');
+    const svc = getNotificationService();
+    const sub = await svc.resubscribe();
+    logInfo(`armForToday: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
+    await registerDevice({
+      deviceId: id,
+      pushToken: sub?.token ?? null,
+      pushTokenType: (sub?.type ?? null) as PushTokenType | null,
+      mustDoRideIds: persona?.mustDoRideIds ?? [],
+      notificationsEnabled: true,
+    });
+    setNotificationsEnabled(true);
+    void writeNotificationsEnabled(true);
+    const { armedDate: stamped } = await armDeviceForToday(id);
+    logInfo(`armForToday: armed for ${stamped}`, 'notif');
+    setArmedDate(stamped);
+  }, [persona]);
+
   const armForToday = useCallback(async (): Promise<void> => {
     if (!deviceId) return;
     setBusy(true);
     setError(null);
     try {
-      // Refresh the push subscription before stamping the date. Web Push
-      // subscriptions go stale across sessions; arming is the natural daily
-      // moment to renew so the scanner always has a live token.
-      logInfo('armForToday: refreshing push subscription', 'notif');
-      const svc = getNotificationService();
-      const sub = await svc.resubscribe();
-      logInfo(`armForToday: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
-      await registerDevice({
-        deviceId,
-        pushToken: sub?.token ?? null,
-        pushTokenType: (sub?.type ?? null) as PushTokenType | null,
-        mustDoRideIds: persona?.mustDoRideIds ?? [],
-        notificationsEnabled: true,
-      });
-      setNotificationsEnabled(true);
-      void writeNotificationsEnabled(true);
-      const { armedDate: stamped } = await armDeviceForToday(deviceId);
-      logInfo(`armForToday: armed for ${stamped}`, 'notif');
-      setArmedDate(stamped);
+      await armForTodayFn(deviceId);
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       logError(`armForToday failed: ${detail}`, 'notif');
@@ -255,7 +279,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [deviceId, persona]);
+  }, [deviceId, armForTodayFn]);
+
+  const setDebugKeepArmed = useCallback(async (on: boolean): Promise<void> => {
+    setDebugKeepArmedState(on);
+    await writeDebugKeepArmed(on);
+  }, []);
 
   return (
     <DeviceContext.Provider
@@ -270,6 +299,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         disableNotifications,
         armForToday,
         setNotificationTypeEnabled,
+        debugKeepArmed,
+        setDebugKeepArmed,
       }}
     >
       {children}

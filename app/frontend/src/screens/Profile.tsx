@@ -66,13 +66,11 @@ export function Profile(): React.ReactElement {
   const { debugMode, setDebugMode } = useDebugMode();
   const {
     notificationsEnabled,
-    armedDate,
     notificationTypes,
     busy: deviceBusy,
     error: deviceError,
     enableNotifications,
     disableNotifications,
-    armForToday,
   } = useDevice();
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
@@ -175,26 +173,6 @@ export function Profile(): React.ReactElement {
           </View>
           <Text style={styles.rowChevron}>›</Text>
         </Pressable>
-
-        {notificationsEnabled ? (
-          <Pressable
-            onPress={() => {
-              if (deviceBusy) return;
-              void armForToday();
-            }}
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            testID="arm-for-today"
-            disabled={deviceBusy}
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>I'm at the park today</Text>
-              <Text style={[styles.rowValue, armedDate && styles.armedOn]}>
-                {armedDate ? `Armed for ${armedDate}` : 'Tap to arm notifications for today'}
-              </Text>
-            </View>
-            <Text style={styles.rowChevron}>›</Text>
-          </Pressable>
-        ) : null}
 
         {notificationsEnabled ? (
           <Pressable
@@ -329,6 +307,5 @@ const styles = StyleSheet.create({
   resetText: { color: '#c41e3a', fontSize: 14, fontWeight: '600' },
   debugModeOn: { color: '#f5a623', fontWeight: '600' },
   notificationsOn: { color: '#4a4ec7', fontWeight: '600' },
-  armedOn: { color: '#2a8f3e', fontWeight: '600' },
   errorText: { color: '#c41e3a', fontSize: 12, marginTop: 6 },
 });
