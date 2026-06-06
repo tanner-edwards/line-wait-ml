@@ -1,11 +1,9 @@
-// Bottom-sheet modal for editing a single persona field. Reuses the same
-// RowButton widgets the onboarding screens use so the editing experience is
-// consistent with intake. Save commits to PersonaContext; Cancel discards
-// and dismisses.
+// Bottom-sheet for editing a single persona field. Reuses the same RowButton
+// widgets the onboarding screens use so the editing experience is consistent
+// with intake. Save commits to PersonaContext; Cancel discards and dismisses.
 
 import React, { useEffect, useState } from 'react';
 import {
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -26,6 +24,7 @@ import { RowButton } from './RowButton';
 import { SearchField } from './SearchField';
 import { RIDE_CATEGORY_OPTIONS } from '../onboarding/screens/RidePreferencesScreen';
 import { ACCESSIBILITY_OPTIONS } from '../onboarding/screens/AccessibilityNeedsScreen';
+import { Sheet } from './Sheet';
 
 const TRIP_DURATION_OPTIONS: { value: TripDuration; title: string; subtitle?: string }[] = [
   { value: '1-day',       title: '1 day' },
@@ -54,31 +53,37 @@ interface Props {
   onClose: () => void;
 }
 
+const TITLES: Record<PersonaField, string> = {
+  tripDuration: 'How long is your visit?',
+  youngestAge: 'Youngest in your group?',
+  ridePreferences: 'What rides do you love?',
+  mustDoRideIds: 'Must-do rides',
+  accessibilityNeeds: 'Accessibility needs',
+};
+
 export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement | null {
   const { persona, setPersona } = usePersona();
   const visible = field !== null && persona !== null;
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        {/* Tap the gray area above the card to dismiss. The card itself
-            stops the touch so taps inside don't propagate to this. */}
-        <Pressable style={styles.dismissArea} onPress={onClose} testID="persona-modal-backdrop" />
-        <View style={styles.card}>
-          {field && persona && (
-            <FieldEditor
-              field={field}
-              persona={persona}
-              onSave={async next => {
-                await setPersona(next);
-                onClose();
-              }}
-              onCancel={onClose}
-            />
-          )}
-        </View>
-      </View>
-    </Modal>
+    <Sheet
+      isOpen={visible}
+      onClose={onClose}
+      title={field ? TITLES[field] : ''}
+      testID="persona-modal"
+    >
+      {field && persona && (
+        <FieldEditor
+          field={field}
+          persona={persona}
+          onSave={async next => {
+            await setPersona(next);
+            onClose();
+          }}
+          onCancel={onClose}
+        />
+      )}
+    </Sheet>
   );
 }
 
@@ -89,27 +94,12 @@ interface EditorProps {
   onCancel: () => void;
 }
 
-const TITLES: Record<PersonaField, string> = {
-  tripDuration: 'How long is your visit?',
-  youngestAge: 'Youngest in your group?',
-  ridePreferences: 'What rides do you love?',
-  mustDoRideIds: 'Must-do rides',
-  accessibilityNeeds: 'Accessibility needs',
-};
-
 function FieldEditor({ field, persona, onSave, onCancel }: EditorProps) {
   const [draft, setDraft] = useState<Persona>(persona);
   useEffect(() => { setDraft(persona); }, [field, persona]);
 
   return (
     <>
-      <View style={styles.headerRow}>
-        <View style={styles.grabber} />
-        <Pressable onPress={onCancel} style={styles.closeButton} testID="persona-modal-close">
-          <Text style={styles.closeText}>✕</Text>
-        </Pressable>
-      </View>
-      <Text style={styles.title}>{TITLES[field]}</Text>
       <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
         {renderField(field, draft, setDraft)}
       </ScrollView>
@@ -297,57 +287,6 @@ function MustDoField({
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)', // TODO: tokenize
-    justifyContent: 'flex-end',
-  },
-  dismissArea: {
-    flex: 1,
-  },
-  card: {
-    backgroundColor: '#fff', // TODO: tokenize
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
-    maxHeight: '90%',
-  },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  grabber: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ddd', // TODO: tokenize
-    marginLeft: 'auto',
-    marginRight: 'auto',
-  },
-  closeButton: {
-    position: 'absolute',
-    right: 0,
-    top: -4,
-    width: 36,
-    height: 36,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  closeText: {
-    fontSize: 20,
-    color: colors.textTertiary,
-    fontWeight: '500',
-  },
-  title: {
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 12,
-    color: '#111', // TODO: tokenize
-  },
   body: {
     maxHeight: '70%',
   },

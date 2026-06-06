@@ -1,4 +1,4 @@
-// Bottom-sheet modal showing recent notifications for this device.
+// Bottom-sheet showing recent notifications for this device.
 //
 // Stale-while-revalidate: on open we immediately show the cached list from
 // AsyncStorage, then fetch fresh data in the background. A small loading
@@ -6,20 +6,16 @@
 // content — so the user sees something instantly and isn't surprised by new
 // entries appearing.
 //
-// Each row recomposes a tight summary from the log entry's data rather
-// than persisting the OS-notification body verbatim. Tradeoff: if we
-// later improve message wording the history reflects the new wording
-// automatically.
+// Each row recomposes a tight summary from the log entry's data rather than
+// persisting the OS-notification body verbatim. Tradeoff: if we later improve
+// message wording the history reflects the new wording automatically.
 
 import { notificationBody } from '../../../../notification-copy';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { colors } from '../theme/tokens';
 import {
   ActivityIndicator,
-  Animated,
   FlatList,
-  Modal,
-  PanResponder,
   Pressable,
   StyleSheet,
   Text,
@@ -31,12 +27,11 @@ import { ApiError, fetchDeviceNotifications } from '../api';
 import { NotificationLogEntry } from '../types';
 import { formatTimeAgo } from '../timestamp';
 import { getCachedNotifications, setCachedNotifications } from '../utils/notificationHistoryStorage';
+import { Sheet } from './Sheet';
 
 export function NotificationHistorySheet(): React.ReactElement {
   const { deviceId } = useDevice();
   const { openDetail, historySheetOpen, closeHistorySheet } = useNotificationDetail();
-  const visible = historySheetOpen;
-  const onClose = closeHistorySheet;
   const [entries, setEntries] = useState<NotificationLogEntry[] | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,12 +39,9 @@ export function NotificationHistorySheet(): React.ReactElement {
   const load = useCallback(async () => {
     if (!deviceId) return;
 
-    // Show cached entries immediately so the sheet isn't blank while we fetch.
     const cached = await getCachedNotifications(deviceId);
     if (cached) setEntries(cached);
 
-    // Fetch fresh data in the background; a small indicator in the list header
-    // signals the update without replacing the visible content.
     setRefreshing(true);
     setError(null);
     try {
@@ -57,7 +49,6 @@ export function NotificationHistorySheet(): React.ReactElement {
       setEntries(next);
       void setCachedNotifications(deviceId, next);
     } catch (err) {
-      // Only surface the error if we have nothing to show.
       if (!cached) {
         const message = err instanceof ApiError ? err.message : 'Could not load notifications';
         setError(message);
@@ -68,90 +59,61 @@ export function NotificationHistorySheet(): React.ReactElement {
   }, [deviceId]);
 
   useEffect(() => {
-    if (visible) void load();
-  }, [visible, load]);
-
-  const translateY = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    if (visible) translateY.setValue(0);
-  }, [visible, translateY]);
-
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gs) =>
-        gs.dy > 5 && gs.dy > Math.abs(gs.dx),
-      onPanResponderMove: (_, gs) => {
-        if (gs.dy > 0) translateY.setValue(gs.dy);
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dy > 80 || gs.vy > 0.8) {
-          translateY.setValue(0);
-          onClose();
-        } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
+    if (historySheetOpen) void load();
+  }, [historySheetOpen, load]);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={styles.dismissArea} onPress={onClose} testID="notif-history-backdrop" />
-        <Animated.View style={[styles.card, { transform: [{ translateY }] }]}>
-          <View style={styles.dragHandleRow} {...panResponder.panHandlers}>
-            <View style={styles.dragPill} />
-          </View>
-          <View style={styles.header}>
-            <Text style={styles.title}>Recent notifications</Text>
-            <Pressable onPress={onClose} hitSlop={12} testID="notif-history-close">
-              <Text style={styles.closeX}>✕</Text>
-            </Pressable>
-          </View>
-          {error ? (
-            <Text style={styles.error}>{error}</Text>
-          ) : entries && entries.length > 0 ? (
-            <FlatList
-              data={entries}
-              keyExtractor={e => `${e.rideId}-${e.type}-${e.firedAt}`}
-              renderItem={({ item }) => (
-                <Row
-                  entry={item}
-                  onPress={() => {
-                    // openDetail closes the sheet automatically. The detail
-                    // modal's "Back" button restores it because we pass
-                    // source: 'history'.
-                    openDetail({
-                      rideId: item.rideId,
-                      type: item.type,
-                      source: 'history',
-                      durationMs: item.durationMs ?? null,
-                      closedAt: item.closedAt ?? null,
-                    });
-                  }}
-                />
-              )}
-              ListHeaderComponent={
-                refreshing ? (
-                  <View style={styles.refreshRow} testID="notif-history-refreshing">
-                    <ActivityIndicator size="small" color="#999" />
-                    <Text style={styles.refreshText}>Updating…</Text>
-                  </View>
-                ) : null
-              }
-              style={styles.list}
+    <Sheet
+      isOpen={historySheetOpen}
+      onClose={closeHistorySheet}
+      size="tall"
+      title="Recent notifications"
+      testID="notif-history"
+    >
+      {error ? (
+        <Text style={styles.error}>{error}</Text>
+      ) : entries && entries.length > 0 ? (
+        <FlatList
+          data={entries}
+          keyExtractor={e => `${e.rideId}-${e.type}-${e.firedAt}`}
+          renderItem={({ item }) => (
+            <Row
+              entry={item}
+              onPress={() => {
+                openDetail({
+                  rideId: item.rideId,
+                  type: item.type,
+                  source: 'history',
+                  durationMs: item.durationMs ?? null,
+                  closedAt: item.closedAt ?? null,
+                });
+              }}
             />
-          ) : refreshing ? (
-            <View style={styles.loading}>
-              <ActivityIndicator size="small" />
-            </View>
-          ) : (
-            <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
           )}
+          ListHeaderComponent={
+            refreshing ? (
+              <View style={styles.refreshRow} testID="notif-history-refreshing">
+                <ActivityIndicator size="small" color="#999" />
+                <Text style={styles.refreshText}>Updating…</Text>
+              </View>
+            ) : null
+          }
+          ListFooterComponent={
+            <Text style={styles.footer}>Shows the last 2 hours of activity.</Text>
+          }
+          style={styles.list}
+        />
+      ) : refreshing ? (
+        <View style={styles.loading}>
+          <ActivityIndicator size="small" />
+        </View>
+      ) : (
+        <>
+          <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
           <Text style={styles.footer}>Shows the last 2 hours of activity.</Text>
-        </Animated.View>
-      </View>
-    </Modal>
+        </>
+      )}
+    </Sheet>
   );
 }
 
@@ -163,10 +125,6 @@ function Row({
   onPress: () => void;
 }): React.ReactElement {
   const emoji = emojiFor(entry);
-  // Prefer the persisted body so the history matches the OS notification
-  // the user actually got. Older entries (pre-body field) fall back to
-  // recomposing — they'll see a fresh random tagline each render, but
-  // those entries age out within 2 hours.
   const body = entry.body ?? notificationBody(entry);
   const when = formatTimeAgo(entry.firedAt);
   return (
@@ -192,43 +150,7 @@ function emojiFor(entry: NotificationLogEntry): string {
   return entry.badge === 'star' ? '⭐' : '✅';
 }
 
-
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: { flex: 1 },
-  card: {
-    backgroundColor: '#fff', // TODO: tokenize
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 0,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
-    // Most of the screen, but leave a peek of the underlying page at top
-    // so the user still recognizes this as a dismissable sheet.
-    height: '75%',
-  },
-  dragHandleRow: {
-    alignItems: 'center',
-    paddingVertical: 12,
-  },
-  dragPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ddd', // TODO: tokenize
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  title: { fontSize: 18, fontWeight: '700', color: '#222' }, // TODO: tokenize
-  closeX: { fontSize: 22, color: '#999' }, // TODO: tokenize
   list: { flexGrow: 0 },
   refreshRow: {
     flexDirection: 'row',

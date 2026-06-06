@@ -20,6 +20,11 @@
 // Opened from a notification history-sheet row tap (G2a) or a service
 // worker deep-link (G2b). Back button closes; the context restores the
 // history sheet if that's where the user came from.
+//
+// TODO: migrate to tall Sheet (needs review). Strong candidate for size="tall"
+// (~90% snap) to get flick-down-to-dismiss instead of a hard page jump. When
+// doing this, preserve all content exactly and change only the container.
+// Ref: club32-design-system-phase2.md §1 "Flagged decision — RideDetailModal".
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { colors } from '../theme/tokens';

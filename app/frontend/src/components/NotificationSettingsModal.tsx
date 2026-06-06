@@ -1,12 +1,10 @@
-// Bottom-sheet modal for per-type notification opt-ins. Four toggles:
+// Bottom-sheet for per-type notification opt-ins. Four toggles:
 // trough (⭐/✅ good windows), closure (✕ ride down), reopen (🎉 ride back up),
 // peak (📈 ride at p90 — off by default). Changes persist to AsyncStorage
 // and sync to the device record so the scanner respects them on the next tick.
 
 import React from 'react';
 import {
-  Modal,
-  Pressable,
   StyleSheet,
   Switch,
   Text,
@@ -15,6 +13,7 @@ import {
 import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { NotificationKind } from '../types';
+import { Sheet } from './Sheet';
 
 interface Props {
   visible: boolean;
@@ -58,63 +57,35 @@ const ROWS: Row[] = [
 export function NotificationSettingsModal({ visible, onClose }: Props): React.ReactElement {
   const { notificationTypes, setNotificationTypeEnabled } = useDevice();
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.backdrop}>
-        <Pressable style={styles.dismissArea} onPress={onClose} testID="notif-settings-backdrop" />
-        <View style={styles.card}>
-          <View style={styles.header}>
-            <Text style={styles.title}>Notification types</Text>
-            <Pressable onPress={onClose} hitSlop={12} testID="notif-settings-close">
-              <Text style={styles.closeX}>✕</Text>
-            </Pressable>
+    <Sheet
+      isOpen={visible}
+      onClose={onClose}
+      title="Notification types"
+      testID="notif-settings"
+    >
+      {ROWS.map(row => (
+        <View key={row.kind} style={styles.row}>
+          <View style={styles.rowText}>
+            <Text style={styles.rowTitle}>
+              {row.emoji} {row.title}
+            </Text>
+            <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
           </View>
-          {ROWS.map(row => (
-            <View key={row.kind} style={styles.row}>
-              <View style={styles.rowText}>
-                <Text style={styles.rowTitle}>
-                  {row.emoji} {row.title}
-                </Text>
-                <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
-              </View>
-              <Switch
-                value={notificationTypes[row.kind]}
-                onValueChange={enabled => void setNotificationTypeEnabled(row.kind, enabled)}
-                testID={`notif-toggle-${row.kind}`}
-              />
-            </View>
-          ))}
-          <Text style={styles.footer}>
-            Notifications still respect "I'm at the park today" and the daily park scope.
-          </Text>
+          <Switch
+            value={notificationTypes[row.kind]}
+            onValueChange={enabled => void setNotificationTypeEnabled(row.kind, enabled)}
+            testID={`notif-toggle-${row.kind}`}
+          />
         </View>
-      </View>
-    </Modal>
+      ))}
+      <Text style={styles.footer}>
+        Notifications still respect "I'm at the park today" and the daily park scope.
+      </Text>
+    </Sheet>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: { flex: 1 },
-  card: {
-    backgroundColor: '#fff', // TODO: tokenize
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    paddingTop: 16,
-    paddingBottom: 32,
-    paddingHorizontal: 20,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  title: { fontSize: 18, fontWeight: '700', color: '#222' }, // TODO: tokenize
-  closeX: { fontSize: 22, color: '#999' }, // TODO: tokenize
   row: {
     flexDirection: 'row',
     alignItems: 'center',
