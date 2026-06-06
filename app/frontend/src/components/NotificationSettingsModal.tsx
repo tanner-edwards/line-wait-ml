@@ -12,6 +12,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { NotificationKind } from '../types';
 
@@ -99,7 +100,7 @@ const styles = StyleSheet.create({
   },
   dismissArea: { flex: 1 },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingTop: 16,
@@ -112,17 +113,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#222' },
-  closeX: { fontSize: 22, color: '#999' },
+  title: { fontSize: 18, fontWeight: '700', color: '#222' }, // TODO: tokenize
+  closeX: { fontSize: 22, color: '#999' }, // TODO: tokenize
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   rowText: { flex: 1, paddingRight: 12 },
-  rowTitle: { fontSize: 15, color: '#222', fontWeight: '600' },
-  rowSubtitle: { fontSize: 12, color: '#666', marginTop: 3 },
-  footer: { fontSize: 11, color: '#888', marginTop: 14, textAlign: 'center' },
+  rowTitle: { fontSize: 15, color: '#222', fontWeight: '600' }, // TODO: tokenize
+  rowSubtitle: { fontSize: 12, color: '#666', marginTop: 3 }, // TODO: tokenize
+  footer: { fontSize: 11, color: colors.textTertiary, marginTop: 14, textAlign: 'center' },
 });

@@ -29,6 +29,7 @@ import {
 import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
 import { DailyParkSheet } from '../components/DailyParkSheet';
 import { DebugLogModal } from '../components/DebugLogModal';
+import { colors } from '../theme/tokens';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -270,14 +271,14 @@ function Row({ label, value, onPress }: RowProps): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
   header: {
     padding: 16,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  title: { fontSize: 22, fontWeight: '700', color: '#111' },
-  subtitle: { fontSize: 13, color: '#666', marginTop: 2 },
+  title: { fontSize: 22, fontWeight: '700', color: '#111' }, // TODO: tokenize
+  subtitle: { fontSize: 13, color: '#666', marginTop: 2 }, // TODO: tokenize
   scroll: { paddingBottom: 24 },
   row: {
     flexDirection: 'row',
@@ -285,27 +286,27 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
   },
-  rowPressed: { backgroundColor: '#f4f4ff' },
+  rowPressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
   rowText: { flex: 1 },
-  rowLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 },
-  rowValue: { fontSize: 16, color: '#222', marginTop: 4 },
-  rowChevron: { fontSize: 22, color: '#bbb', marginLeft: 8 },
-  placeholder: { padding: 32, fontSize: 14, color: '#999', textAlign: 'center' },
+  rowLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }, // TODO: tokenize
+  rowValue: { fontSize: 16, color: '#222', marginTop: 4 }, // TODO: tokenize
+  rowChevron: { fontSize: 22, color: '#bbb', marginLeft: 8 }, // TODO: tokenize
+  placeholder: { padding: 32, fontSize: 14, color: '#999', textAlign: 'center' }, // TODO: tokenize
   resetButton: {
     marginTop: 32,
     marginHorizontal: 20,
     paddingVertical: 12,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: '#c41e3a',
-    backgroundColor: '#fff',
+    borderColor: colors.skip,
+    backgroundColor: '#fff', // TODO: tokenize
     alignItems: 'center',
   },
   resetButtonPressed: { opacity: 0.6 },
-  resetText: { color: '#c41e3a', fontSize: 14, fontWeight: '600' },
-  debugModeOn: { color: '#f5a623', fontWeight: '600' },
-  notificationsOn: { color: '#4a4ec7', fontWeight: '600' },
-  errorText: { color: '#c41e3a', fontSize: 12, marginTop: 6 },
+  resetText: { color: colors.skip, fontSize: 14, fontWeight: '600' },
+  debugModeOn: { color: '#f5a623', fontWeight: '600' }, // TODO: tokenize
+  notificationsOn: { color: colors.brand, fontWeight: '600' },
+  errorText: { color: colors.skip, fontSize: 12, marginTop: 6 },
 });

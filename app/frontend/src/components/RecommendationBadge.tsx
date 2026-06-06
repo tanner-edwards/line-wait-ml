@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { Badge } from '../types';
+import { colors } from '../theme/tokens';
 
 interface RecommendationBadgeProps {
   badge: Badge;
@@ -44,13 +45,13 @@ const styles = StyleSheet.create({
     width: SIZE,
     height: SIZE,
     borderRadius: HALF,
-    backgroundColor: '#d4af37',
+    backgroundColor: '#d4af37', // TODO: tokenize
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   starText: {
-    color: '#fff',
+    color: '#fff', // TODO: tokenize
     fontSize: 13,
     fontWeight: '700',
     lineHeight: SIZE,
@@ -59,13 +60,13 @@ const styles = StyleSheet.create({
     width: SIZE,
     height: SIZE,
     borderRadius: HALF,
-    backgroundColor: '#1a7f37',
+    backgroundColor: '#1a7f37', // TODO: tokenize
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 8,
   },
   goText: {
-    color: '#fff',
+    color: '#fff', // TODO: tokenize
     fontSize: 11,
     fontWeight: '700',
     lineHeight: SIZE,
@@ -83,13 +84,13 @@ const styles = StyleSheet.create({
     width: SIZE,
     height: SIZE,
     borderRadius: 4,
-    backgroundColor: '#c41e3a',
+    backgroundColor: colors.skip,
     alignItems: 'center',
     justifyContent: 'center',
     transform: [{ rotate: '22.5deg' }],
   },
   skipText: {
-    color: '#fff',
+    color: '#fff', // TODO: tokenize
     fontSize: 9,
     fontWeight: '700',
     transform: [{ rotate: '-22.5deg' }],

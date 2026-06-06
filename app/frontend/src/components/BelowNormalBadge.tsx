@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export interface BelowNormalBadgeProps {
   currentWait: number | null;
@@ -73,12 +74,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginTop: 4,
   },
-  below: { backgroundColor: '#e6f4ea' }, // muted green
-  above: { backgroundColor: '#fde2dc' }, // muted red/orange
+  below: { backgroundColor: '#e6f4ea' }, // muted green // TODO: tokenize
+  above: { backgroundColor: '#fde2dc' }, // muted red/orange // TODO: tokenize
   label: {
     fontSize: 11,
     fontWeight: '600',
   },
-  belowLabel: { color: '#1a7f37' },
-  aboveLabel: { color: '#c41e3a' },
+  belowLabel: { color: '#1a7f37' }, // TODO: tokenize
+  aboveLabel: { color: colors.skip },
 });

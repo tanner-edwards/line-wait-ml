@@ -13,6 +13,7 @@
 
 import { notificationBody } from '../../../../notification-copy';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { colors } from '../theme/tokens';
 import {
   ActivityIndicator,
   Animated,
@@ -200,7 +201,7 @@ const styles = StyleSheet.create({
   },
   dismissArea: { flex: 1 },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingTop: 0,
@@ -218,7 +219,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#ddd',
+    backgroundColor: '#ddd', // TODO: tokenize
   },
   header: {
     flexDirection: 'row',
@@ -226,8 +227,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 12,
   },
-  title: { fontSize: 18, fontWeight: '700', color: '#222' },
-  closeX: { fontSize: 22, color: '#999' },
+  title: { fontSize: 18, fontWeight: '700', color: '#222' }, // TODO: tokenize
+  closeX: { fontSize: 22, color: '#999' }, // TODO: tokenize
   list: { flexGrow: 0 },
   refreshRow: {
     flexDirection: 'row',
@@ -236,22 +237,22 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 6,
   },
-  refreshText: { fontSize: 12, color: '#999' },
+  refreshText: { fontSize: 12, color: '#999' }, // TODO: tokenize
   loading: { paddingVertical: 24, alignItems: 'center' },
-  error: { color: '#c41e3a', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
-  empty: { color: '#888', fontSize: 13, textAlign: 'center', paddingVertical: 16 },
+  error: { color: colors.skip, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
+  empty: { color: colors.textTertiary, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   row: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 12,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  rowPressed: { backgroundColor: '#f4f4ff' },
+  rowPressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
   emoji: { fontSize: 18, marginRight: 10, marginTop: 1 },
   rowText: { flex: 1, paddingRight: 8 },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: '#222' },
-  rowBody: { fontSize: 13, color: '#444', marginTop: 2 },
-  when: { fontSize: 11, color: '#888', marginTop: 3 },
-  footer: { fontSize: 11, color: '#888', marginTop: 14, textAlign: 'center' },
+  rowTitle: { fontSize: 14, fontWeight: '600', color: '#222' }, // TODO: tokenize
+  rowBody: { fontSize: 13, color: '#444', marginTop: 2 }, // TODO: tokenize
+  when: { fontSize: 11, color: colors.textTertiary, marginTop: 3 },
+  footer: { fontSize: 11, color: colors.textTertiary, marginTop: 14, textAlign: 'center' },
 });

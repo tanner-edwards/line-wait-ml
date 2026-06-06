@@ -10,6 +10,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Recommendation, Ride, ScoreResult } from '../types';
+import { colors } from '../theme/tokens';
 import { RecommendationBadge } from './RecommendationBadge';
 import { TrendArrow } from './TrendArrow';
 import { BelowNormalBadge } from './BelowNormalBadge';
@@ -116,11 +117,11 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     paddingHorizontal: 16,
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
   },
   headerRow: {
     flexDirection: 'row',
@@ -130,7 +131,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     fontWeight: '700',
-    color: '#222',
+    color: '#222', // TODO: tokenize
     marginLeft: 4,
   },
   rightCluster: {
@@ -143,7 +144,7 @@ const styles = StyleSheet.create({
   rideWait: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#222',
+    color: '#222', // TODO: tokenize
   },
   walkOnEmoji: {
     fontSize: 18,
@@ -151,13 +152,13 @@ const styles = StyleSheet.create({
   },
   oneLiner: {
     fontSize: 13,
-    color: '#555',
+    color: '#555', // TODO: tokenize
     marginTop: 6,
     marginLeft: 32,
   },
   walkPill: {
     alignSelf: 'flex-start',
-    backgroundColor: '#eef0fb',
+    backgroundColor: '#eef0fb', // TODO: tokenize
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 3,
@@ -166,23 +167,23 @@ const styles = StyleSheet.create({
   },
   walkPillText: {
     fontSize: 12,
-    color: '#4a4ec7',
+    color: colors.brand,
     fontWeight: '600',
   },
   paragraphContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#fafafa', // TODO: tokenize
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
   },
   paragraph: {
     fontSize: 13,
-    color: '#444',
+    color: '#444', // TODO: tokenize
     lineHeight: 19,
   },
   skeletonText: {
-    color: '#aaa',
+    color: '#aaa', // TODO: tokenize
     fontStyle: 'italic',
   },
 });

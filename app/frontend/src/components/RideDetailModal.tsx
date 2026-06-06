@@ -22,6 +22,7 @@
 // history sheet if that's where the user came from.
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { colors } from '../theme/tokens';
 import {
   Modal,
   PanResponder,
@@ -49,13 +50,13 @@ import { fetchDeviceNotifications } from '../api';
 import { getCachedNotifications } from '../utils/notificationHistoryStorage';
 import { isParkError, NotificationLogEntry, Ride } from '../types';
 
-const BRAND = '#4a4ec7';
-const BRAND_DIM = '#a3a5e4';
-const MUTED = '#bbb';
-const GREEN = '#2a8f3e';
-const RED = '#c41e3a';
-const INK = '#222';
-const SUBINK = '#666';
+const BRAND = colors.brand;
+const BRAND_DIM = '#a3a5e4'; // TODO: tokenize
+const MUTED = '#bbb'; // TODO: tokenize
+const GREEN = colors.go;
+const RED = colors.skip;
+const INK = '#222'; // TODO: tokenize
+const SUBINK = '#666'; // TODO: tokenize
 
 const WALK_SPEED_MPM = 83;
 function walkPathMultiplier(m: number) {
@@ -595,7 +596,7 @@ function TrendGraph({
                   cx={xAt(i)}
                   cy={toY(v)}
                   r={i === nowIdx ? 5 : 3}
-                  fill={i === nowIdx ? '#fff' : (i < nowIdx ? BRAND : BRAND_DIM)}
+                  fill={i === nowIdx ? '#fff' /* TODO: tokenize */ : (i < nowIdx ? BRAND : BRAND_DIM)}
                   stroke={i === nowIdx ? (isDown ? RED : BRAND) : 'none'}
                   strokeWidth={i === nowIdx ? 2 : 0}
                 />
@@ -690,7 +691,7 @@ function RangeBand({
   let bandStart = innerLeft;
   let bandEnd = innerRight;
   let dotX: number | null = null;
-  let dotColor = isDown ? RED : BRAND;
+  let dotColor: string = isDown ? RED : BRAND;
   let extension: { x1: number; x2: number; color: string } | null = null;
 
   if (current != null) {
@@ -793,12 +794,12 @@ function computeAboveBelow(current: number | null, typical: number | null): Abov
   const delta = (current - typical) / typical;
   const percent = Math.round(delta * 100);
   if (Math.abs(percent) < 10) {
-    return { percent, arrow: '→', color: SUBINK, pillBg: '#f4f4f4', shortLabel: 'Typical' };
+    return { percent, arrow: '→', color: SUBINK, pillBg: '#f4f4f4' /* TODO: tokenize */, shortLabel: 'Typical' };
   }
   if (percent < 0) {
-    return { percent, arrow: '↘', color: GREEN, pillBg: '#e6f7e9', shortLabel: 'Below typical' };
+    return { percent, arrow: '↘', color: GREEN, pillBg: '#e6f7e9' /* TODO: tokenize */, shortLabel: 'Below typical' };
   }
-  return { percent, arrow: '↗', color: RED, pillBg: '#fde2e2', shortLabel: 'Above typical' };
+  return { percent, arrow: '↗', color: RED, pillBg: '#fde2e2' /* TODO: tokenize */, shortLabel: 'Above typical' };
 }
 
 const styles = StyleSheet.create({
@@ -812,7 +813,7 @@ const styles = StyleSheet.create({
   },
   container: {
     height: '90%',
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     overflow: 'hidden',
@@ -820,20 +821,20 @@ const styles = StyleSheet.create({
   dragHandleRow: {
     alignItems: 'center',
     paddingVertical: 10,
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
   },
   dragPill: {
     width: 36,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#ddd',
+    backgroundColor: '#ddd', // TODO: tokenize
   },
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 8,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   backButton: { paddingHorizontal: 12, paddingVertical: 6 },
@@ -865,7 +866,7 @@ const styles = StyleSheet.create({
   bellActive: { opacity: 1 },
   bellInactive: { opacity: 0.4 },
   walkPill: {
-    backgroundColor: '#eef0fa',
+    backgroundColor: '#eef0fa', // TODO: tokenize
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
@@ -893,8 +894,8 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     overflow: 'hidden',
   },
-  statusPillClosed: { backgroundColor: '#fde2e2', color: RED },
-  statusPillOther: { backgroundColor: '#f4f4f4', color: SUBINK },
+  statusPillClosed: { backgroundColor: '#fde2e2' /* TODO: tokenize */, color: RED },
+  statusPillOther: { backgroundColor: '#f4f4f4' /* TODO: tokenize */, color: SUBINK },
   statusBadges: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -909,11 +910,11 @@ const styles = StyleSheet.create({
   belowAbovePillText: { fontSize: 11, fontWeight: '700' },
 
   tile: {
-    backgroundColor: '#fafaff',
+    backgroundColor: colors.bg,
     borderRadius: 12,
     padding: 10,
     marginTop: 10,
-    borderColor: '#eef',
+    borderColor: '#eef', // TODO: tokenize
     borderWidth: 1,
   },
   tileLabel: {
@@ -964,7 +965,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 8,
-    borderBottomColor: '#eef',
+    borderBottomColor: '#eef', // TODO: tokenize
     borderBottomWidth: 1,
   },
   notifHistoryEmoji: { fontSize: 16, marginRight: 8, marginTop: 1 },

@@ -15,6 +15,7 @@ import {
   View,
 } from 'react-native';
 import { LogEntry, LogLevel, clearLogs, getLogs, subscribeLogs } from '../utils/logger';
+import { colors } from '../theme/tokens';
 
 interface Props {
   visible: boolean;
@@ -22,9 +23,9 @@ interface Props {
 }
 
 const LEVEL_COLOR: Record<LogLevel, string> = {
-  info: '#666',
-  warn: '#b8860b',
-  error: '#c41e3a',
+  info: '#666', // TODO: tokenize
+  warn: '#b8860b', // TODO: tokenize
+  error: colors.skip,
 };
 
 export function DebugLogModal({ visible, onClose }: Props): React.ReactElement {
@@ -95,41 +96,41 @@ function formatClock(iso: string): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
   headerBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   headerButton: { paddingVertical: 6, minWidth: 56 },
   pressed: { opacity: 0.5 },
-  backArrow: { fontSize: 16, color: '#4a4ec7', fontWeight: '600' },
-  title: { fontSize: 16, fontWeight: '700', color: '#222' },
-  clear: { fontSize: 16, color: '#c41e3a', fontWeight: '600', textAlign: 'right' },
+  backArrow: { fontSize: 16, color: colors.brand, fontWeight: '600' },
+  title: { fontSize: 16, fontWeight: '700', color: '#222' }, // TODO: tokenize
+  clear: { fontSize: 16, color: colors.skip, fontWeight: '600', textAlign: 'right' },
   emptyBlock: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 32 },
-  empty: { fontSize: 14, color: '#888', textAlign: 'center' },
+  empty: { fontSize: 14, color: colors.textTertiary, textAlign: 'center' },
   list: { padding: 12 },
   row: {
     paddingVertical: 8,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f0f0f0', // TODO: tokenize
     borderBottomWidth: 1,
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
   level: { fontSize: 11, fontWeight: '700', marginRight: 8 },
   tag: {
     fontSize: 11,
-    color: '#555',
-    backgroundColor: '#f0f0f0',
+    color: '#555', // TODO: tokenize
+    backgroundColor: '#f0f0f0', // TODO: tokenize
     paddingHorizontal: 6,
     paddingVertical: 1,
     borderRadius: 4,
     marginRight: 8,
     overflow: 'hidden',
   },
-  time: { fontSize: 11, color: '#999', marginLeft: 'auto' },
-  message: { fontSize: 13, color: '#222', fontFamily: 'Courier', lineHeight: 18 },
+  time: { fontSize: 11, color: '#999', marginLeft: 'auto' }, // TODO: tokenize
+  message: { fontSize: 13, color: '#222', fontFamily: 'Courier', lineHeight: 18 }, // TODO: tokenize
 });

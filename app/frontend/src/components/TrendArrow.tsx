@@ -1,5 +1,6 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 export interface TrendArrowProps {
   bucket0Wait: number | null;
@@ -87,7 +88,7 @@ const styles = StyleSheet.create({
   },
   lowConfidence: {
     borderStyle: 'dashed',
-    borderColor: '#bbb',
+    borderColor: '#bbb', // TODO: tokenize
   },
   glyph: {
     fontSize: 14,
@@ -95,7 +96,7 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   // Colors picked to read clearly on the app's light (#fff) background.
-  down: { color: '#1a7f37' }, // green
-  up: { color: '#c41e3a' }, // red
-  stable: { color: '#666' }, // gray
+  down: { color: '#1a7f37' }, // green // TODO: tokenize
+  up: { color: colors.skip }, // red
+  stable: { color: '#666' }, // gray // TODO: tokenize
 });

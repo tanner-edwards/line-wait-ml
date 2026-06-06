@@ -14,6 +14,7 @@ import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useLocation } from '../context/LocationContext';
 import { useDevice } from '../context/DeviceContext';
 import { haversineMeters } from '../grouping';
+import { colors } from '../theme/tokens';
 
 const STORAGE_KEY = 'club32:locationPromptDate';
 
@@ -139,19 +140,19 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderRadius: 16,
     padding: 24,
     width: '100%',
-    shadowColor: '#000',
+    shadowColor: '#000', // TODO: tokenize
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 12,
     elevation: 8,
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#222', marginBottom: 12 },
-  message: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 10 },
-  hint: { fontSize: 12, color: '#888', marginBottom: 20 },
+  title: { fontSize: 20, fontWeight: '700', color: '#222', marginBottom: 12 }, // TODO: tokenize
+  message: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 10 }, // TODO: tokenize
+  hint: { fontSize: 12, color: colors.textTertiary, marginBottom: 20 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btn: {
     flex: 1,
@@ -159,9 +160,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
   },
-  btnYes: { backgroundColor: '#4a4ec7' },
-  btnYesText: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  btnNo: { backgroundColor: '#f0f0f0' },
-  btnNoText: { color: '#555', fontWeight: '600', fontSize: 16 },
+  btnYes: { backgroundColor: colors.brand },
+  btnYesText: { color: '#fff', fontWeight: '700', fontSize: 16 }, // TODO: tokenize
+  btnNo: { backgroundColor: '#f0f0f0' }, // TODO: tokenize
+  btnNoText: { color: '#555', fontWeight: '600', fontSize: 16 }, // TODO: tokenize
   pressed: { opacity: 0.7 },
 });

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SortBy } from '../grouping';
+import { colors } from '../theme/tokens';
 
 interface SortMenuProps {
   visible: boolean;
@@ -63,16 +64,16 @@ export function SortMenu({ visible, current, distanceAvailable, onSelect, onClos
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.2)',
+    backgroundColor: 'rgba(0,0,0,0.2)', // TODO: tokenize
     justifyContent: 'flex-start',
     alignItems: 'flex-end',
   },
   menu: {
     marginTop: 56,
     marginRight: 12,
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderRadius: 10,
-    shadowColor: '#000',
+    shadowColor: '#000', // TODO: tokenize
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 8,
@@ -84,10 +85,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
   },
   optionPressed: {
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f5f5f5', // TODO: tokenize
   },
   optionRow: {
     flexDirection: 'row',
@@ -96,19 +97,19 @@ const styles = StyleSheet.create({
   },
   optionText: {
     fontSize: 15,
-    color: '#222',
+    color: '#222', // TODO: tokenize
   },
   optionTextDisabled: {
-    color: '#bbb',
+    color: '#bbb', // TODO: tokenize
   },
   checkmark: {
     fontSize: 15,
-    color: '#4a4ec7',
+    color: colors.brand,
     fontWeight: '700',
   },
   hint: {
     fontSize: 11,
-    color: '#bbb',
+    color: '#bbb', // TODO: tokenize
     marginTop: 2,
   },
 });

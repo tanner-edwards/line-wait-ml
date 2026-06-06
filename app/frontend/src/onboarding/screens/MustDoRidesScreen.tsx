@@ -9,6 +9,7 @@ import { SearchField } from '../../components/SearchField';
 import { useRides } from '../../context/RideContext';
 import { Ride } from '../../types';
 import { OnboardingStackParamList } from '../OnboardingNavigator';
+import { colors } from '../../theme/tokens';
 
 // Curated headliners shown when nothing is searched. Substring-matched so a
 // re-themed name still resolves; unknown/closed rides silently disappear.
@@ -146,7 +147,7 @@ const styles = StyleSheet.create({
   sectionHeader: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#888',
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -154,12 +155,12 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#eee',
+    backgroundColor: '#eee', // TODO: tokenize
     marginVertical: 12,
   },
   emptyText: {
     fontSize: 14,
-    color: '#999',
+    color: '#999', // TODO: tokenize
     paddingVertical: 12,
   },
 });

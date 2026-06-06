@@ -19,6 +19,7 @@ import {
   RideCategory,
   TripDuration,
 } from '../types';
+import { colors } from '../theme/tokens';
 import { usePersona } from '../context/PersonaContext';
 import { useRides } from '../context/RideContext';
 import { RowButton } from './RowButton';
@@ -298,14 +299,14 @@ function MustDoField({
 const styles = StyleSheet.create({
   backdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor: 'rgba(0,0,0,0.45)', // TODO: tokenize
     justifyContent: 'flex-end',
   },
   dismissArea: {
     flex: 1,
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingHorizontal: 20,
@@ -323,7 +324,7 @@ const styles = StyleSheet.create({
     width: 40,
     height: 4,
     borderRadius: 2,
-    backgroundColor: '#ddd',
+    backgroundColor: '#ddd', // TODO: tokenize
     marginLeft: 'auto',
     marginRight: 'auto',
   },
@@ -338,14 +339,14 @@ const styles = StyleSheet.create({
   },
   closeText: {
     fontSize: 20,
-    color: '#888',
+    color: colors.textTertiary,
     fontWeight: '500',
   },
   title: {
     fontSize: 22,
     fontWeight: '700',
     marginBottom: 12,
-    color: '#111',
+    color: '#111', // TODO: tokenize
   },
   body: {
     maxHeight: '70%',
@@ -359,25 +360,25 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: '#eee', // TODO: tokenize
   },
   cancelButton: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   cancelText: {
-    color: '#666',
+    color: '#666', // TODO: tokenize
     fontSize: 15,
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#6b6bf5',
+    backgroundColor: '#6b6bf5', // TODO: tokenize
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
   },
   saveText: {
-    color: '#fff',
+    color: '#fff', // TODO: tokenize
     fontSize: 15,
     fontWeight: '600',
   },
@@ -387,7 +388,7 @@ const styles = StyleSheet.create({
   modalSectionHeader: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#888',
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
@@ -395,7 +396,7 @@ const styles = StyleSheet.create({
   },
   modalDivider: {
     height: 1,
-    backgroundColor: '#eee',
+    backgroundColor: '#eee', // TODO: tokenize
     marginVertical: 12,
   },
 });

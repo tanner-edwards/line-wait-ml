@@ -9,6 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { colors } from '../theme/tokens';
 import { StatusBar } from 'expo-status-bar';
 import {
   ListItem,
@@ -308,20 +309,20 @@ function ListRow({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
   },
   errorBanner: {
-    backgroundColor: '#fde2e2',
+    backgroundColor: '#fde2e2', // TODO: tokenize
     padding: 12,
-    borderBottomColor: '#f5b5b5',
+    borderBottomColor: '#f5b5b5', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  errorBannerText: { color: '#7a1f1f', fontSize: 14 },
+  errorBannerText: { color: '#7a1f1f', fontSize: 14 }, // TODO: tokenize
   header: {
     padding: 16,
     flexDirection: 'row',
@@ -331,13 +332,13 @@ const styles = StyleSheet.create({
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   headerLeft: { flex: 1 },
   headerTitle: { fontSize: 22, fontWeight: '700' },
-  headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
-  headerSubtitleTimeTravel: { color: '#6b6bf5' },
+  headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 }, // TODO: tokenize
+  headerSubtitleTimeTravel: { color: '#6b6bf5' }, // TODO: tokenize
   sortButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
@@ -345,43 +346,43 @@ const styles = StyleSheet.create({
   },
   sortIcon: {
     fontSize: 20,
-    color: '#999',
+    color: '#999', // TODO: tokenize
   },
   sortIconActive: {
-    color: '#4a4ec7',
+    color: colors.brand,
   },
   refreshButton: {
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#222',
+    backgroundColor: '#222', // TODO: tokenize
     minWidth: 80,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshButtonDisabled: { backgroundColor: '#999' },
+  refreshButtonDisabled: { backgroundColor: '#999' }, // TODO: tokenize
   refreshButtonPressed: { opacity: 0.7 },
-  refreshButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
+  refreshButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' }, // TODO: tokenize
   parkHeader: {
-    backgroundColor: '#f4f4f7',
+    backgroundColor: '#f4f4f7', // TODO: tokenize
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  parkHeaderErrored: { backgroundColor: '#fde2e2' },
+  parkHeaderErrored: { backgroundColor: '#fde2e2' }, // TODO: tokenize
   parkHeaderText: { fontSize: 18, fontWeight: '700' },
-  parkHeaderErrText: { fontSize: 12, color: '#7a1f1f', marginTop: 2 },
+  parkHeaderErrText: { fontSize: 12, color: '#7a1f1f', marginTop: 2 }, // TODO: tokenize
   landHeader: {
     paddingHorizontal: 24,
     paddingVertical: 6,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#fafafa', // TODO: tokenize
   },
-  landHeaderText: { fontSize: 14, fontWeight: '600', color: '#444' },
+  landHeaderText: { fontSize: 14, fontWeight: '600', color: '#444' }, // TODO: tokenize
   rideRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingHorizontal: 24,
     paddingVertical: 10,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   rideName: { flex: 1, fontSize: 15, marginRight: 12 },
@@ -392,7 +393,7 @@ const styles = StyleSheet.create({
   },
   bellIndicator: {
     fontSize: 14,
-    color: '#999',
+    color: '#999', // TODO: tokenize
     opacity: 0.85,
   },
   rideRight: {
@@ -405,15 +406,15 @@ const styles = StyleSheet.create({
   rideWait: {
     fontSize: 15,
     fontVariant: ['tabular-nums'],
-    color: '#222',
+    color: '#222', // TODO: tokenize
     minWidth: 64,
     textAlign: 'right',
   },
   empty: { padding: 32, alignItems: 'center' },
-  emptyText: { color: '#666', textAlign: 'center', fontSize: 14 },
+  emptyText: { color: '#666', textAlign: 'center', fontSize: 14 }, // TODO: tokenize
   emptyContent: { flexGrow: 1, justifyContent: 'center' },
-  walkLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'right' },
-  closedSince: { fontSize: 11, color: '#7a1f1f', marginTop: 2, textAlign: 'right' },
+  walkLabel: { fontSize: 11, color: colors.textTertiary, marginTop: 2, textAlign: 'right' },
+  closedSince: { fontSize: 11, color: '#7a1f1f', marginTop: 2, textAlign: 'right' }, // TODO: tokenize
   walkOnEmoji: {
     width: 20,
     height: 20,

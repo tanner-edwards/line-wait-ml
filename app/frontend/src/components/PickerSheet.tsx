@@ -19,6 +19,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { colors } from '../theme/tokens';
 import { DailyParks, ParkSlug, Ride } from '../types';
 import { SearchField } from './SearchField';
 
@@ -153,7 +154,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 24,
@@ -165,7 +166,7 @@ const styles = StyleSheet.create({
   scopeLabel: {
     fontSize: 12,
     fontWeight: '700',
-    color: '#888',
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 4,
@@ -173,7 +174,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#222',
+    color: '#222', // TODO: tokenize
     marginBottom: 12,
   },
   searchWrap: {
@@ -185,21 +186,21 @@ const styles = StyleSheet.create({
   rideRow: {
     paddingVertical: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
   },
   rideName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#222',
+    color: '#222', // TODO: tokenize
   },
   rideLand: {
     fontSize: 12,
-    color: '#888',
+    color: colors.textTertiary,
     marginTop: 2,
   },
   emptyText: {
     fontSize: 14,
-    color: '#888',
+    color: colors.textTertiary,
     marginTop: 24,
     textAlign: 'center',
   },

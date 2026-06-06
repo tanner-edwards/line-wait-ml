@@ -29,6 +29,7 @@ import { RecommendationCard } from '../components/RecommendationCard';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
+import { colors } from '../theme/tokens';
 
 const LOADING_LINES = [
   'Looking around the park…',
@@ -403,7 +404,7 @@ function RecsList({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   header: {
     padding: 16,
@@ -413,63 +414,63 @@ const styles = StyleSheet.create({
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
   headerLeft: { flex: 1, paddingRight: 12 },
   titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' },
+  headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' }, // TODO: tokenize
   debugBadge: {
     fontSize: 10,
     fontWeight: '700',
-    color: '#fff',
-    backgroundColor: '#f5a623',
+    color: '#fff', // TODO: tokenize
+    backgroundColor: '#f5a623', // TODO: tokenize
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     overflow: 'hidden',
   },
-  headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 },
-  headerAsOf: { fontSize: 11, color: '#888', marginTop: 2, fontStyle: 'italic' },
+  headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 }, // TODO: tokenize
+  headerAsOf: { fontSize: 11, color: colors.textTertiary, marginTop: 2, fontStyle: 'italic' },
   changeButton: {
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#f4f4f7',
+    backgroundColor: '#f4f4f7', // TODO: tokenize
   },
-  changeButtonText: { color: '#444', fontSize: 13, fontWeight: '600' },
-  loadingHint: { color: '#666', marginTop: 12, fontSize: 13 },
+  changeButtonText: { color: '#444', fontSize: 13, fontWeight: '600' }, // TODO: tokenize
+  loadingHint: { color: '#666', marginTop: 12, fontSize: 13 }, // TODO: tokenize
   errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  errorTitle: { fontSize: 16, fontWeight: '700', color: '#c41e3a', marginBottom: 6 },
-  errorBody: { fontSize: 14, color: '#444', textAlign: 'center' },
-  errorHint: { fontSize: 12, color: '#888', marginTop: 12, textAlign: 'center' },
+  errorTitle: { fontSize: 16, fontWeight: '700', color: colors.skip, marginBottom: 6 },
+  errorBody: { fontSize: 14, color: '#444', textAlign: 'center' }, // TODO: tokenize
+  errorHint: { fontSize: 12, color: colors.textTertiary, marginTop: 12, textAlign: 'center' },
   retryButton: {
     marginTop: 18,
     paddingHorizontal: 18,
     paddingVertical: 10,
     borderRadius: 8,
-    backgroundColor: '#222',
+    backgroundColor: '#222', // TODO: tokenize
   },
-  retryButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  retryButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 }, // TODO: tokenize
   emptyContainer: { padding: 32, alignItems: 'center' },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 6 },
-  emptyBody: { fontSize: 13, color: '#666', textAlign: 'center' },
+  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 6 }, // TODO: tokenize
+  emptyBody: { fontSize: 13, color: '#666', textAlign: 'center' }, // TODO: tokenize
   degradedBanner: {
-    backgroundColor: '#fff7e0',
+    backgroundColor: '#fff7e0', // TODO: tokenize
     paddingHorizontal: 16,
     paddingVertical: 8,
-    borderBottomColor: '#f1d77a',
+    borderBottomColor: '#f1d77a', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  degradedText: { fontSize: 12, color: '#7a5b00' },
+  degradedText: { fontSize: 12, color: '#7a5b00' }, // TODO: tokenize
   moreButton: {
     margin: 16,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#6b6bf5',
+    backgroundColor: '#6b6bf5', // TODO: tokenize
     alignItems: 'center',
   },
-  moreButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  moreButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' }, // TODO: tokenize
   moreLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -478,7 +479,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
   },
-  moreLoadingText: { fontSize: 13, color: '#666' },
+  moreLoadingText: { fontSize: 13, color: '#666' }, // TODO: tokenize
   moreErrorRow: { margin: 16, alignItems: 'center' },
-  moreErrorText: { fontSize: 13, color: '#7a1f1f', marginBottom: 8, textAlign: 'center' },
+  moreErrorText: { fontSize: 13, color: '#7a1f1f', marginBottom: 8, textAlign: 'center' }, // TODO: tokenize
 });
