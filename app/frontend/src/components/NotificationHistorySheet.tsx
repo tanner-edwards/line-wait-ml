@@ -21,6 +21,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { ApiError, fetchDeviceNotifications } from '../api';
@@ -124,7 +125,7 @@ function Row({
   entry: NotificationLogEntry;
   onPress: () => void;
 }): React.ReactElement {
-  const emoji = emojiFor(entry);
+  const icon = iconFor(entry);
   const body = entry.body ?? notificationBody(entry);
   const when = formatTimeAgo(entry.firedAt);
   return (
@@ -133,7 +134,7 @@ function Row({
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       testID={`notif-history-row-${entry.rideId}-${entry.type}`}
     >
-      <Text style={styles.emoji}>{emoji}</Text>
+      <View style={styles.iconCell}>{icon}</View>
       <View style={styles.rowText}>
         <Text style={styles.rowTitle}>{entry.rideName ?? 'Ride'}</Text>
         <Text style={styles.rowBody}>{body}</Text>
@@ -143,11 +144,12 @@ function Row({
   );
 }
 
-function emojiFor(entry: NotificationLogEntry): string {
-  if (entry.type === 'closure') return '✕';
-  if (entry.type === 'reopen') return '🎉';
-  if (entry.type === 'peak') return '🛑';
-  return entry.badge === 'star' ? '⭐' : '✅';
+function iconFor(entry: NotificationLogEntry): React.ReactElement {
+  if (entry.type === 'closure') return <OctagonX size={18} color={colors.skip} />;
+  if (entry.type === 'peak')    return <OctagonX size={18} color={colors.star} />;
+  if (entry.type === 'reopen')  return <CircleCheck size={18} color={colors.go} />;
+  if (entry.badge === 'star')   return <Star size={18} color={colors.star} fill={colors.star} />;
+  return <CircleCheck size={18} color={colors.go} />;
 }
 
 const styles = StyleSheet.create({
@@ -171,7 +173,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   rowPressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
-  emoji: { fontSize: 18, marginRight: 10, marginTop: 1 },
+  iconCell: { marginRight: 10, marginTop: 1, width: 20, alignItems: 'center' },
   rowText: { flex: 1, paddingRight: 8 },
   rowTitle: { fontSize: 14, fontWeight: '600', color: '#222' }, // TODO: tokenize
   rowBody: { fontSize: 13, color: '#444', marginTop: 2 }, // TODO: tokenize

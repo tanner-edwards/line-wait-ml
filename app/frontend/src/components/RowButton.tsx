@@ -4,6 +4,8 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Check } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 
 interface Props {
   title: string;
@@ -30,7 +32,9 @@ export function RowButton({ title, subtitle, selected, onPress, testID }: Props)
           <Text style={[styles.subtitle, selected && styles.subtitleSelected]}>{subtitle}</Text>
         ) : null}
       </View>
-      <Text style={[styles.check, selected && styles.checkSelected]}>{selected ? '✓' : ''}</Text>
+      <View style={styles.checkArea}>
+        {selected ? <Check size={20} color={colors.brand} strokeWidth={2.5} /> : null}
+      </View>
     </Pressable>
   );
 }
@@ -44,13 +48,13 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#e0e0e0',
-    backgroundColor: '#fff',
+    borderColor: '#e0e0e0', // TODO: tokenize
+    backgroundColor: '#fff', // TODO: tokenize
     minHeight: 56,
   },
   rowSelected: {
-    borderColor: '#6b6bf5',
-    backgroundColor: '#f4f4ff',
+    borderColor: colors.brand,
+    backgroundColor: '#f4f4ff', // TODO: tokenize
   },
   rowPressed: {
     opacity: 0.7,
@@ -61,28 +65,23 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#222',
+    color: '#222', // TODO: tokenize
   },
   titleSelected: {
-    color: '#3a3ad6',
+    color: colors.brand,
   },
   subtitle: {
     fontSize: 13,
-    color: '#777',
+    color: '#777', // TODO: tokenize
     marginTop: 4,
     lineHeight: 18,
   },
   subtitleSelected: {
-    color: '#6b6bf5',
+    color: colors.brand,
   },
-  check: {
+  checkArea: {
     width: 24,
-    textAlign: 'right',
-    fontSize: 20,
-    color: 'transparent',
-    fontWeight: '700',
-  },
-  checkSelected: {
-    color: '#6b6bf5',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });

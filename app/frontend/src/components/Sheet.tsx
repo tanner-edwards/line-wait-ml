@@ -17,6 +17,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { X } from 'lucide-react-native';
 import { colors, radius, shadows, spacing } from '../theme/tokens';
 
 export interface SheetProps {
@@ -78,7 +79,7 @@ export function Sheet({
       hitSlop={12}
       testID={testID ? `${testID}-close` : undefined}
     >
-      <Text style={styles.closeX}>✕</Text>
+      <X size={18} color={colors.textTertiary} />
     </Pressable>
   ) : null;
 
@@ -163,9 +164,5 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: '700',
     color: colors.textPrimary,
-  },
-  closeX: {
-    fontSize: 22,
-    color: colors.textTertiary,
   },
 });

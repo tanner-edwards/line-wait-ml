@@ -10,6 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { NotificationKind } from '../types';
@@ -22,7 +23,7 @@ interface Props {
 
 interface Row {
   kind: NotificationKind;
-  emoji: string;
+  icon: React.ReactElement;
   title: string;
   subtitle: string;
 }
@@ -30,27 +31,27 @@ interface Row {
 const ROWS: Row[] = [
   {
     kind: 'trough',
-    emoji: '⭐',
+    icon: <Star size={18} color={colors.star} fill={colors.star} />,
     title: 'Wait-time opportunities',
-    subtitle: 'Gold star + green check alerts when a must-do ride hits a short-wait window.',
+    subtitle: 'Alerts when a must-do ride hits a short-wait window.',
   },
   {
     kind: 'closure',
-    emoji: '✕',
+    icon: <OctagonX size={18} color={colors.skip} />,
     title: 'Ride closes',
     subtitle: "Heads-up when one of your must-do rides goes down.",
   },
   {
     kind: 'reopen',
-    emoji: '🎉',
+    icon: <CircleCheck size={18} color={colors.go} />,
     title: 'Ride reopens',
     subtitle: "Pings you when a closed must-do ride comes back online.",
   },
   {
     kind: 'peak',
-    emoji: '🛑',
+    icon: <OctagonX size={18} color={colors.star} />,
     title: 'Peak wait alert',
-    subtitle: "Off by default. Alerts when a must-do ride hits peak crowd levels — well above its typical wait.",
+    subtitle: "Off by default. Alerts when a must-do ride hits peak crowd levels.",
   },
 ];
 
@@ -66,9 +67,10 @@ export function NotificationSettingsModal({ visible, onClose }: Props): React.Re
       {ROWS.map(row => (
         <View key={row.kind} style={styles.row}>
           <View style={styles.rowText}>
-            <Text style={styles.rowTitle}>
-              {row.emoji} {row.title}
-            </Text>
+            <View style={styles.rowTitleRow}>
+              {row.icon}
+              <Text style={styles.rowTitle}> {row.title}</Text>
+            </View>
             <Text style={styles.rowSubtitle}>{row.subtitle}</Text>
           </View>
           <Switch
@@ -94,6 +96,7 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   rowText: { flex: 1, paddingRight: 12 },
+  rowTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
   rowTitle: { fontSize: 15, color: '#222', fontWeight: '600' }, // TODO: tokenize
   rowSubtitle: { fontSize: 12, color: '#666', marginTop: 3 }, // TODO: tokenize
   footer: { fontSize: 11, color: colors.textTertiary, marginTop: 14, textAlign: 'center' },

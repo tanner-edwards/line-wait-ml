@@ -1,12 +1,12 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { X } from 'lucide-react-native';
 
 interface Props {
   value: string;
   onChangeText: (next: string) => void;
   placeholder?: string;
   testID?: string;
-  /** Optional override style for the outer container (rounded background). */
   containerStyle?: object;
 }
 
@@ -36,7 +36,7 @@ export function SearchField({
           hitSlop={8}
           testID={testID ? `${testID}-clear` : undefined}
         >
-          <Text style={styles.clearText}>✕</Text>
+          <X size={13} color="#fff" strokeWidth={3} />
         </Pressable>
       )}
     </View>
@@ -64,11 +64,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: 14,
     backgroundColor: '#d8d8de',
-  },
-  clearText: {
-    fontSize: 13,
-    color: '#fff',
-    fontWeight: '700',
-    lineHeight: 14,
   },
 });

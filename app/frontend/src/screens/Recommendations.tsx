@@ -27,6 +27,7 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { NotificationBellButton } from '../components/NotificationBellButton';
+import { GradientHeader } from '../components/GradientHeader';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
 import { colors } from '../theme/tokens';
@@ -245,33 +246,27 @@ export function Recommendations(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container} testID="recs-loaded">
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.titleRow}>
-            <Text style={styles.headerTitle}>Recommendations</Text>
-            {debugMode && <Text style={styles.debugBadge}>DEBUG</Text>}
-          </View>
-          {recs && !recsLoading ? (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              Near {recs.currentRide.name} · {parkDisplayName(recs.currentRide.park)}
-            </Text>
-          ) : null}
-          {recs && !recsLoading ? (
-            <Text style={styles.headerAsOf} testID="recs-as-of">
-              as of {formatHHMM(recs.lastUpdated)}
-            </Text>
-          ) : null}
-        </View>
-        {debugMode && (
-          <Pressable
-            onPress={() => setDebugPickerOpen(true)}
-            style={styles.changeButton}
-            testID="recs-change-location"
-          >
-            <Text style={styles.changeButtonText}>Change location</Text>
-          </Pressable>
-        )}
-      </View>
+      <GradientHeader
+        title={debugMode ? 'Recommendations  DEBUG' : 'Recommendations'}
+        subtitle={
+          recs && !recsLoading
+            ? `Near ${recs.currentRide.name} · ${parkDisplayName(recs.currentRide.park)}`
+            : undefined
+        }
+        right={
+          debugMode ? (
+            <Pressable
+              onPress={() => setDebugPickerOpen(true)}
+              style={styles.changeButton}
+              testID="recs-change-location"
+            >
+              <Text style={styles.changeButtonText}>Change</Text>
+            </Pressable>
+          ) : (
+            <NotificationBellButton />
+          )
+        }
+      />
 
       {(status === 'idle' || status === 'locating') && !debugMode ? (
         <View style={styles.center} testID="recs-locating">
@@ -406,39 +401,21 @@ function RecsList({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  header: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  headerLeft: { flex: 1, paddingRight: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' }, // TODO: tokenize
-  debugBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff', // TODO: tokenize
-    backgroundColor: '#f5a623', // TODO: tokenize
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 }, // TODO: tokenize
-  headerAsOf: { fontSize: 11, color: colors.textTertiary, marginTop: 2, fontStyle: 'italic' },
   changeButton: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#f4f4f7', // TODO: tokenize
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  changeButtonText: { color: '#444', fontSize: 13, fontWeight: '600' }, // TODO: tokenize
+  changeButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '600' },
   loadingHint: { color: '#666', marginTop: 12, fontSize: 13 }, // TODO: tokenize
   errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
   errorTitle: { fontSize: 16, fontWeight: '700', color: colors.skip, marginBottom: 6 },

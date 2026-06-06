@@ -26,6 +26,8 @@ import { RecommendationBadge } from '../components/RecommendationBadge';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
+import { GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
+import { ArrowUpDown, Bell, Navigation2 } from 'lucide-react-native';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -123,45 +125,49 @@ export function Home() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Live Waits</Text>
+      <GradientHeader
+        title="Live Waits"
+        subtitle={
           <Pressable onPress={() => setShowTimeTravelModal(true)} testID="time-travel-trigger">
             <Text
-              style={[styles.headerSubtitle, timeTravelAt ? styles.headerSubtitleTimeTravel : null]}
+              style={timeTravelAt ? gradientHeaderTextStyles.subtitleActive : gradientHeaderTextStyles.subtitle}
               testID="last-update"
             >
               {timeTravelAt ? `Time set to: ${timeTravelLabel}` : `Last update: ${lastUpdate}`}
             </Text>
           </Pressable>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setShowSortMenu(true)}
-          testID="sort-button"
-          style={styles.sortButton}
-        >
-          <Text style={[styles.sortIcon, sortBy ? styles.sortIconActive : null]}>⇅</Text>
-        </Pressable>
-        <NotificationBellButton />
-        <Pressable
-          accessibilityRole="button"
-          onPress={onRefresh}
-          disabled={refreshing}
-          testID="refresh-button"
-          style={({ pressed }) => [
-            styles.refreshButton,
-            refreshing && styles.refreshButtonDisabled,
-            pressed && styles.refreshButtonPressed,
-          ]}
-        >
-          {refreshing ? (
-            <ActivityIndicator size="small" />
-          ) : (
-            <Text style={styles.refreshButtonText}>Refresh</Text>
-          )}
-        </Pressable>
-      </View>
+        }
+        right={
+          <>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowSortMenu(true)}
+              testID="sort-button"
+              style={styles.sortButton}
+            >
+              <ArrowUpDown size={20} color={sortBy ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
+            </Pressable>
+            <NotificationBellButton />
+            <Pressable
+              accessibilityRole="button"
+              onPress={onRefresh}
+              disabled={refreshing}
+              testID="refresh-button"
+              style={({ pressed }) => [
+                styles.refreshButton,
+                refreshing && styles.refreshButtonDisabled,
+                pressed && styles.refreshButtonPressed,
+              ]}
+            >
+              {refreshing ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text style={styles.refreshButtonText}>Refresh</Text>
+              )}
+            </Pressable>
+          </>
+        }
+      />
       <FlatList
         data={items}
         keyExtractor={item => item.key}
@@ -259,7 +265,7 @@ function ListRow({
           {scoreResult.badge === 'star'
             ? <RecommendationBadge badge="star" />
             : walkOn
-            ? <Text style={styles.walkOnEmoji} testID="badge-walk-on">🚶</Text>
+            ? <Navigation2 size={18} color={colors.go} testID="badge-walk-on" />
             : <RecommendationBadge badge={scoreResult.badge} />
           }
           <Text style={styles.rideName} numberOfLines={1}>
@@ -267,13 +273,12 @@ function ListRow({
           </Text>
           <View style={styles.rideRowRight}>
           {isWatching && (
-            <Text
-              style={styles.bellIndicator}
+            <View
               testID={`bell-indicator-${ride.id}`}
               accessibilityLabel="Alert set"
             >
-              🔔
-            </Text>
+              <Bell size={14} color={colors.brand} />
+            </View>
           )}
           <View style={styles.rideRight}>
             <View style={styles.waitRow}>
@@ -323,46 +328,31 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
   },
   errorBannerText: { color: '#7a1f1f', fontSize: 14 }, // TODO: tokenize
-  header: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  headerLeft: { flex: 1 },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
-  headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 }, // TODO: tokenize
-  headerSubtitleTimeTravel: { color: '#6b6bf5' }, // TODO: tokenize
   sortButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    marginRight: 8,
-  },
-  sortIcon: {
-    fontSize: 20,
-    color: '#999', // TODO: tokenize
-  },
-  sortIconActive: {
-    color: colors.brand,
+    marginRight: 4,
   },
   refreshButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#222', // TODO: tokenize
-    minWidth: 80,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
+    minWidth: 72,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  refreshButtonDisabled: { backgroundColor: '#999' }, // TODO: tokenize
+  refreshButtonDisabled: { opacity: 0.5 },
   refreshButtonPressed: { opacity: 0.7 },
-  refreshButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' }, // TODO: tokenize
+  refreshButtonText: { color: colors.textInverse, fontSize: 14, fontWeight: '600' },
   parkHeader: {
     backgroundColor: '#f4f4f7', // TODO: tokenize
     paddingHorizontal: 16,
@@ -390,11 +380,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  bellIndicator: {
-    fontSize: 14,
-    color: '#999', // TODO: tokenize
-    opacity: 0.85,
   },
   rideRight: {
     alignItems: 'flex-end',

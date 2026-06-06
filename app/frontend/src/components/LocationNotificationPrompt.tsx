@@ -11,6 +11,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { MapPin } from 'lucide-react-native';
 import { useLocation } from '../context/LocationContext';
 import { useDevice } from '../context/DeviceContext';
 import { haversineMeters } from '../grouping';
@@ -98,9 +99,12 @@ export function LocationNotificationPrompt(): React.ReactElement {
     >
       <View style={styles.backdrop}>
         <View style={styles.card}>
-          <Text style={styles.title}>
-            {kind === 'enable' ? '📍 You\'re at the park!' : '🏠 You\'re not at the park'}
-          </Text>
+          <View style={styles.titleRow}>
+            <MapPin size={18} color={kind === 'enable' ? colors.brand : colors.textTertiary} />
+            <Text style={styles.title}>
+              {kind === 'enable' ? ' You\'re at the park!' : ' You\'re not at the park'}
+            </Text>
+          </View>
           <Text style={styles.message}>
             {kind === 'enable'
               ? 'Want to turn on ride notifications? We\'ll let you know when your must-do rides hit a short wait or go down.'
@@ -150,7 +154,8 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  title: { fontSize: 20, fontWeight: '700', color: '#222', marginBottom: 12 }, // TODO: tokenize
+  titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
+  title: { fontSize: 20, fontWeight: '700', color: '#222' }, // TODO: tokenize
   message: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 10 }, // TODO: tokenize
   hint: { fontSize: 12, color: colors.textTertiary, marginBottom: 20 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 8 },

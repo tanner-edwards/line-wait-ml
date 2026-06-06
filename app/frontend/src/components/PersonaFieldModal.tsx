@@ -25,6 +25,7 @@ import { SearchField } from './SearchField';
 import { RIDE_CATEGORY_OPTIONS } from '../onboarding/screens/RidePreferencesScreen';
 import { ACCESSIBILITY_OPTIONS } from '../onboarding/screens/AccessibilityNeedsScreen';
 import { Sheet } from './Sheet';
+import { SectionHeader } from './SectionHeader';
 
 const TRIP_DURATION_OPTIONS: { value: TripDuration; title: string; subtitle?: string }[] = [
   { value: '1-day',       title: '1 day' },
@@ -259,7 +260,7 @@ function MustDoField({
       </View>
       {pickedRides.length > 0 && (
         <>
-          <Text style={styles.modalSectionHeader}>Your picks ({pickedRides.length})</Text>
+          <SectionHeader title={`Your picks (${pickedRides.length})`} />
           {pickedRides.map(ride => (
             <RowButton
               key={ride.id}
@@ -271,9 +272,7 @@ function MustDoField({
           <View style={styles.modalDivider} />
         </>
       )}
-      <Text style={styles.modalSectionHeader}>
-        {q ? 'Matches' : pickedRides.length > 0 ? 'More to add' : 'All rides'}
-      </Text>
+      <SectionHeader title={q ? 'Matches' : pickedRides.length > 0 ? 'More to add' : 'All rides'} />
       {suggested.map(ride => (
         <RowButton
           key={ride.id}
@@ -323,15 +322,6 @@ const styles = StyleSheet.create({
   },
   searchWrap: {
     marginBottom: 12,
-  },
-  modalSectionHeader: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 8,
-    marginTop: 4,
   },
   modalDivider: {
     height: 1,

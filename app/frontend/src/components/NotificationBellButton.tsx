@@ -1,10 +1,10 @@
-// Bell button rendered in the Home + Recommendations headers. Tap opens
-// the NotificationHistorySheet via NotificationDetailContext. The sheet
-// itself is rendered at the root (see App.tsx) so it can coordinate
-// with the ride detail modal — opening one closes the other.
+// Bell button in the Home + Recommendations gradient headers.
+// Always rendered on a dark gradient — uses inverse (white) color.
 
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet } from 'react-native';
+import { Bell } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 
@@ -19,7 +19,7 @@ export function NotificationBellButton(): React.ReactElement | null {
       testID="notification-bell"
       hitSlop={10}
     >
-      <Text style={styles.icon}>🔔</Text>
+      <Bell size={20} color={colors.textInverse} />
     </Pressable>
   );
 }
@@ -28,8 +28,5 @@ const styles = StyleSheet.create({
   button: {
     paddingHorizontal: 8,
     paddingVertical: 8,
-  },
-  icon: {
-    fontSize: 20,
   },
 });

@@ -9,6 +9,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Navigation2 } from 'lucide-react-native';
 import { Recommendation, Ride, ScoreResult } from '../types';
 import { colors } from '../theme/tokens';
 import { RecommendationBadge } from './RecommendationBadge';
@@ -78,7 +79,7 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
           {badge === 'star'
             ? <RecommendationBadge badge="star" />
             : walkOn
-            ? <Text style={styles.walkOnEmoji} testID="rec-badge-walk-on">🚶</Text>
+            ? <Navigation2 size={18} color={colors.go} testID="rec-badge-walk-on" />
             : <RecommendationBadge badge={badge} />}
           <Text style={styles.rideName} numberOfLines={1}>{ride.name}</Text>
           <View style={styles.rightCluster}>

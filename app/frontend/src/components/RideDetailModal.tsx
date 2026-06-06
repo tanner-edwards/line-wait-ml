@@ -38,6 +38,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Bell, BellOff, CircleCheck, Navigation2, OctagonX, Star, X } from 'lucide-react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
@@ -132,7 +133,7 @@ export function RideDetailModal(): React.ReactElement {
               testID="ride-detail-dismiss"
               hitSlop={12}
             >
-              <Text style={styles.dismissX}>✕</Text>
+              <X size={18} color={colors.textSecondary} />
             </Pressable>
           </View>
           {ride ? (
@@ -250,9 +251,10 @@ function DetailBody({
               accessibilityRole="button"
               accessibilityLabel={isWatching ? 'Remove alert' : 'Set alert'}
             >
-              <Text style={[styles.bell, isWatching ? styles.bellActive : styles.bellInactive]}>
-                {isWatching ? '🔔' : '🔕'}
-              </Text>
+              {isWatching
+                ? <Bell size={20} color={colors.brand} />
+                : <BellOff size={20} color={colors.textTertiary} />
+              }
             </Pressable>
             {walkMins != null ? (
               <View style={styles.walkPill}>
@@ -370,14 +372,15 @@ function DetailBody({
         <Tile>
           <TileLabel>Recent alerts</TileLabel>
           {rideNotifs.map(entry => {
-            const emoji = entry.type === 'closure' ? '✕'
-              : entry.type === 'reopen' ? '🎉'
-              : entry.type === 'peak' ? '🛑'
-              : entry.badge === 'star' ? '⭐' : '✅';
+            const notifIcon = entry.type === 'closure' ? <OctagonX size={16} color={colors.skip} />
+              : entry.type === 'peak'    ? <OctagonX size={16} color={colors.star} />
+              : entry.type === 'reopen'  ? <CircleCheck size={16} color={colors.go} />
+              : entry.badge === 'star'   ? <Star size={16} color={colors.star} fill={colors.star} />
+              : <CircleCheck size={16} color={colors.go} />;
             const body = entry.body ?? notificationBody(entry);
             return (
               <View key={`${entry.type}-${entry.firedAt}`} style={styles.notifHistoryRow}>
-                <Text style={styles.notifHistoryEmoji}>{emoji}</Text>
+                <View style={styles.notifHistoryIcon}>{notifIcon}</View>
                 <View style={styles.notifHistoryText}>
                   <Text style={styles.notifHistoryBody}>{body}</Text>
                 </View>
@@ -445,7 +448,7 @@ function StatusRow({
       </View>
       <View style={styles.statusBadges}>
         {walkOn ? (
-          <Text style={styles.walkOnEmoji}>🚶</Text>
+          <Navigation2 size={18} color={colors.go} />
         ) : badge ? (
           <RecommendationBadge badge={badge} />
         ) : null}
@@ -845,7 +848,6 @@ const styles = StyleSheet.create({
   backButton: { paddingHorizontal: 12, paddingVertical: 6 },
   backButtonPressed: { opacity: 0.5 },
   backArrow: { fontSize: 16, color: BRAND, fontWeight: '600' },
-  dismissX: { fontSize: 16, color: MUTED, fontWeight: '600' },
   headerSpacer: { flex: 1 },
 
   body: { padding: 10, paddingBottom: 48 },
@@ -867,9 +869,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
     paddingVertical: 2,
   },
-  bell: { fontSize: 18 },
-  bellActive: { opacity: 1 },
-  bellInactive: { opacity: 0.4 },
   walkPill: {
     backgroundColor: '#eef0fa', // TODO: tokenize
     paddingHorizontal: 10,
@@ -906,7 +905,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
   },
-  walkOnEmoji: { fontSize: 22 },
   belowAbovePill: {
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -973,7 +971,7 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eef', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  notifHistoryEmoji: { fontSize: 16, marginRight: 8, marginTop: 1 },
+  notifHistoryIcon: { width: 18, marginRight: 8, marginTop: 1, alignItems: 'center' },
   notifHistoryText: { flex: 1, paddingRight: 8 },
   notifHistoryBody: { fontSize: 13, color: INK },
   notifHistoryWhen: { fontSize: 11, color: MUTED, marginTop: 2 },

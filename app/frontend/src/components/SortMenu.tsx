@@ -1,5 +1,6 @@
 import React from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Check } from 'lucide-react-native';
 import { SortBy } from '../grouping';
 import { colors } from '../theme/tokens';
 
@@ -47,7 +48,7 @@ export function SortMenu({ visible, current, distanceAvailable, onSelect, onClos
                   <Text style={[styles.optionText, disabled && styles.optionTextDisabled]}>
                     {opt.label}
                   </Text>
-                  {active && <Text style={styles.checkmark}>✓</Text>}
+                  {active && <Check size={15} color={colors.brand} strokeWidth={2.5} />}
                 </View>
                 {isDistance && !distanceAvailable && (
                   <Text style={styles.hint}>pick a location in Recommendations first</Text>
@@ -101,11 +102,6 @@ const styles = StyleSheet.create({
   },
   optionTextDisabled: {
     color: '#bbb', // TODO: tokenize
-  },
-  checkmark: {
-    fontSize: 15,
-    color: colors.brand,
-    fontWeight: '700',
   },
   hint: {
     fontSize: 11,

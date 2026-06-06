@@ -29,6 +29,8 @@ import {
 import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
 import { DailyParkSheet } from '../components/DailyParkSheet';
 import { DebugLogModal } from '../components/DebugLogModal';
+import { TapEditRow } from '../components/TapEditRow';
+import { GradientHeader } from '../components/GradientHeader';
 import { colors } from '../theme/tokens';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
@@ -79,7 +81,6 @@ export function Profile(): React.ReactElement {
   const [logsOpen, setLogsOpen] = useState(false);
 
   if (!persona) {
-    // Shouldn't happen — RootNavigator gates this screen behind persona !== null.
     return (
       <SafeAreaView style={styles.container}>
         <Text style={styles.placeholder}>No profile yet.</Text>
@@ -101,18 +102,15 @@ export function Profile(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
-        <Text style={styles.subtitle}>Tap any row to edit.</Text>
-      </View>
+      <GradientHeader title="Profile" subtitle="Tap any row to edit." />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <Row
+        <TapEditRow
           label="Trip length"
           value={persona.tripDuration ? TRIP_DURATION_LABELS[persona.tripDuration] : 'Not set'}
           onPress={() => setEditing('tripDuration')}
         />
-        <Row
+        <TapEditRow
           label="Youngest in group"
           value={
             persona.youngestAge === null
@@ -123,7 +121,7 @@ export function Profile(): React.ReactElement {
           }
           onPress={() => setEditing('youngestAge')}
         />
-        <Row
+        <TapEditRow
           label="Ride preferences"
           value={
             persona.ridePreferences.length === 0
@@ -132,12 +130,12 @@ export function Profile(): React.ReactElement {
           }
           onPress={() => setEditing('ridePreferences')}
         />
-        <Row
+        <TapEditRow
           label="Must-do rides"
           value={mustDoNames.length === 0 ? 'None picked' : mustDoNames.join(', ')}
           onPress={() => setEditing('mustDoRideIds')}
         />
-        <Row
+        <TapEditRow
           label="Accessibility"
           value={
             persona.accessibilityNeeds.length === 0
@@ -146,7 +144,7 @@ export function Profile(): React.ReactElement {
           }
           onPress={() => setEditing('accessibilityNeeds')}
         />
-        <Row
+        <TapEditRow
           label="Today's parks"
           value={DAILY_PARKS_LABELS[dailyCtx?.parks ?? 'both']}
           onPress={() => setParkPickerOpen(true)}
@@ -252,34 +250,12 @@ function notificationTypesSummary(types: { trough: boolean; closure: boolean; re
   return `${on.join(', ')}`;
 }
 
-interface RowProps {
-  label: string;
-  value: string;
-  onPress: () => void;
-}
-
-function Row({ label, value, onPress }: RowProps): React.ReactElement {
-  return (
-    <Pressable onPress={onPress} style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-      <View style={styles.rowText}>
-        <Text style={styles.rowLabel}>{label}</Text>
-        <Text style={styles.rowValue}>{value}</Text>
-      </View>
-      <Text style={styles.rowChevron}>›</Text>
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
-  header: {
-    padding: 16,
-    borderBottomColor: '#eee', // TODO: tokenize
-    borderBottomWidth: 1,
-  },
-  title: { fontSize: 22, fontWeight: '700', color: '#111' }, // TODO: tokenize
-  subtitle: { fontSize: 13, color: '#666', marginTop: 2 }, // TODO: tokenize
   scroll: { paddingBottom: 24 },
+  // Rows below keep their own styles because they have non-standard content
+  // (status text, inline error, conditional values). TapEditRow handles the
+  // simple label + value + chevron cases above.
   row: {
     flexDirection: 'row',
     alignItems: 'center',
