@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -32,7 +33,7 @@ import { StateBlock } from '../components/StateBlock';
 import { CircleAlert, Info, LocateFixed, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
-import { colors, typography } from '../theme/tokens';
+import { colors, spacing, typography } from '../theme/tokens';
 
 const LOADING_LINES = [
   'Looking around the park…',
@@ -162,6 +163,12 @@ export function Recommendations(): React.ReactElement {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
   }, [recs, coords, dailyContext, persona]);
+
+  const onRefresh = useCallback(() => {
+    if (!coords) return;
+    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
+    void runFetch(coords.lat, coords.lng, park);
+  }, [coords, dailyContext?.parks, runFetch]);
 
   // Stable key derived from coordinates — changes only when GPS resolves or
   // debug coords are set, not on every context re-render.
@@ -298,6 +305,8 @@ export function Recommendations(): React.ReactElement {
           loadingMore={loadingMore}
           loadMoreError={loadMoreError}
           onShowMore={() => void loadMore()}
+          refreshing={recsLoading}
+          onRefresh={onRefresh}
         />
       ) : null}
 
@@ -327,12 +336,16 @@ function RecsList({
   loadingMore,
   loadMoreError,
   onShowMore,
+  refreshing,
+  onRefresh,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
   loadingMore: boolean;
   loadMoreError: string | null;
   onShowMore: () => void;
+  refreshing: boolean;
+  onRefresh: () => void;
 }): React.ReactElement {
   if (recs.recommendations.length === 0) {
     return (
@@ -349,6 +362,8 @@ function RecsList({
     <FlatList
       data={recs.recommendations}
       keyExtractor={r => r.rideId}
+      contentContainerStyle={styles.listContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       renderItem={({ item }) => (
         <RecommendationCard
           rec={item}
@@ -388,6 +403,7 @@ function RecsList({
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
+  listContent: { paddingTop: spacing.sm },
   changeButton: {
     paddingHorizontal: 12,
     paddingVertical: 7,

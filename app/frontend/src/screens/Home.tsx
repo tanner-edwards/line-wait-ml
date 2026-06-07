@@ -1,6 +1,5 @@
 import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -128,23 +127,6 @@ export function Home() {
               <ArrowUpDown size={20} color={sortBy ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
             </Pressable>
             <NotificationBellButton />
-            <Pressable
-              accessibilityRole="button"
-              onPress={onRefresh}
-              disabled={refreshing}
-              testID="refresh-button"
-              style={({ pressed }) => [
-                styles.refreshButton,
-                refreshing && styles.refreshButtonDisabled,
-                pressed && styles.refreshButtonPressed,
-              ]}
-            >
-              {refreshing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text style={styles.refreshButtonText}>Refresh</Text>
-              )}
-            </Pressable>
           </>
         }
       />
@@ -243,20 +225,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     marginRight: 4,
   },
-  refreshButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 8,
-    backgroundColor: 'rgba(255,255,255,0.18)',
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.35)',
-    minWidth: 72,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  refreshButtonDisabled: { opacity: 0.5 },
-  refreshButtonPressed: { opacity: 0.7 },
-  refreshButtonText: { color: colors.textInverse, fontSize: 14, fontWeight: '600' },
   parkHeader: {
     backgroundColor: '#f4f4f7', // TODO: tokenize
     paddingHorizontal: 16,

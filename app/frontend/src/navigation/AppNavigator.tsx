@@ -6,7 +6,7 @@
 import React from 'react';
 import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home as HomeIcon, Star, User } from 'lucide-react-native';
+import { Home as HomeIcon, Sparkles, User } from 'lucide-react-native';
 import { Home } from '../screens/Home';
 import { Recommendations } from '../screens/Recommendations';
 import { Profile } from '../screens/Profile';
@@ -35,7 +35,7 @@ export function AppNavigator(): React.ReactElement {
         component={Recommendations}
         options={{
           tabBarIcon: ({ color, focused }) => (
-            <Star size={22} color={color} fill={focused ? color : 'none'} />
+            <Sparkles size={22} color={color} fill={focused ? color : 'none'} />
           ),
         }}
       />

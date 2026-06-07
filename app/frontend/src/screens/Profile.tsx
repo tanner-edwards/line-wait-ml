@@ -1,15 +1,16 @@
-// Profile tab: read-out of the persona with tap-to-edit on each row.
-// Long-press the header (in __DEV__) clears persona + daily context so
-// onboarding can be tested without uninstalling the app.
+// Profile tab — card-grouped sections, iOS Settings pattern.
+// Three sections: Your Visit | Notifications | Debug
+// Debug section is always shown but visually muted; it's the user's access
+// point for debug mode and the ride-picker GPS override in Recommendations.
 
 import React, { useState } from 'react';
 import {
+  LayoutAnimation,
   Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  View,
 } from 'react-native';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
@@ -26,12 +27,14 @@ import {
   PersonaField,
   PersonaFieldModal,
 } from '../components/PersonaFieldModal';
-import { NotificationSettingsModal } from '../components/NotificationSettingsModal';
 import { DailyParkSheet } from '../components/DailyParkSheet';
 import { DebugLogModal } from '../components/DebugLogModal';
 import { TapEditRow } from '../components/TapEditRow';
+import { ToggleRow } from '../components/ToggleRow';
 import { GradientHeader } from '../components/GradientHeader';
-import { colors } from '../theme/tokens';
+import { SectionHeader } from '../components/SectionHeader';
+import { Card } from '../components/Card';
+import { colors, spacing } from '../theme/tokens';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -60,7 +63,7 @@ const ACCESSIBILITY_LABELS: Record<AccessibilityNeed, string> = {
   wheelchair: 'Wheelchair / scooter',
   pregnant: 'Pregnant',
   sensory: 'Sensory / DAS',
-  none: "None",
+  none: 'None',
 };
 
 export function Profile(): React.ReactElement {
@@ -74,154 +77,165 @@ export function Profile(): React.ReactElement {
     error: deviceError,
     enableNotifications,
     disableNotifications,
+    setNotificationTypeEnabled,
   } = useDevice();
   const { data } = useRides();
   const [editing, setEditing] = useState<PersonaField | null>(null);
-  const [notifSettingsOpen, setNotifSettingsOpen] = useState(false);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [parkPickerOpen, setParkPickerOpen] = useState(false);
 
   if (!persona) {
     return (
       <SafeAreaView style={styles.container}>
+        <GradientHeader title="Profile" />
         <Text style={styles.placeholder}>No profile yet.</Text>
       </SafeAreaView>
     );
   }
 
-  const [parkPickerOpen, setParkPickerOpen] = useState(false);
-
   const resetForTesting = async () => {
     await Promise.all([clearPersona(), clearDailyContext()]);
   };
 
+  const allRides = data?.parks.flatMap(p => ('rides' in p ? p.rides : [])) ?? [];
+
   const mustDoNames = persona.mustDoRideIds
-    .map(id => data?.parks
-      .flatMap(p => ('rides' in p ? p.rides : []))
-      .find(r => r.id === id)?.name)
+    .map(id => allRides.find(r => r.id === id)?.name)
     .filter((n): n is string => typeof n === 'string');
+
+  const mustDoValue =
+    mustDoNames.length === 0 ? 'None picked' :
+    mustDoNames.length <= 2 ? mustDoNames.join(', ') :
+    `${mustDoNames.slice(0, 2).join(', ')} +${mustDoNames.length - 2} more`;
 
   return (
     <SafeAreaView style={styles.container}>
-      <GradientHeader title="Profile" subtitle="Tap any row to edit." />
+      <GradientHeader title="Profile" />
 
       <ScrollView contentContainerStyle={styles.scroll}>
-        <TapEditRow
-          label="Trip length"
-          value={persona.tripDuration ? TRIP_DURATION_LABELS[persona.tripDuration] : 'Not set'}
-          onPress={() => setEditing('tripDuration')}
-        />
-        <TapEditRow
-          label="Youngest in group"
-          value={
-            persona.youngestAge === null
-              ? 'Not set'
-              : persona.youngestAge >= 18
-              ? 'All adults'
-              : `${persona.youngestAge} years old`
-          }
-          onPress={() => setEditing('youngestAge')}
-        />
-        <TapEditRow
-          label="Ride preferences"
-          value={
-            persona.ridePreferences.length === 0
-              ? 'Not set'
-              : persona.ridePreferences.map(c => RIDE_CATEGORY_LABELS[c]).join(', ')
-          }
-          onPress={() => setEditing('ridePreferences')}
-        />
-        <TapEditRow
-          label="Must-do rides"
-          value={mustDoNames.length === 0 ? 'None picked' : mustDoNames.join(', ')}
-          onPress={() => setEditing('mustDoRideIds')}
-        />
-        <TapEditRow
-          label="Accessibility"
-          value={
-            persona.accessibilityNeeds.length === 0
-              ? 'Not set'
-              : persona.accessibilityNeeds.map(n => ACCESSIBILITY_LABELS[n]).join(', ')
-          }
-          onPress={() => setEditing('accessibilityNeeds')}
-        />
-        <TapEditRow
-          label="Today's parks"
-          value={DAILY_PARKS_LABELS[dailyCtx?.parks ?? 'both']}
-          onPress={() => setParkPickerOpen(true)}
-        />
 
-        <Pressable
-          onPress={() => {
-            if (deviceBusy) return;
-            void (notificationsEnabled ? disableNotifications() : enableNotifications());
-          }}
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-          testID="notifications-toggle"
-          disabled={deviceBusy}
-        >
-          <View style={styles.rowText}>
-            <Text style={styles.rowLabel}>Enable notifications</Text>
-            <Text style={[styles.rowValue, notificationsEnabled && styles.notificationsOn]}>
-              {notificationsEnabled
-                ? 'On — heads-up on your must-do rides'
-                : 'Off'}
-            </Text>
-            {deviceError ? (
-              <Text style={styles.errorText} testID="device-error">{deviceError}</Text>
-            ) : null}
-          </View>
-          <Text style={styles.rowChevron}>›</Text>
-        </Pressable>
+        {/* ── Your Visit ─────────────────────────────── */}
+        <SectionHeader title="Your Visit" />
+        <Card flush style={styles.sectionCard}>
+          <TapEditRow
+            label="Trip length"
+            value={persona.tripDuration ? TRIP_DURATION_LABELS[persona.tripDuration] : 'Not set'}
+            onPress={() => setEditing('tripDuration')}
+          />
+          <TapEditRow
+            label="Youngest in group"
+            value={
+              persona.youngestAge === null ? 'Not set' :
+              persona.youngestAge >= 18 ? 'All adults' :
+              `${persona.youngestAge} years old`
+            }
+            onPress={() => setEditing('youngestAge')}
+          />
+          <TapEditRow
+            label="Ride preferences"
+            value={
+              persona.ridePreferences.length === 0 ? 'Not set' :
+              persona.ridePreferences.map(c => RIDE_CATEGORY_LABELS[c]).join(', ')
+            }
+            onPress={() => setEditing('ridePreferences')}
+          />
+          <TapEditRow
+            label="Must-do rides"
+            value={mustDoValue}
+            onPress={() => setEditing('mustDoRideIds')}
+            numberOfLines={1}
+          />
+          <TapEditRow
+            label="Accessibility"
+            value={
+              persona.accessibilityNeeds.length === 0 ? 'Not set' :
+              persona.accessibilityNeeds.map(n => ACCESSIBILITY_LABELS[n]).join(', ')
+            }
+            onPress={() => setEditing('accessibilityNeeds')}
+          />
+          <TapEditRow
+            label="Today's parks"
+            value={DAILY_PARKS_LABELS[dailyCtx?.parks ?? 'both']}
+            onPress={() => setParkPickerOpen(true)}
+          />
+        </Card>
 
-        {notificationsEnabled ? (
+        {/* ── Notifications ──────────────────────────── */}
+        <SectionHeader title="Notifications" />
+        <Card flush style={styles.sectionCard}>
+          <ToggleRow
+            label="Enable notifications"
+            value={deviceError ?? (notificationsEnabled ? 'Heads-up on your must-do rides' : 'Off')}
+            valueColor={deviceError ? colors.skip : undefined}
+            enabled={notificationsEnabled}
+            disabled={deviceBusy}
+            onValueChange={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              void (notificationsEnabled ? disableNotifications() : enableNotifications());
+            }}
+            testID="notifications-toggle"
+          />
+          {notificationsEnabled ? (
+            <>
+              <ToggleRow
+                label="Wait-time opportunities"
+                enabled={notificationTypes.trough}
+                onValueChange={v => void setNotificationTypeEnabled('trough', v)}
+                testID="notif-toggle-trough"
+              />
+              <ToggleRow
+                label="Ride closes"
+                enabled={notificationTypes.closure}
+                onValueChange={v => void setNotificationTypeEnabled('closure', v)}
+                testID="notif-toggle-closure"
+              />
+              <ToggleRow
+                label="Ride reopens"
+                enabled={notificationTypes.reopen}
+                onValueChange={v => void setNotificationTypeEnabled('reopen', v)}
+                testID="notif-toggle-reopen"
+              />
+              <ToggleRow
+                label="Peak wait alert"
+                enabled={notificationTypes.peak}
+                onValueChange={v => void setNotificationTypeEnabled('peak', v)}
+                testID="notif-toggle-peak"
+              />
+            </>
+          ) : null}
+        </Card>
+
+        {/* ── Debug ──────────────────────────────────── */}
+        <SectionHeader title="Debug" />
+        <Card flush style={styles.debugSectionCard}>
+          <ToggleRow
+            label="Debug mode"
+            value={debugMode ? 'On — fake GPS via ride picker' : 'Off'}
+            valueColor={debugMode ? colors.textTertiary : undefined}
+            enabled={debugMode}
+            onValueChange={() => {
+              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+              void setDebugMode(!debugMode);
+            }}
+            testID="debug-mode-toggle"
+          />
+          {debugMode ? (
+            <TapEditRow
+              label="View logs"
+              value="Session diagnostics — push, arm, errors"
+              onPress={() => setLogsOpen(true)}
+              testID="debug-view-logs"
+            />
+          ) : null}
           <Pressable
-            onPress={() => setNotifSettingsOpen(true)}
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            testID="notification-types"
+            onPress={() => void resetForTesting()}
+            style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
+            testID="debug-reset"
           >
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>Notification types</Text>
-              <Text style={styles.rowValue}>{notificationTypesSummary(notificationTypes)}</Text>
-            </View>
-            <Text style={styles.rowChevron}>›</Text>
+            <Text style={styles.resetText}>Reset persona</Text>
           </Pressable>
-        ) : null}
+        </Card>
 
-        <Pressable
-          onPress={() => void setDebugMode(!debugMode)}
-          style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-          testID="debug-mode-toggle"
-        >
-          <View style={styles.rowText}>
-            <Text style={styles.rowLabel}>Debug mode</Text>
-            <Text style={[styles.rowValue, debugMode && styles.debugModeOn]}>
-              {debugMode ? 'On — fake GPS via ride picker' : 'Off'}
-            </Text>
-          </View>
-          <Text style={styles.rowChevron}>›</Text>
-        </Pressable>
-
-        {debugMode ? (
-          <Pressable
-            onPress={() => setLogsOpen(true)}
-            style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
-            testID="debug-view-logs"
-          >
-            <View style={styles.rowText}>
-              <Text style={styles.rowLabel}>View logs</Text>
-              <Text style={styles.rowValue}>Session diagnostics — push, arm, errors</Text>
-            </View>
-            <Text style={styles.rowChevron}>›</Text>
-          </Pressable>
-        ) : null}
-
-        <Pressable
-          onPress={() => void resetForTesting()}
-          style={({ pressed }) => [styles.resetButton, pressed && styles.resetButtonPressed]}
-          testID="debug-reset"
-        >
-          <Text style={styles.resetText}>Reset persona (dev)</Text>
-        </Pressable>
       </ScrollView>
 
       <PersonaFieldModal field={editing} onClose={() => setEditing(null)} />
@@ -230,59 +244,23 @@ export function Profile(): React.ReactElement {
         onSelect={() => setParkPickerOpen(false)}
         onCancel={() => setParkPickerOpen(false)}
       />
-      <NotificationSettingsModal
-        visible={notifSettingsOpen}
-        onClose={() => setNotifSettingsOpen(false)}
-      />
       <DebugLogModal visible={logsOpen} onClose={() => setLogsOpen(false)} />
     </SafeAreaView>
   );
 }
 
-function notificationTypesSummary(types: { trough: boolean; closure: boolean; reopen: boolean }): string {
-  const on = [
-    types.trough && 'opportunities',
-    types.closure && 'closures',
-    types.reopen && 'reopens',
-  ].filter((x): x is string => typeof x === 'string');
-  if (on.length === 3) return 'All on';
-  if (on.length === 0) return 'All off';
-  return `${on.join(', ')}`;
-}
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' }, // TODO: tokenize
-  scroll: { paddingBottom: 24 },
-  // Rows below keep their own styles because they have non-standard content
-  // (status text, inline error, conditional values). TapEditRow handles the
-  // simple label + value + chevron cases above.
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#eee', // TODO: tokenize
+  container: { flex: 1, backgroundColor: colors.bg },
+  scroll: { paddingHorizontal: spacing.base, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },
+  sectionCard: { marginBottom: spacing.xl },
+  debugSectionCard: { marginBottom: spacing.xl, borderColor: colors.borderStrong },
+  resetRow: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.base,
+    backgroundColor: colors.surface,
   },
-  rowPressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
-  rowText: { flex: 1 },
-  rowLabel: { fontSize: 12, color: '#999', textTransform: 'uppercase', letterSpacing: 0.5 }, // TODO: tokenize
-  rowValue: { fontSize: 16, color: '#222', marginTop: 4 }, // TODO: tokenize
-  rowChevron: { fontSize: 22, color: '#bbb', marginLeft: 8 }, // TODO: tokenize
-  placeholder: { padding: 32, fontSize: 14, color: '#999', textAlign: 'center' }, // TODO: tokenize
-  resetButton: {
-    marginTop: 32,
-    marginHorizontal: 20,
-    paddingVertical: 12,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: colors.skip,
-    backgroundColor: '#fff', // TODO: tokenize
-    alignItems: 'center',
-  },
-  resetButtonPressed: { opacity: 0.6 },
-  resetText: { color: colors.skip, fontSize: 14, fontWeight: '600' },
-  debugModeOn: { color: '#f5a623', fontWeight: '600' }, // TODO: tokenize
-  notificationsOn: { color: colors.brand, fontWeight: '600' },
-  errorText: { color: colors.skip, fontSize: 12, marginTop: 6 },
+  resetRowPressed: { opacity: 0.6 },
+  resetText: { fontSize: 16, color: colors.skip },
+  placeholder: { padding: 32, fontSize: 14, color: colors.textTertiary, textAlign: 'center' },
 });

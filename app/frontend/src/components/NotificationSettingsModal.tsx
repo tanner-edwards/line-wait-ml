@@ -10,7 +10,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Star, TrendingUp } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { NotificationKind } from '../types';
@@ -49,7 +49,7 @@ const ROWS: Row[] = [
   },
   {
     kind: 'peak',
-    icon: <OctagonX size={18} color={colors.star} />,
+    icon: <TrendingUp size={18} color={colors.star} />,
     title: 'Peak wait alert',
     subtitle: "Off by default. Alerts when a must-do ride hits peak crowd levels.",
   },
@@ -81,7 +81,7 @@ export function NotificationSettingsModal({ visible, onClose }: Props): React.Re
         </View>
       ))}
       <Text style={styles.footer}>
-        Notifications still respect "I'm at the park today" and the daily park scope.
+        Notifications only send while you're at the park.
       </Text>
     </Sheet>
   );

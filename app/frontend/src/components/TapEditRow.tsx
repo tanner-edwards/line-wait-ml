@@ -10,10 +10,12 @@ interface TapEditRowProps {
   value: string;
   onPress: () => void;
   icon?: string;
+  /** Clamp the value text to N lines. Useful for long lists like must-do rides. */
+  numberOfLines?: number;
   testID?: string;
 }
 
-export function TapEditRow({ label, value, onPress, icon, testID }: TapEditRowProps): React.ReactElement {
+export function TapEditRow({ label, value, onPress, icon, numberOfLines, testID }: TapEditRowProps): React.ReactElement {
   return (
     <Pressable
       onPress={onPress}
@@ -23,7 +25,7 @@ export function TapEditRow({ label, value, onPress, icon, testID }: TapEditRowPr
       {icon ? <Text style={styles.icon}>{icon}</Text> : null}
       <View style={styles.text}>
         <Text style={styles.label}>{label}</Text>
-        <Text style={styles.value}>{value}</Text>
+        <Text style={styles.value} numberOfLines={numberOfLines}>{value}</Text>
       </View>
       <Text style={styles.chevron}>›</Text>
     </Pressable>
@@ -37,10 +39,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.base,
     borderBottomWidth: 1,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
     backgroundColor: colors.surface,
   },
-  pressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
+  pressed: { backgroundColor: colors.bg },
   icon: {
     fontSize: 18,
     marginRight: spacing.sm,
@@ -59,7 +61,7 @@ const styles = StyleSheet.create({
   },
   chevron: {
     fontSize: 22,
-    color: '#bbb', // TODO: tokenize
+    color: colors.textTertiary,
     marginLeft: 8,
   },
 });

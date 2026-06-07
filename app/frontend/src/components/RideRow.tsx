@@ -5,8 +5,8 @@
 // Row 2: [~X min walk pill]          [Trend label + TrendArrow]
 //
 // Badge precedence (mutually exclusive, highest wins):
-//   star > go > skip > walkOn (lowest — never shown alongside a badge)
-// WalkOn replaces the wait number when it applies and no badge is present.
+//   star > walkOn > go > skip
+// WalkOn replaces the wait number when it applies (and the ride isn't a star).
 // Status color on the wait number only: go=below-normal, skip=above-normal.
 
 import React, { useMemo } from 'react';
@@ -21,6 +21,7 @@ import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
 import { usePersona } from '../context/PersonaContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 interface RideRowProps {
   ride: Ride;
@@ -63,22 +64,23 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
   const bucket0 = ha?.buckets[0] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;
   const badge = ride.score?.badge ?? null;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
+  const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
   const trend = trendDir(bucket0?.wait ?? null, bucket4?.wait ?? null);
 
-  // Badge precedence: star > go > skip > walkOn. WalkOn only shown when no badge.
-  const showBadge = badge !== null;
-  const showWalkOn = walkOn && !showBadge;
+  // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip
+  // (a walk-on IS the truest "go"), but a star always wins.
+  const showWalkOn = walkOn && badge !== 'star';
+  const showBadge = badge !== null && !showWalkOn;
 
   const isBelowNormal =
     isOperating && ride.currentWait !== null && bucket0?.wait != null &&
-    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= 1 &&
+    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
     ride.currentWait < bucket0.wait * 0.75;
   const isAboveNormal =
     isOperating && ride.currentWait !== null && bucket0?.wait != null &&
-    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= 1 &&
+    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
     ride.currentWait > bucket0.wait * 1.25;
 
   const waitColor = isBelowNormal ? colors.go : isAboveNormal ? colors.skip : colors.textPrimary;
@@ -90,7 +92,7 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
       onPress={() => openDetail({ rideId: ride.id, type: null, source: 'browse' })}
       testID={`ride-${ride.id}`}
     >
-      <View style={styles.row}>
+      <View style={[styles.row, isDown && styles.rowDown]}>
         {/* Row 1 */}
         <View style={styles.row1}>
           {/* Badge — left of name (star/go/skip only; walkOn handled on right) */}
@@ -116,6 +118,8 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
                 </Text>
                 <Text style={styles.waitMin}> min</Text>
               </>
+            ) : isDown ? (
+              <Text style={styles.closedLabel}>Closed</Text>
             ) : (
               <Text style={styles.waitStatus}>{rideWaitLabel(ride)}</Text>
             )}
@@ -166,6 +170,9 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
   },
+  rowDown: {
+    backgroundColor: colors.skipBg,
+  },
   row1: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -199,6 +206,10 @@ const styles = StyleSheet.create({
   waitStatus: {
     ...typography.label,
     color: colors.textSecondary,
+  },
+  closedLabel: {
+    ...typography.waitNumber,
+    color: colors.skip,
   },
   walkOnCluster: {
     flexDirection: 'row',

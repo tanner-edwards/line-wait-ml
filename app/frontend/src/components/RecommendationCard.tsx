@@ -18,6 +18,8 @@ import { Pill } from './Pill';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
+import { useDebugMode } from '../context/DebugModeContext';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const SUPPRESSED_SCORE: ScoreResult = {
   score: 0,
@@ -50,6 +52,7 @@ interface RecommendationCardProps {
 
 export function RecommendationCard({ rec, ride }: RecommendationCardProps): React.ReactElement {
   const { openDetail } = useNotificationDetail();
+  const { debugMode } = useDebugMode();
 
   if (!ride) {
     return (
@@ -63,13 +66,14 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
   const ha = ride.historicalAverage;
   const bucket0 = ha?.buckets[0] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
+  const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const badge = scoreResult.badge;
   const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
     && (rec.arrivalWait === null || rec.arrivalWait <= 15);
-  // Badge precedence: star > go > skip > walkOn. WalkOn only shown when no badge.
-  const showWalkOn = walkOnRaw && badge === null;
+  // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.
+  const showWalkOn = walkOnRaw && badge !== 'star';
+  const showBadge = badge !== null && !showWalkOn;
   const trend = trendDir(bucket0?.wait ?? null, bucket4?.wait ?? null);
 
   const isBelowNormal =
@@ -77,7 +81,7 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
     (rec.arrivalWait ?? ride.currentWait) !== null &&
     bucket0?.wait != null &&
     bucket0.wait > 0 &&
-    (bucket0.sampleCount ?? 0) >= 1 &&
+    (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
     ((rec.arrivalWait ?? ride.currentWait) as number) < bucket0.wait * 0.75;
 
   const waitColor = isBelowNormal ? colors.go : colors.textPrimary;
@@ -89,7 +93,7 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
     : null;
 
   const walkLabel = rec.walkMinutes !== null
-    ? `~${rec.walkMinutes} min${rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
+    ? `~${rec.walkMinutes} min${debugMode && rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
     : null;
 
   const cardVariant = 'default' as const;
@@ -126,10 +130,10 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
         </View>
 
         {/* Row 2 */}
-        {(badge || trend) ? (
+        {(showBadge || trend) ? (
           <View style={styles.row2}>
             <View style={styles.badgeRow}>
-              {badge ? <Pill variant={badge} /> : null}
+              {showBadge ? <Pill variant={badge!} /> : null}
             </View>
             <View style={styles.trendRow}>
               {trend ? (

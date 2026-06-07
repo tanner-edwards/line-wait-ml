@@ -11,6 +11,8 @@ import { colors, radius, shadows, spacing } from '../theme/tokens';
 interface CardProps {
   variant?: 'default' | 'highlight' | 'flat';
   accent?: string;
+  /** Removes padding and clips children to rounded corners. Use for row-group sections. */
+  flush?: boolean;
   style?: ViewStyle;
   children: React.ReactNode;
   testID?: string;
@@ -19,6 +21,7 @@ interface CardProps {
 export function Card({
   variant = 'default',
   accent,
+  flush,
   style,
   children,
   testID,
@@ -29,6 +32,7 @@ export function Card({
         styles.card,
         variant === 'highlight' && styles.highlight,
         variant === 'flat' && styles.flat,
+        flush && styles.flush,
         accent ? { borderLeftColor: accent, borderLeftWidth: 3 } : undefined,
         style,
       ]}
@@ -55,5 +59,9 @@ const styles = StyleSheet.create({
   flat: {
     shadowOpacity: 0,
     elevation: 0,
+  },
+  flush: {
+    padding: 0,
+    overflow: 'hidden',
   },
 });

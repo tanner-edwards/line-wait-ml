@@ -139,7 +139,10 @@ describe('rideWaitLabel', () => {
 
   it('returns "Closed" for non-operating statuses regardless of wait', () => {
     expect(rideWaitLabel(makeRide({ status: 'CLOSED', currentWait: null }))).toBe('Closed');
-    expect(rideWaitLabel(makeRide({ status: 'REFURBISHMENT', currentWait: 30 }))).toBe('Closed');
     expect(rideWaitLabel(makeRide({ status: 'DOWN', currentWait: null }))).toBe('Closed');
+  });
+
+  it('returns "Refurbishment" for rides in scheduled refurb', () => {
+    expect(rideWaitLabel(makeRide({ status: 'REFURBISHMENT', currentWait: null }))).toBe('Refurbishment');
   });
 });

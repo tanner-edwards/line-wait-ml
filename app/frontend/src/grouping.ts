@@ -72,9 +72,11 @@ function sortRidesWithinLand(rides: Ride[]): Ride[] {
  * Returns the human-readable wait label for a ride.
  * - Operating rides with a wait number: "<n> min"
  * - Operating rides without a wait number: "—"
- * - Anything else: "Closed"
+ * - Rides in scheduled refurbishment: "Refurbishment"
+ * - Anything else closed: "Closed"
  */
 export function rideWaitLabel(ride: Ride): string {
+  if (ride.status === 'REFURBISHMENT') return 'Refurbishment';
   if (ride.status !== 'OPERATING') return 'Closed';
   if (ride.currentWait == null) return '—';
   return `${ride.currentWait} min`;

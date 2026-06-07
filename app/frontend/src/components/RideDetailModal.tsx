@@ -54,6 +54,7 @@ import { isWalkOnRide } from '../utils/walkOn';
 import { fetchDeviceNotifications } from '../api';
 import { getCachedNotifications } from '../utils/notificationHistoryStorage';
 import { isParkError, NotificationLogEntry, Ride } from '../types';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const BRAND = colors.brand;
 const BRAND_DIM = '#a3a5e4'; // TODO: tokenize
@@ -182,11 +183,12 @@ function DetailBody({
 
   const walkMins = userCoords ? walkMinsBetween(userCoords, ride) : null;
   const aboveBelow = computeAboveBelow(anchorWait, bucket0Wait);
-  const waitColor = aboveBelow
-    ? (aboveBelow.percent < 0 ? GREEN : RED)
-    : INK;
   const bucket4Wait = buckets?.[4]?.wait ?? null;
-  const lowConfidence = (buckets?.[0]?.sampleCount ?? 0) < 1;
+  const lowConfidence = (buckets?.[0]?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
+  // Badge precedence matches the list: star > walkOn > go > skip. The detail
+  // header shows the precise minute number (not a "Walk On" label), but it
+  // suppresses the go/skip badge when the ride is a walk-on, same as the row.
+  const showBadge = badge !== null && !(walkOn && badge !== 'star');
 
   // Per-ride notification history — latest entry per type for this ride.
   //
@@ -216,7 +218,6 @@ function DetailBody({
     <ScrollView contentContainerStyle={styles.body}>
       {/* Header block — ride name + subtitle tight pair, then wait/badge/trend */}
       <View style={styles.headerBlock}>
-        {/* Ride name — wraps freely, no ellipsis */}
         <Text style={styles.rideName}>{ride.name}</Text>
         {/* Row 1: subtitle | wait number (4px below name) */}
         <View style={styles.headerRow1}>
@@ -224,30 +225,32 @@ function DetailBody({
             {ride.land}{parkName ? ` · ${parkName}` : ''}
           </Text>
           <View style={styles.waitCluster}>
-            {(isOperating || (isDown && anchorWait !== null)) && anchorWait !== null ? (
+            {isDown ? (
               <View style={styles.waitWithAnnotation}>
-                <View style={styles.waitNumberRow}>
-                  <Text style={[styles.statusWait, { color: waitColor }]}>
-                    {anchorWait}
-                  </Text>
-                  <Text style={styles.statusWaitUnit}> min</Text>
-                </View>
-                {isDown ? (
-                  <Text style={styles.waitAnnotation}>at time of close</Text>
+                <Text style={styles.statusClosed}>Closed</Text>
+                {anchorWait !== null ? (
+                  <Text style={styles.waitAnnotation}>{anchorWait} min at close</Text>
                 ) : null}
               </View>
-            ) : isDown ? (
-              <Text style={styles.statusClosed}>Closed</Text>
+            ) : anchorWait !== null ? (
+              <View style={styles.waitWithAnnotation}>
+                <View style={styles.waitNumberRow}>
+                  <Text style={styles.statusWait}>{anchorWait}</Text>
+                  <Text style={styles.statusWaitUnit}> min</Text>
+                </View>
+                {walkOn ? (
+                  <Text style={styles.waitAnnotation}>Walk On</Text>
+                ) : null}
+              </View>
             ) : (
               <Text style={styles.statusOther}>{ride.status}</Text>
             )}
           </View>
         </View>
 
-        {/* Row 2: badge + aboveBelow | trend */}
+        {/* Row 2: aboveBelow | trend (badge moved up next to name) */}
         <View style={styles.headerRow2}>
           <View style={styles.headerLeft}>
-            {badge ? <RecommendationBadge badge={badge} /> : null}
             {aboveBelow ? (
               <View style={[styles.abovebelowPill, { backgroundColor: aboveBelow.pillBg }]}>
                 <Text style={[styles.abovebelowText, { color: aboveBelow.color }]}>
@@ -780,12 +783,23 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     paddingBottom: 12,
   },
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  titleBadge: {
+    // Vertical nudge so the badge optically aligns with the first line
+    // of the larger Lora display name rather than sitting baseline-high.
+    marginTop: 5,
+  },
   rideName: {
     fontFamily: 'Lora_700Bold',
     fontSize: 22,
     fontWeight: '700',
     color: INK,
     lineHeight: 28,
+    flex: 1,
   },
   headerRow1: {
     flexDirection: 'row',
@@ -801,9 +815,9 @@ const styles = StyleSheet.create({
     gap: 1,
     flexShrink: 0,
   },
-  statusWait: { fontSize: 36, fontWeight: '700', fontFamily: 'Outfit_700Bold' },
+  statusWait: { fontSize: 36, fontWeight: '700', fontFamily: 'Outfit_700Bold', color: INK },
   statusWaitUnit: { fontSize: 16, fontWeight: '500', color: SUBINK },
-  statusClosed: { fontSize: 20, fontWeight: '700', color: RED },
+  statusClosed: { fontSize: 32, fontWeight: '700', fontFamily: 'Outfit_700Bold', color: RED },
   statusOther: { fontSize: 14, fontWeight: '600', color: SUBINK },
   waitWithAnnotation: { alignItems: 'flex-end' },
   waitNumberRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },

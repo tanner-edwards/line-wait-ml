@@ -23,6 +23,13 @@ import { notificationTitle, notificationBody, formatDuration } from './notificat
 
 const PARK_TZ = 'America/Los_Angeles';
 
+// Minimum bucket0 sampleCount before scoring is considered trustworthy.
+// Raised from 1 → 10 on 2026-06-07 (~36 days of data). Raise toward 20
+// around 2026-07-07 once weekend counts reach ~60 samples/bucket.
+// Keep in sync with: app/backend/src/scoring/score.ts MIN_BUCKET_SAMPLE_COUNT,
+//                    app/frontend/src/scoreConstants.ts MIN_BUCKET_SAMPLE_COUNT
+const MIN_BUCKET_SAMPLE_COUNT = 10;
+
 // Disneyland Resort park UUIDs (match collect.js + backend/src/types.ts).
 // historical_averages and ride_stats docs are keyed by these IDs.
 const DLR_PARK_IDS = [
@@ -226,7 +233,7 @@ function scoreRide(ride) {
   if (!historicalAverage) return null;
 
   const [b0, b1, , b3, b4] = historicalAverage.buckets;
-  if (b0.sampleCount < 1) return null;
+  if (b0.sampleCount < MIN_BUCKET_SAMPLE_COUNT) return null;
 
   // Factor 1: current vs t+0 bucket average (±2). Absolute-difference
   // floor scales with typical wait — see absoluteFloorForTypical() below.
@@ -301,8 +308,7 @@ function scoreRide(ride) {
     rideStats &&
     rideStats.p50 >= 25 &&
     currentWait <= rideStats.p10 * 1.15 &&
-    vsAvgDelta !== null && vsAvgDelta < -0.30 &&
-    projDelta !== null && projDelta > 0.10;
+    vsAvgDelta !== null && vsAvgDelta < -0.30;
 
   if (isGoldStar) return 'star';
   if (isRapidDrop) return 'go';

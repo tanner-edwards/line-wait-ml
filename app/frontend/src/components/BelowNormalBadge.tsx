@@ -7,10 +7,8 @@
 //   - currentWait > bucket0Wait * 1.25 → "Above normal" (skip)
 //   - within ±25% band → nothing
 //
-// sampleCount gate is 1 (not 20) while data collection is young (started 2026-05-02).
-// Raise toward 20 once wait_times has several months of weekend history.
-
 import React from 'react';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 import { Pill } from './Pill';
 
 export interface BelowNormalBadgeProps {
@@ -28,7 +26,7 @@ export function BelowNormalBadge({
     currentWait === null ||
     bucket0Wait === null ||
     bucket0Wait === 0 ||
-    sampleCount < 1
+    sampleCount < MIN_BUCKET_SAMPLE_COUNT
   ) {
     return null;
   }

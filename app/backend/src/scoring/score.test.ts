@@ -313,32 +313,35 @@ describe('Factor 3 — projected change (anchored early vs late window)', () => 
 describe('"go" suppression — future dip', () => {
   it('suppresses go badge when delta < -30%', () => {
     // currentWait=15, b1=15: earlyAvg=15, lateAvg=10: delta=-33%, |diff|=5<10 → F3 pts=0 but delta stored
-    // F1=+2 (|15-30|=15), F2=+2 (below p10=20), F3=0 pts (noise filtered), F4=0 (b1=currentWait)
-    // score=4 → go → projectedChange.delta=-33% < -30% → badge suppressed to null
+    // F1=+2 (|15-30|=15), F2=+1 (bottom quartile of p10=10..p90=80), F3=0 pts (noise filtered), F4=0 (b1=currentWait)
+    // score=3 → go → projectedChange.delta=-33% < -30% → badge suppressed to null
+    // p10=10 so currentWait=15 > p10*1.15=11.5 → gold star floor condition fails → not a star
     const r = scoreRide(makeRide({
       currentWait: 15,
       historicalAverage: makeHA(30, 15, 30, 10, 10),
-      rideStats: makeStats(20, 80),
+      rideStats: makeStats(10, 80),
     }));
     expect(r.badge).toBeNull();
   });
 
   it('does NOT suppress go badge when delta is -20%', () => {
-    // F1=+2, F2=+2, F3=-1 (lateAvg=24 vs earlyAvg=30 → -20%): score=3 → go, -20% > -30% → no suppress
+    // F1=+2, F2=+1 (bottom quartile), F4=+1 (b1=30 vs 15 → rising): score=4 → go, -20% > -30% → no suppress
+    // p10=10 keeps currentWait=15 above the gold star floor (p10*1.15=11.5)
     const r = scoreRide(makeRide({
       currentWait: 15,
       historicalAverage: makeHA(30, 30, 30, 24, 24),
-      rideStats: makeStats(20, 80),
+      rideStats: makeStats(10, 80),
     }));
     expect(r.badge).toBe('go');
   });
 
   it('does NOT suppress go badge when late buckets are null', () => {
     // projectedChange=null → suppression check skipped
+    // p10=10 keeps currentWait=15 above the gold star floor
     const r = scoreRide(makeRide({
       currentWait: 15,
       historicalAverage: makeHA(30, 30, 30, null, null),
-      rideStats: makeStats(20, 80),
+      rideStats: makeStats(10, 80),
     }));
     expect(r.badge).toBe('go');
   });
@@ -462,22 +465,24 @@ describe('gold star', () => {
     expect(r.badge).not.toBe('star');
   });
 
-  it('does NOT fire when projected trend is falling (projectedChange.delta < 0)', () => {
-    // currentWait=20, b1=50: earlyAvg=35, lateAvg=20: delta=-43% → gold star condition 3 fails
+  it('fires even when projected trend is falling — rarity is the signal', () => {
+    // currentWait=20, lateAvg=20: flat/falling projection no longer blocks star.
+    // The three remaining conditions (p50>=25, at floor, 30%+ below avg) are enough.
     const r = scoreRide({
       ...goldStarRide(),
       historicalAverage: makeHA(50, 50, 50, 20, 20),
     });
-    expect(r.badge).not.toBe('star');
+    expect(r.badge).toBe('star');
   });
 
-  it('does NOT fire when projectedChange is null (no late-bucket data)', () => {
+  it('fires even when projectedChange is null (no late-bucket data)', () => {
+    // Projection data being absent does not prevent a star — rarity conditions suffice.
     const r = scoreRide({
       ...goldStarRide(),
       historicalAverage: makeHA(50, 50, 50, null, null),
     });
     expect(r.factors.projectedChange).toBeNull();
-    expect(r.badge).not.toBe('star');
+    expect(r.badge).toBe('star');
   });
 
   it('does NOT fire when ride median (p50) is below 25 min', () => {
