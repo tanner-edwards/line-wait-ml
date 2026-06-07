@@ -26,19 +26,17 @@
 // doing this, preserve all content exactly and change only the container.
 // Ref: club32-design-system-phase2.md §1 "Flagged decision — RideDetailModal".
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { colors } from '../theme/tokens';
 import {
-  Modal,
-  PanResponder,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Bell, BellOff, CircleCheck, Navigation2, OctagonX, Star, X } from 'lucide-react-native';
+import { Bell, CircleCheck, OctagonX, Star, X } from 'lucide-react-native';
+import { Sheet } from './Sheet';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
@@ -51,6 +49,7 @@ import { haversineMeters } from '../grouping';
 import { formatBucketTimeSlot, formatHHMM, formatTimeAgo } from '../timestamp';
 import { formatDuration, notificationBody } from '../../../../notification-copy';
 import { RecommendationBadge } from './RecommendationBadge';
+import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { fetchDeviceNotifications } from '../api';
 import { getCachedNotifications } from '../utils/notificationHistoryStorage';
@@ -88,18 +87,6 @@ export function RideDetailModal(): React.ReactElement {
   const { ridesById, data } = useRides();
   const { coords } = useLocation();
 
-  const closeDetailRef = useRef(closeDetail);
-  useEffect(() => { closeDetailRef.current = closeDetail; }, [closeDetail]);
-  const panResponder = useRef(
-    PanResponder.create({
-      onMoveShouldSetPanResponder: (_, gs) =>
-        gs.dy > 10 && gs.dy > Math.abs(gs.dx),
-      onPanResponderRelease: (_, gs) => {
-        if (gs.dy > 80 || gs.vy > 0.8) closeDetailRef.current();
-      },
-    })
-  ).current;
-
   const ride = active ? ridesById.get(active.rideId) ?? null : null;
   const parkName = useMemo(() => {
     if (!ride || !data) return null;
@@ -108,52 +95,40 @@ export function RideDetailModal(): React.ReactElement {
     );
     return entry?.park ?? null;
   }, [ride, data]);
-  const visible = active !== null;
 
   return (
-    <Modal visible={visible} animationType="slide" transparent onRequestClose={closeDetail}>
-      <View style={[styles.backdrop, active?.source === 'history' && styles.backdropClear]}>
-        <SafeAreaView style={styles.container}>
-          <View style={styles.dragHandleRow} {...panResponder.panHandlers}>
-            <View style={styles.dragPill} />
-          </View>
-          <View style={styles.headerBar}>
-            <Pressable
-              onPress={closeDetail}
-              style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
-              testID="ride-detail-back"
-              hitSlop={12}
-            >
-              <Text style={styles.backArrow}>‹ Back</Text>
-            </Pressable>
-            <View style={styles.headerSpacer} />
-            <Pressable
-              onPress={dismissAll}
-              style={({ pressed }) => [styles.backButton, pressed && styles.backButtonPressed]}
-              testID="ride-detail-dismiss"
-              hitSlop={12}
-            >
-              <X size={18} color={colors.textSecondary} />
-            </Pressable>
-          </View>
-          {ride ? (
-            <DetailBody
-              ride={ride}
-              parkName={parkName}
-              userCoords={coords}
-              notifDurationMs={active?.durationMs ?? null}
-              notifClosedAt={active?.closedAt ?? null}
-            />
-          ) : active ? (
-            <View style={styles.fallbackBlock}>
-              <Text style={styles.fallback}>
-                That ride isn't in the current snapshot. Check the Browse tab for the latest status.
-              </Text>
-            </View>
-          ) : null}
-        </SafeAreaView>
-      </View>
-    </Modal>
+    <Sheet
+      isOpen={active !== null}
+      onClose={closeDetail}
+      size="tall"
+      backdropColor={active?.source === 'history' ? 'transparent' : undefined}
+      headerRight={
+        <Pressable
+          onPress={dismissAll}
+          hitSlop={12}
+          testID="ride-detail-dismiss"
+        >
+          <X size={18} color={colors.textSecondary} />
+        </Pressable>
+      }
+      testID="ride-detail"
+    >
+      {ride ? (
+        <DetailBody
+          ride={ride}
+          parkName={parkName}
+          userCoords={coords}
+          notifDurationMs={active?.durationMs ?? null}
+          notifClosedAt={active?.closedAt ?? null}
+        />
+      ) : active ? (
+        <View style={styles.fallbackBlock}>
+          <Text style={styles.fallback}>
+            That ride isn't in the current snapshot. Check the Browse tab for the latest status.
+          </Text>
+        </View>
+      ) : null}
+    </Sheet>
   );
 }
 
@@ -207,6 +182,11 @@ function DetailBody({
 
   const walkMins = userCoords ? walkMinsBetween(userCoords, ride) : null;
   const aboveBelow = computeAboveBelow(anchorWait, bucket0Wait);
+  const waitColor = aboveBelow
+    ? (aboveBelow.percent < 0 ? GREEN : RED)
+    : INK;
+  const bucket4Wait = buckets?.[4]?.wait ?? null;
+  const lowConfidence = (buckets?.[0]?.sampleCount ?? 0) < 1;
 
   // Per-ride notification history — latest entry per type for this ride.
   //
@@ -234,48 +214,88 @@ function DetailBody({
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
-      {/* Title block — name + land · park, with a small walk-time pill
-          when we have user GPS + ride coordinates (mirrors the list view). */}
-      <View style={styles.titleBlock}>
-        <Text style={styles.title}>{ride.name}</Text>
-        <View style={styles.titleMetaRow}>
+      {/* Header block — ride name + subtitle tight pair, then wait/badge/trend */}
+      <View style={styles.headerBlock}>
+        {/* Ride name — wraps freely, no ellipsis */}
+        <Text style={styles.rideName}>{ride.name}</Text>
+        {/* Row 1: subtitle | wait number (4px below name) */}
+        <View style={styles.headerRow1}>
           <Text style={styles.subtitle}>
             {ride.land}{parkName ? ` · ${parkName}` : ''}
           </Text>
-          <View style={styles.titleMetaRight}>
-            <Pressable
-              onPress={onToggleWatch}
-              hitSlop={10}
-              style={styles.bellPressable}
-              testID={`detail-bell-${ride.id}`}
-              accessibilityRole="button"
-              accessibilityLabel={isWatching ? 'Remove alert' : 'Set alert'}
-            >
-              {isWatching
-                ? <Bell size={20} color={colors.brand} />
-                : <BellOff size={20} color={colors.textTertiary} />
-              }
-            </Pressable>
-            {walkMins != null ? (
-              <View style={styles.walkPill}>
-                <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
+          <View style={styles.waitCluster}>
+            {(isOperating || (isDown && anchorWait !== null)) && anchorWait !== null ? (
+              <View style={styles.waitWithAnnotation}>
+                <View style={styles.waitNumberRow}>
+                  <Text style={[styles.statusWait, { color: waitColor }]}>
+                    {anchorWait}
+                  </Text>
+                  <Text style={styles.statusWaitUnit}> min</Text>
+                </View>
+                {isDown ? (
+                  <Text style={styles.waitAnnotation}>at time of close</Text>
+                ) : null}
+              </View>
+            ) : isDown ? (
+              <Text style={styles.statusClosed}>Closed</Text>
+            ) : (
+              <Text style={styles.statusOther}>{ride.status}</Text>
+            )}
+          </View>
+        </View>
+
+        {/* Row 2: badge + aboveBelow | trend */}
+        <View style={styles.headerRow2}>
+          <View style={styles.headerLeft}>
+            {badge ? <RecommendationBadge badge={badge} /> : null}
+            {aboveBelow ? (
+              <View style={[styles.abovebelowPill, { backgroundColor: aboveBelow.pillBg }]}>
+                <Text style={[styles.abovebelowText, { color: aboveBelow.color }]}>
+                  {aboveBelow.shortLabel}
+                </Text>
               </View>
             ) : null}
           </View>
+          <View style={styles.trendCluster}>
+            {bucket0Wait != null && bucket4Wait != null ? (
+              <>
+                <Text style={styles.trendLabel}>
+                  {bucket4Wait < bucket0Wait * 0.9 ? 'Dropping'
+                    : bucket4Wait > bucket0Wait * 1.1 ? 'Rising'
+                    : 'Steady'}
+                </Text>
+                <TrendArrow
+                  bucket0Wait={bucket0Wait}
+                  bucket2Wait={bucket4Wait}
+                  lowConfidence={lowConfidence}
+                />
+              </>
+            ) : null}
+          </View>
+        </View>
+
+        {/* Row 3: walk distance (left) + notify pill (right) */}
+        <View style={styles.walkNotifyRow}>
+          {walkMins != null ? (
+            <View style={styles.walkPill}>
+              <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
+            </View>
+          ) : <View />}
+          <Pressable
+            onPress={onToggleWatch}
+            style={({ pressed }) => [styles.notifyPill, isWatching && styles.notifyPillActive, pressed && styles.notifyPillPressed]}
+            hitSlop={8}
+            testID={`detail-bell-${ride.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={isWatching ? 'Remove alert' : 'Set alert'}
+          >
+            <Bell size={12} color={isWatching ? colors.brand : colors.textTertiary} />
+            <Text style={[styles.notifyPillText, isWatching && styles.notifyPillTextActive]}>
+              {isWatching ? 'Watching' : 'Notify'}
+            </Text>
+          </Pressable>
         </View>
       </View>
-
-      {/* Status row — wait/closed + badge + below-normal pill */}
-      <StatusRow
-        isOperating={isOperating}
-        isDown={isDown}
-        statusText={ride.status}
-        wait={anchorWait}
-        closedAnnotation={isDown && closedWait != null}
-        badge={badge}
-        walkOn={walkOn}
-        aboveBelow={aboveBelow}
-      />
 
       {/* Right-now tile — moved ABOVE the graph since the current-vs-typical
           comparison is the most decision-relevant single number on the page. */}
@@ -402,65 +422,6 @@ function DetailBody({
       ) : null}
 
     </ScrollView>
-  );
-}
-
-// ---- Status row ---------------------------------------------------
-
-function StatusRow({
-  isOperating,
-  isDown,
-  statusText,
-  wait,
-  closedAnnotation,
-  badge,
-  walkOn,
-  aboveBelow,
-}: {
-  isOperating: boolean;
-  isDown: boolean;
-  statusText: string;
-  wait: number | null;
-  closedAnnotation: boolean;
-  badge: 'star' | 'go' | 'skip' | null;
-  walkOn: boolean;
-  aboveBelow: AboveBelow | null;
-}): React.ReactElement {
-  return (
-    <View style={styles.statusRow}>
-      <View style={styles.statusWaitBlock}>
-        {isOperating && wait != null ? (
-          <Text style={styles.statusWait}>
-            {wait}<Text style={styles.statusWaitUnit}> min</Text>
-          </Text>
-        ) : isDown && wait != null ? (
-          <View>
-            <Text style={styles.statusWait}>
-              {wait}<Text style={styles.statusWaitUnit}> min</Text>
-            </Text>
-            <Text style={styles.statusWaitAnnotation}>at time of close</Text>
-          </View>
-        ) : (
-          <Text style={[styles.statusPill, isDown ? styles.statusPillClosed : styles.statusPillOther]}>
-            {isDown ? 'Closed' : statusText}
-          </Text>
-        )}
-      </View>
-      <View style={styles.statusBadges}>
-        {walkOn ? (
-          <Navigation2 size={18} color={colors.go} />
-        ) : badge ? (
-          <RecommendationBadge badge={badge} />
-        ) : null}
-        {aboveBelow ? (
-          <View style={[styles.belowAbovePill, { backgroundColor: aboveBelow.pillBg }]}>
-            <Text style={[styles.belowAbovePillText, { color: aboveBelow.color }]}>
-              {aboveBelow.shortLabel}
-            </Text>
-          </View>
-        ) : null}
-      </View>
-    </View>
   );
 }
 
@@ -811,106 +772,102 @@ function computeAboveBelow(current: number | null, typical: number | null): Abov
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
+  body: { paddingTop: 4, paddingBottom: 48 },
+
+  headerBlock: {
+    marginBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 12,
   },
-  backdropClear: {
-    backgroundColor: 'transparent',
+  rideName: {
+    fontFamily: 'Lora_700Bold',
+    fontSize: 22,
+    fontWeight: '700',
+    color: INK,
+    lineHeight: 28,
   },
-  container: {
-    height: '90%',
-    backgroundColor: '#fff', // TODO: tokenize
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    overflow: 'hidden',
-  },
-  dragHandleRow: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    backgroundColor: '#fff', // TODO: tokenize
-  },
-  dragPill: {
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ddd', // TODO: tokenize
-  },
-  headerBar: {
+  headerRow1: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    borderBottomColor: '#eee', // TODO: tokenize
-    borderBottomWidth: 1,
+    alignItems: 'baseline',
+    justifyContent: 'space-between',
+    marginTop: 4, // tight gap between name and subtitle
+    marginBottom: 6,
   },
-  backButton: { paddingHorizontal: 12, paddingVertical: 6 },
-  backButtonPressed: { opacity: 0.5 },
-  backArrow: { fontSize: 16, color: BRAND, fontWeight: '600' },
-  headerSpacer: { flex: 1 },
-
-  body: { padding: 10, paddingBottom: 48 },
-
-  titleBlock: { marginBottom: 12, paddingHorizontal: 4 },
-  titleMetaRow: {
+  subtitle: { fontSize: 13, color: SUBINK, flexShrink: 1, marginRight: 8 },
+  waitCluster: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 1,
+    flexShrink: 0,
+  },
+  statusWait: { fontSize: 36, fontWeight: '700', fontFamily: 'Outfit_700Bold' },
+  statusWaitUnit: { fontSize: 16, fontWeight: '500', color: SUBINK },
+  statusClosed: { fontSize: 20, fontWeight: '700', color: RED },
+  statusOther: { fontSize: 14, fontWeight: '600', color: SUBINK },
+  waitWithAnnotation: { alignItems: 'flex-end' },
+  waitNumberRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
+  waitAnnotation: { fontSize: 10, color: RED, marginTop: -2 },
+  headerRow2: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 8,
-    marginTop: 4,
+    marginBottom: 6,
   },
-  titleMetaRight: {
+  headerLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 6,
+    flex: 1,
+    flexWrap: 'wrap',
   },
-  bellPressable: {
-    paddingHorizontal: 4,
-    paddingVertical: 2,
+  walkNotifyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 6,
   },
-  walkPill: {
-    backgroundColor: '#eef0fa', // TODO: tokenize
+  notifyPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
     paddingHorizontal: 10,
     paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.surface,
+  },
+  notifyPillActive: {
+    borderColor: colors.brand,
+    backgroundColor: colors.bg,
+  },
+  notifyPillPressed: { opacity: 0.7 },
+  notifyPillText: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
+  notifyPillTextActive: { color: colors.brand, fontWeight: '600' },
+  abovebelowPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  abovebelowText: { fontSize: 11, fontWeight: '700' },
+  trendCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendLabel: {
+    fontSize: 12,
+    color: SUBINK,
+    marginRight: 2,
+  },
+  walkPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.border,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 999,
   },
   walkPillText: { fontSize: 12, color: BRAND, fontWeight: '600' },
-  title: { fontSize: 22, fontWeight: '700', color: INK },
-  subtitle: { fontSize: 13, color: SUBINK, flexShrink: 1 },
-
-  statusRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 4,
-    marginBottom: 16,
-  },
-  statusWaitBlock: { flexShrink: 1 },
-  statusWait: { fontSize: 36, fontWeight: '700', color: INK },
-  statusWaitUnit: { fontSize: 16, fontWeight: '500', color: SUBINK },
-  statusWaitAnnotation: { fontSize: 11, color: RED, marginTop: -4 },
-  statusPill: {
-    fontSize: 13,
-    fontWeight: '700',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 999,
-    overflow: 'hidden',
-  },
-  statusPillClosed: { backgroundColor: '#fde2e2' /* TODO: tokenize */, color: RED },
-  statusPillOther: { backgroundColor: '#f4f4f4' /* TODO: tokenize */, color: SUBINK },
-  statusBadges: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  belowAbovePill: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  belowAbovePillText: { fontSize: 11, fontWeight: '700' },
 
   tile: {
     backgroundColor: colors.bg,

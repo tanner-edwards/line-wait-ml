@@ -25,6 +25,8 @@ export interface SheetProps {
   onClose: () => void;
   /** When false, backdrop tap and drag-down are both disabled. Default: true. */
   dismissable?: boolean;
+  /** Override the backdrop colour. Pass 'transparent' to avoid stacking overlays. */
+  backdropColor?: string;
   /**
    * Fixed-height preset. Omit to size the sheet to its content (max 90%).
    * half ≈ 50%  |  tall ≈ 85%
@@ -42,6 +44,7 @@ export function Sheet({
   isOpen,
   onClose,
   dismissable = true,
+  backdropColor,
   size,
   title,
   headerRight,
@@ -90,7 +93,7 @@ export function Sheet({
       animationType="slide"
       onRequestClose={dismissable ? onClose : () => {}}
     >
-      <View style={styles.backdrop} testID={testID}>
+      <View style={[styles.backdrop, backdropColor ? { backgroundColor: backdropColor } : undefined]} testID={testID}>
         {dismissable ? (
           <Pressable
             style={styles.dismissArea}
@@ -115,7 +118,10 @@ export function Sheet({
           </View>
           {showHeader && (
             <View style={styles.header}>
-              <Text style={styles.title}>{title ?? ''}</Text>
+              {/* flex:1 spacer ensures headerRight stays right-aligned even with no title */}
+              <View style={styles.headerTitleSlot}>
+                {title ? <Text style={styles.title}>{title}</Text> : null}
+              </View>
               {headerRight ?? closeButton}
             </View>
           )}
@@ -137,7 +143,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: spacing.base,
     paddingBottom: spacing.xxl,
     ...shadows.sheet,
   },
@@ -159,6 +165,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     marginBottom: spacing.md,
+  },
+  headerTitleSlot: {
+    flex: 1,
+    marginRight: 8,
   },
   title: {
     fontSize: 18,

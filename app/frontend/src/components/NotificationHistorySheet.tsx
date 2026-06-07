@@ -12,7 +12,7 @@
 
 import { notificationBody } from '../../../../notification-copy';
 import React, { useCallback, useEffect, useState } from 'react';
-import { colors } from '../theme/tokens';
+import { colors, typography } from '../theme/tokens';
 import {
   ActivityIndicator,
   FlatList,
@@ -21,7 +21,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Star, TrendingUp } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { ApiError, fetchDeviceNotifications } from '../api';
@@ -146,7 +146,7 @@ function Row({
 
 function iconFor(entry: NotificationLogEntry): React.ReactElement {
   if (entry.type === 'closure') return <OctagonX size={18} color={colors.skip} />;
-  if (entry.type === 'peak')    return <OctagonX size={18} color={colors.star} />;
+  if (entry.type === 'peak')    return <TrendingUp size={18} color={colors.skip} />;
   if (entry.type === 'reopen')  return <CircleCheck size={18} color={colors.go} />;
   if (entry.badge === 'star')   return <Star size={18} color={colors.star} fill={colors.star} />;
   return <CircleCheck size={18} color={colors.go} />;
@@ -172,11 +172,11 @@ const styles = StyleSheet.create({
     borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  rowPressed: { backgroundColor: '#f4f4ff' }, // TODO: tokenize
+  rowPressed: { backgroundColor: colors.goBg },
   iconCell: { marginRight: 10, marginTop: 1, width: 20, alignItems: 'center' },
   rowText: { flex: 1, paddingRight: 8 },
-  rowTitle: { fontSize: 14, fontWeight: '600', color: '#222' }, // TODO: tokenize
-  rowBody: { fontSize: 13, color: '#444', marginTop: 2 }, // TODO: tokenize
-  when: { fontSize: 11, color: colors.textTertiary, marginTop: 3 },
+  rowTitle: { ...typography.label, color: colors.textPrimary },
+  rowBody: { ...typography.caption, color: colors.textSecondary, marginTop: 2 },
+  when: { ...typography.caption, color: colors.textTertiary, marginTop: 3 },
   footer: { fontSize: 11, color: colors.textTertiary, marginTop: 14, textAlign: 'center' },
 });
