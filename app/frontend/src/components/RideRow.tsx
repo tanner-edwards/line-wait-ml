@@ -17,6 +17,7 @@ import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
+import { trendDirection } from '../utils/trendDirection';
 import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
 import { usePersona } from '../context/PersonaContext';
@@ -42,12 +43,6 @@ function walkMinsTo(
 }
 
 const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
-function trendDir(b0: number | null, b4: number | null): 'down' | 'up' | 'stable' | null {
-  if (!b0 || !b4 || b0 === 0) return null;
-  if (b4 < b0 * 0.9) return 'down';
-  if (b4 > b0 * 1.1) return 'up';
-  return 'stable';
-}
 
 export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement {
   const { persona } = usePersona();
@@ -62,12 +57,25 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
   const isDown = ride.status === 'DOWN';
   const ha = ride.historicalAverage;
   const bucket0 = ha?.buckets[0] ?? null;
+  const bucket1 = ha?.buckets[1] ?? null;
+  const bucket3 = ha?.buckets[3] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;
   const badge = ride.score?.badge ?? null;
   const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
-  const trend = trendDir(bucket0?.wait ?? null, bucket4?.wait ?? null);
+
+  // Trend combines real recent past observations with the historical-average
+  // future curve. recentHistory is most-recent-first; we use [0] as the
+  // last real datapoint. Past + future deltas summed, ±5 min threshold.
+  const trendInput = {
+    currentWait: ride.currentWait,
+    recentWait: ride.recentHistory?.[0]?.wait ?? null,
+    bucket1Wait: bucket1?.wait ?? null,
+    bucket3Wait: bucket3?.wait ?? null,
+    bucket4Wait: bucket4?.wait ?? null,
+  };
+  const trend = trendDirection(trendInput);
 
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip
   // (a walk-on IS the truest "go"), but a star always wins.
@@ -100,7 +108,7 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
 
           {/* Name + optional bell */}
           <View style={styles.nameRow}>
-            <Text style={styles.rideName}>{ride.name}</Text>
+            <Text style={[styles.rideName, isDown && styles.rideNameDown]}>{ride.name}</Text>
             {isWatching && <Bell size={12} color={colors.star} />}
           </View>
 
@@ -142,8 +150,7 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
               {trend ? <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text> : null}
               {bucket0?.wait != null && bucket4?.wait != null ? (
                 <TrendArrow
-                  bucket0Wait={bucket0.wait}
-                  bucket2Wait={bucket4.wait}
+                  {...trendInput}
                   lowConfidence={lowConfidence}
                 />
               ) : null}
@@ -171,7 +178,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   rowDown: {
-    backgroundColor: colors.skipBg,
+    backgroundColor: colors.bg,
+    opacity: 0.75,
   },
   row1: {
     flexDirection: 'row',
@@ -188,6 +196,9 @@ const styles = StyleSheet.create({
     ...typography.cardTitle,
     color: colors.textPrimary,
     flexShrink: 1,
+  },
+  rideNameDown: {
+    color: colors.textTertiary,
   },
   waitCluster: {
     flexDirection: 'row',
@@ -208,8 +219,8 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
   },
   closedLabel: {
-    ...typography.waitNumber,
-    color: colors.skip,
+    ...typography.label,
+    color: colors.textTertiary,
   },
   walkOnCluster: {
     flexDirection: 'row',
@@ -255,7 +266,7 @@ const styles = StyleSheet.create({
   },
   closedSince: {
     ...typography.caption,
-    color: colors.skip,
+    color: colors.textTertiary,
     marginTop: spacing.xs,
   },
 });

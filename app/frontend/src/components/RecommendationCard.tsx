@@ -17,6 +17,7 @@ import { Card } from './Card';
 import { Pill } from './Pill';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
+import { trendDirection } from '../utils/trendDirection';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useDebugMode } from '../context/DebugModeContext';
 import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
@@ -34,16 +35,6 @@ const SUPPRESSED_SCORE: ScoreResult = {
 };
 
 const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
-
-function trendDir(
-  b0: number | null,
-  b4: number | null
-): 'down' | 'up' | 'stable' | null {
-  if (!b0 || !b4 || b0 === 0) return null;
-  if (b4 < b0 * 0.9) return 'down';
-  if (b4 > b0 * 1.1) return 'up';
-  return 'stable';
-}
 
 interface RecommendationCardProps {
   rec: Recommendation;
@@ -65,6 +56,8 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
   const isOperating = ride.status === 'OPERATING';
   const ha = ride.historicalAverage;
   const bucket0 = ha?.buckets[0] ?? null;
+  const bucket1 = ha?.buckets[1] ?? null;
+  const bucket3 = ha?.buckets[3] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;
   const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
@@ -74,7 +67,18 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.
   const showWalkOn = walkOnRaw && badge !== 'star';
   const showBadge = badge !== null && !showWalkOn;
-  const trend = trendDir(bucket0?.wait ?? null, bucket4?.wait ?? null);
+  // Trend combines real past observations with the historical-average future
+  // curve. We anchor "current" on arrivalWait when available (the wait the
+  // guest will actually face after walking over) — the past observation
+  // becomes the "where the ride was when we last polled".
+  const trendInput = {
+    currentWait: rec.arrivalWait ?? ride.currentWait,
+    recentWait: ride.recentHistory?.[0]?.wait ?? null,
+    bucket1Wait: bucket1?.wait ?? null,
+    bucket3Wait: bucket3?.wait ?? null,
+    bucket4Wait: bucket4?.wait ?? null,
+  };
+  const trend = trendDirection(trendInput);
 
   const isBelowNormal =
     isOperating &&
@@ -141,8 +145,7 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
               ) : null}
               {bucket0?.wait != null && bucket4?.wait != null ? (
                 <TrendArrow
-                  bucket0Wait={bucket0.wait}
-                  bucket2Wait={bucket4.wait}
+                  {...trendInput}
                   lowConfidence={lowConfidence}
                 />
               ) : null}

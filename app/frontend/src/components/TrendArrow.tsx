@@ -2,10 +2,9 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Minus, TrendingDown, TrendingUp } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
+import { trendDirection, TrendInput } from '../utils/trendDirection';
 
-export interface TrendArrowProps {
-  bucket0Wait: number | null;
-  bucket2Wait: number | null;
+export interface TrendArrowProps extends TrendInput {
   /**
    * When true, the arrow renders with a dashed border — signals a low-
    * confidence estimate (thin historical data) without changing the direction.
@@ -15,39 +14,29 @@ export interface TrendArrowProps {
 
 /**
  * Direction-of-change indicator next to a ride's current wait.
- * Compares the historical-average bucket at t+0 to t+60 (next hour).
- *
- * Render rules:
- *   - null bucket0Wait / bucket2Wait, or bucket0Wait === 0 → null
- *   - bucket2Wait < bucket0Wait * 0.9 → TrendingDown (green — good, wait dropping)
- *   - bucket2Wait > bucket0Wait * 1.1 → TrendingUp   (red — bad, wait rising)
- *   - ±10% band → Minus (stable, gray)
+ * Delegates the actual decision to the shared `trendDirection` helper, so the
+ * arrow, the "Rising/Dropping/Steady" label, and the TrendCaption sentence
+ * all agree by construction.
  */
 export function TrendArrow({
-  bucket0Wait,
-  bucket2Wait,
   lowConfidence,
+  ...input
 }: TrendArrowProps): React.ReactElement | null {
-  if (bucket0Wait === null || bucket2Wait === null || bucket0Wait === 0) {
-    return null;
-  }
+  const direction = trendDirection(input);
+  if (direction === null) return null;
 
   let Icon: typeof TrendingDown;
   let color: string;
-  let direction: 'down' | 'up' | 'stable';
 
-  if (bucket2Wait < bucket0Wait * 0.9) {
+  if (direction === 'down') {
     Icon = TrendingDown;
     color = colors.go;
-    direction = 'down';
-  } else if (bucket2Wait > bucket0Wait * 1.1) {
+  } else if (direction === 'up') {
     Icon = TrendingUp;
     color = colors.skip;
-    direction = 'up';
   } else {
     Icon = Minus;
     color = colors.textSecondary;
-    direction = 'stable';
   }
 
   return (

@@ -494,6 +494,37 @@ describe('gold star', () => {
     });
     expect(r.badge).not.toBe('star');
   });
+
+  it('does NOT fire when the absolute drop is below the typical-wait floor (Big Thunder rope-drop case)', () => {
+    // Headliner during rope drop: typical wait for this slot is 8 min,
+    // current is 5 min. Percent drop is -37.5% (passes the -30% threshold),
+    // but the absolute drop is only 3 min — below the 5-min floor for a
+    // typical=8 baseline. This is the ride's normal early-morning pattern,
+    // not a rare opportunity. Star must NOT fire.
+    const r = scoreRide(makeRide({
+      currentWait: 5,
+      historicalAverage: makeHA(8, 8, 8, 8, 8),       // bucket0=8: typical for this slot
+      rideStats: makeStats(5, 60, 200, 35),            // headliner overall (p50=35), p10=5
+    }));
+    // Sanity: the percent check on its own would still pass.
+    expect(r.factors.vsAvg?.delta).toBeCloseTo(-3 / 8, 5);
+    // But the absolute floor (5 min for typical=8) blocks the star.
+    expect(r.badge).not.toBe('star');
+  });
+
+  it('still fires on a high-baseline near-floor moment (Guardians-style sanity check)', () => {
+    // Genuine headliner moment: typical wait for this slot is 60 min,
+    // current is 10 min. 50-min drop easily clears the 12.5-min floor
+    // for typical=60, percent is -83%, currentWait at the rare-low tail.
+    // Star SHOULD fire — this is exactly the case the gold star exists for.
+    const r = scoreRide(makeRide({
+      currentWait: 10,
+      historicalAverage: makeHA(60, 60, 60, 60, 60),
+      rideStats: makeStats(10, 90, 200, 55),           // headliner, p10=10
+    }));
+    expect(r.factors.vsAvg?.delta).toBeCloseTo(-50 / 60, 5);
+    expect(r.badge).toBe('star');
+  });
 });
 
 // --- Rapid change factor ---

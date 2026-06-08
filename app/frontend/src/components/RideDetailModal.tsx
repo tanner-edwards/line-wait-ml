@@ -51,6 +51,7 @@ import { formatDuration, notificationBody } from '../../../../notification-copy'
 import { RecommendationBadge } from './RecommendationBadge';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
+import { trendDirection } from '../utils/trendDirection';
 import { fetchDeviceNotifications } from '../api';
 import { getCachedNotifications } from '../utils/notificationHistoryStorage';
 import { isParkError, NotificationLogEntry, Ride } from '../types';
@@ -248,9 +249,10 @@ function DetailBody({
           </View>
         </View>
 
-        {/* Row 2: aboveBelow | trend (badge moved up next to name) */}
+        {/* Row 2: badge + aboveBelow | trend */}
         <View style={styles.headerRow2}>
           <View style={styles.headerLeft}>
+            {showBadge ? <RecommendationBadge badge={badge} /> : null}
             {aboveBelow ? (
               <View style={[styles.abovebelowPill, { backgroundColor: aboveBelow.pillBg }]}>
                 <Text style={[styles.abovebelowText, { color: aboveBelow.color }]}>
@@ -260,20 +262,27 @@ function DetailBody({
             ) : null}
           </View>
           <View style={styles.trendCluster}>
-            {bucket0Wait != null && bucket4Wait != null ? (
-              <>
-                <Text style={styles.trendLabel}>
-                  {bucket4Wait < bucket0Wait * 0.9 ? 'Dropping'
-                    : bucket4Wait > bucket0Wait * 1.1 ? 'Rising'
-                    : 'Steady'}
-                </Text>
-                <TrendArrow
-                  bucket0Wait={bucket0Wait}
-                  bucket2Wait={bucket4Wait}
-                  lowConfidence={lowConfidence}
-                />
-              </>
-            ) : null}
+            {(() => {
+              // Trend combines real past observations with the historical-average
+              // future curve. Single source of truth via trendDirection — so the
+              // label, arrow, AND caption can't disagree.
+              const trendInput = {
+                currentWait: anchorWait,
+                recentWait: ride.recentHistory?.[0]?.wait ?? null,
+                bucket1Wait: buckets?.[1]?.wait ?? null,
+                bucket3Wait: buckets?.[3]?.wait ?? null,
+                bucket4Wait,
+              };
+              const trend = trendDirection(trendInput);
+              if (trend === null) return null;
+              const label = trend === 'down' ? 'Dropping' : trend === 'up' ? 'Rising' : 'Steady';
+              return (
+                <>
+                  <Text style={styles.trendLabel}>{label}</Text>
+                  <TrendArrow {...trendInput} lowConfidence={lowConfidence} />
+                </>
+              );
+            })()}
           </View>
         </View>
 
@@ -332,7 +341,10 @@ function DetailBody({
           <TrendCaption
             anchorWait={anchorWait}
             isDown={isDown}
-            futureBuckets={buckets ?? null}
+            recentWait={ride.recentHistory?.[0]?.wait ?? null}
+            bucket1Wait={buckets?.[1]?.wait ?? null}
+            bucket3Wait={buckets?.[3]?.wait ?? null}
+            bucket4Wait={bucket4Wait}
           />
         </Tile>
       ) : null}
@@ -584,23 +596,34 @@ function TrendGraph({
 function TrendCaption({
   anchorWait,
   isDown,
-  futureBuckets,
+  recentWait,
+  bucket1Wait,
+  bucket3Wait,
+  bucket4Wait,
 }: {
   anchorWait: number | null;
   isDown: boolean;
-  futureBuckets: { offsetMinutes: number; wait: number | null }[] | null;
+  recentWait: number | null;
+  bucket1Wait: number | null;
+  bucket3Wait: number | null;
+  bucket4Wait: number | null;
 }): React.ReactElement | null {
   if (isDown) {
     return <Text style={styles.tinyHint}>Future grayed — we don't have a reopen estimate yet.</Text>;
   }
-  if (anchorWait == null || !futureBuckets) return null;
-  const b120 = futureBuckets.find(b => b.offsetMinutes === 120)?.wait;
-  if (b120 == null) return null;
-  const delta = b120 - anchorWait;
-  if (Math.abs(delta) < 5) {
+  // Same shared helper the label + arrow use, so caption can never disagree.
+  const dir = trendDirection({
+    currentWait: anchorWait,
+    recentWait,
+    bucket1Wait,
+    bucket3Wait,
+    bucket4Wait,
+  });
+  if (dir === null) return null;
+  if (dir === 'stable') {
     return <Text style={styles.tinyHint}>Roughly flat over the next 2 hours.</Text>;
   }
-  if (delta > 0) {
+  if (dir === 'up') {
     return <Text style={styles.tinyHint}>Trending up over the next 2 hours — sooner is better.</Text>;
   }
   return <Text style={styles.tinyHint}>Trending down — a better window may be coming.</Text>;

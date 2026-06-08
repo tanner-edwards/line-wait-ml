@@ -2,59 +2,99 @@ import React from 'react';
 import { render, screen } from '@testing-library/react-native';
 import { TrendArrow } from './TrendArrow';
 
+// Minimal helper — pass only the fields the test cares about, rest default to null.
+const defaults = {
+  currentWait: null,
+  recentWait: null,
+  bucket1Wait: null,
+  bucket3Wait: null,
+  bucket4Wait: null,
+  lowConfidence: false,
+};
+
 describe('TrendArrow', () => {
-  it('renders nothing when bucket0Wait is null', () => {
-    const { toJSON } = render(
-      <TrendArrow bucket0Wait={null} bucket2Wait={20} lowConfidence={false} />
-    );
+  it('renders nothing when currentWait is null', () => {
+    const { toJSON } = render(<TrendArrow {...defaults} bucket4Wait={20} />);
     expect(toJSON()).toBeNull();
   });
 
-  it('renders nothing when bucket2Wait is null', () => {
-    const { toJSON } = render(
-      <TrendArrow bucket0Wait={30} bucket2Wait={null} lowConfidence={false} />
-    );
+  it('renders nothing when neither past nor future signals exist', () => {
+    const { toJSON } = render(<TrendArrow {...defaults} currentWait={30} />);
     expect(toJSON()).toBeNull();
   });
 
-  it('renders nothing when bucket0Wait is 0 (would divide by zero)', () => {
-    const { toJSON } = render(
-      <TrendArrow bucket0Wait={0} bucket2Wait={15} lowConfidence={false} />
-    );
-    expect(toJSON()).toBeNull();
-  });
-
-  it('renders a green ↘ when bucket2 is materially less than bucket0', () => {
-    render(<TrendArrow bucket0Wait={50} bucket2Wait={25} lowConfidence={false} />);
+  it("renders 'down' direction when combined delta is materially negative", () => {
+    // recent=50 → current=30 → past=-20. Future stays at 30. Combined -20 → down.
+    render(<TrendArrow
+      {...defaults}
+      currentWait={30}
+      recentWait={50}
+      bucket1Wait={30}
+      bucket3Wait={30}
+      bucket4Wait={30}
+    />);
     expect(screen.getByTestId('trend-arrow-down')).toBeTruthy();
-    expect(screen.getByText('↘')).toBeTruthy();
   });
 
-  it('renders a red ↗ when bucket2 is materially greater than bucket0', () => {
-    render(<TrendArrow bucket0Wait={30} bucket2Wait={60} lowConfidence={false} />);
+  it("renders 'up' direction when combined delta is materially positive", () => {
+    // recent=30 → current=30 (past=0). Future 60s. earlyAvg=30, lateAvg=60, +30 → up.
+    render(<TrendArrow
+      {...defaults}
+      currentWait={30}
+      recentWait={30}
+      bucket1Wait={30}
+      bucket3Wait={60}
+      bucket4Wait={60}
+    />);
     expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
-    expect(screen.getByText('↗')).toBeTruthy();
   });
 
-  it('renders a gray → when within ±10%', () => {
-    render(<TrendArrow bucket0Wait={30} bucket2Wait={31} lowConfidence={false} />);
-    expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
-    expect(screen.getByText('→')).toBeTruthy();
-  });
-
-  it('uses the low-confidence testID variant when lowConfidence is true', () => {
-    render(<TrendArrow bucket0Wait={50} bucket2Wait={25} lowConfidence={true} />);
-    expect(screen.getByTestId('trend-arrow-down-low-conf')).toBeTruthy();
-  });
-
-  it('boundary: exactly 0.9× treats as stable (not down) — strict < threshold', () => {
-    // bucket2 === bucket0 * 0.9 is NOT < bucket0 * 0.9, so this is stable.
-    render(<TrendArrow bucket0Wait={50} bucket2Wait={45} lowConfidence={false} />);
+  it("renders 'stable' when combined delta is within ±5 min", () => {
+    render(<TrendArrow
+      {...defaults}
+      currentWait={30}
+      recentWait={30}
+      bucket1Wait={30}
+      bucket3Wait={31}
+      bucket4Wait={31}
+    />);
     expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
   });
 
-  it('boundary: exactly 1.1× treats as stable (not up) — strict > threshold', () => {
-    render(<TrendArrow bucket0Wait={50} bucket2Wait={55} lowConfidence={false} />);
+  it('low-confidence variant adds the -low-conf testID suffix', () => {
+    render(<TrendArrow
+      {...defaults}
+      currentWait={30}
+      bucket1Wait={30}
+      bucket3Wait={60}
+      bucket4Wait={60}
+      lowConfidence
+    />);
+    expect(screen.getByTestId('trend-arrow-up-low-conf')).toBeTruthy();
+  });
+
+  // Regression
+  it('Space Mountain 6pm — current=60, future climbs to 73-79 → up (was Steady before fix)', () => {
+    render(<TrendArrow
+      {...defaults}
+      currentWait={60}
+      recentWait={60}
+      bucket1Wait={73}
+      bucket3Wait={79}
+      bucket4Wait={74}
+    />);
+    expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
+  });
+
+  it('Winnie 9pm at floor — current=5, recent=5, future bounces back to floor → stable', () => {
+    render(<TrendArrow
+      {...defaults}
+      currentWait={5}
+      recentWait={5}
+      bucket1Wait={11}
+      bucket3Wait={6}
+      bucket4Wait={6}
+    />);
     expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
   });
 });

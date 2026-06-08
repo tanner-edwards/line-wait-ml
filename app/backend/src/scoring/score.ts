@@ -135,19 +135,27 @@ export function scoreRide(ride: Ride): ScoreResult {
     rapidChange = { delta, points: isRapidDrop ? +2 : isRapidSpike ? -2 : 0 };
   }
 
-  // Gold star: rare exceptional opportunity. All four conditions must hold.
-  // The p50 >= 25 guard prevents low-demand walk-on rides from earning a star
-  // just because their already-short wait dipped slightly lower than usual.
-  // Gold star: three conditions, no projection requirement. A headliner at its
-  // historical floor and 30%+ below its slot average is a star moment whether
-  // the model says the wait bounces back in 90 min or stays low — the rarity
-  // IS the signal. The p50 >= 25 guard prevents permanent walk-on rides (Dumbo,
-  // Carousel) from earning stars just because their already-short wait dipped.
+  // Gold star: rare exceptional opportunity. All conditions must hold:
+  //   1. rideStats.p50 >= 25       — ride is a real headliner (not a permanent
+  //                                   walk-on like Dumbo or Carousel)
+  //   2. currentWait <= p10 * 1.15 — current wait is in the rare-low tail for
+  //                                   this ride
+  //   3. vsAvg.delta < -0.30       — current wait is 30%+ below the typical
+  //                                   for this time slot
+  //   4. |drop| >= absoluteFloor   — the drop is meaningful in absolute minutes,
+  //                                   not just a big percent on a small baseline
+  //                                   (mirrors Factor 1's floor — without it,
+  //                                   a 5→3 min "drop" on Big Thunder during
+  //                                   rope drop would look like -40% and earn
+  //                                   a star, even though 3 vs 5 is noise)
   const isGoldStar =
     rideStats != null &&
     rideStats.p50 >= 25 &&
     currentWait <= rideStats.p10 * 1.15 &&
-    vsAvg !== null && vsAvg.delta < -0.30;
+    vsAvg !== null &&
+    vsAvg.delta < -0.30 &&
+    bucket0.wait !== null &&
+    Math.abs(currentWait - bucket0.wait) >= absoluteFloorForTypical(bucket0.wait);
 
   let badge: Badge;
   if (isGoldStar) {
