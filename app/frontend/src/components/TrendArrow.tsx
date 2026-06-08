@@ -1,42 +1,27 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
+import { Minus, TrendingDown, TrendingUp } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 
 export interface TrendArrowProps {
   bucket0Wait: number | null;
   bucket2Wait: number | null;
   /**
-   * When true, the arrow renders with a subtle "this is a low-confidence
-   * estimate" treatment (dashed border around the glyph). The arrow direction
-   * itself is unchanged — we just hint that the historical curve underlying
-   * the direction is built on thin data.
-   *
-   * We use a dashed border rather than a trailing "·" or opacity tweak
-   * because:
-   *   - A trailing dot can be confused for punctuation in the wait row.
-   *   - Lower opacity can read as "disabled" rather than "estimate."
-   *   - A dashed border around the glyph reads as "approximate" without
-   *     changing the meaning of the arrow itself, and it's small enough to
-   *     stay tidy in a tight right-aligned column.
+   * When true, the arrow renders with a dashed border — signals a low-
+   * confidence estimate (thin historical data) without changing the direction.
    */
   lowConfidence: boolean;
 }
 
 /**
- * Renders a tiny direction-of-change indicator next to a ride's current wait,
- * comparing the historical-average bucket at t+0 (`bucket0Wait`) to the
- * historical-average bucket at t+60 (`bucket2Wait`) — i.e. how a typical
- * same-day-type's wait curve moves over the next hour.
+ * Direction-of-change indicator next to a ride's current wait.
+ * Compares the historical-average bucket at t+0 to t+60 (next hour).
  *
- * Render rules (from the v1 spec — keep these in sync if the spec moves):
- *   - If `bucket0Wait` or `bucket2Wait` is null, OR `bucket0Wait === 0`:
- *     render nothing. (`bucket0Wait === 0` would zero-divide the comparison
- *     and we can't say anything useful anyway.)
- *   - Green ↓ when `bucket2Wait < bucket0Wait * 0.9`.
- *   - Red   ↑ when `bucket2Wait > bucket0Wait * 1.1`.
- *   - Gray  → (stable) when within ±10%.
- *   - When `lowConfidence` is true, the arrow renders with a dashed border.
- *
- * Plain text glyphs (↓ ↑ →) — no image assets, no font loading.
+ * Render rules:
+ *   - null bucket0Wait / bucket2Wait, or bucket0Wait === 0 → null
+ *   - bucket2Wait < bucket0Wait * 0.9 → TrendingDown (green — good, wait dropping)
+ *   - bucket2Wait > bucket0Wait * 1.1 → TrendingUp   (red — bad, wait rising)
+ *   - ±10% band → Minus (stable, gray)
  */
 export function TrendArrow({
   bucket0Wait,
@@ -47,20 +32,21 @@ export function TrendArrow({
     return null;
   }
 
-  let glyph: '↘' | '↗' | '→';
-  let colorStyle;
+  let Icon: typeof TrendingDown;
+  let color: string;
   let direction: 'down' | 'up' | 'stable';
+
   if (bucket2Wait < bucket0Wait * 0.9) {
-    glyph = '↘';
-    colorStyle = styles.down;
+    Icon = TrendingDown;
+    color = colors.go;
     direction = 'down';
   } else if (bucket2Wait > bucket0Wait * 1.1) {
-    glyph = '↗';
-    colorStyle = styles.up;
+    Icon = TrendingUp;
+    color = colors.skip;
     direction = 'up';
   } else {
-    glyph = '→';
-    colorStyle = styles.stable;
+    Icon = Minus;
+    color = colors.textSecondary;
     direction = 'stable';
   }
 
@@ -69,7 +55,7 @@ export function TrendArrow({
       style={[styles.container, lowConfidence && styles.lowConfidence]}
       testID={`trend-arrow-${direction}${lowConfidence ? '-low-conf' : ''}`}
     >
-      <Text style={[styles.glyph, colorStyle]}>{glyph}</Text>
+      <Icon size={14} color={color} strokeWidth={2.5} />
     </View>
   );
 }
@@ -78,7 +64,7 @@ const styles = StyleSheet.create({
   container: {
     marginLeft: 6,
     paddingHorizontal: 3,
-    paddingVertical: 0,
+    paddingVertical: 2,
     borderRadius: 4,
     borderWidth: 1,
     borderColor: 'transparent',
@@ -87,15 +73,6 @@ const styles = StyleSheet.create({
   },
   lowConfidence: {
     borderStyle: 'dashed',
-    borderColor: '#bbb',
+    borderColor: colors.borderStrong,
   },
-  glyph: {
-    fontSize: 14,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  // Colors picked to read clearly on the app's light (#fff) background.
-  down: { color: '#1a7f37' }, // green
-  up: { color: '#c41e3a' }, // red
-  stable: { color: '#666' }, // gray
 });

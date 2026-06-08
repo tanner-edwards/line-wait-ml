@@ -1,21 +1,25 @@
-// One card per recommendation. Reuses the same visual vocabulary as the
-// Browse list row — badge, name, current wait, trend arrow, normal-band
-// pill — plus the v2-specific LLM one-liner + walk-time pill.
+// Elevated Card item for the Recommendations tab.
 //
-// Tap → inline expand to show the existing DebugCard. (The LLM paragraph
-// that used to render here was dropped to halve LLM output tokens and
-// speed up first paint; see backend promptBuilder.ts TODO(paragraph) for
-// the plan to bring it back via an on-demand fetch.)
+// Same two-row skeleton as RideRow but with more padding and an AI copy
+// paragraph (Row 3) + walk-time pill (Row 4).
+//
+// Row 1: [Ride name] ←→ [Arrival wait + "min" + ChevronRight]
+// Row 2: [Optional Badge] ←→ [Trend label + TrendArrow]
+// Row 3: AI copy paragraph
+// Row 4: Walk-time pill
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronRight, Footprints, Navigation2 } from 'lucide-react-native';
 import { Recommendation, Ride, ScoreResult } from '../types';
-import { RecommendationBadge } from './RecommendationBadge';
+import { colors, radius, spacing, typography } from '../theme/tokens';
+import { Card } from './Card';
+import { Pill } from './Pill';
 import { TrendArrow } from './TrendArrow';
-import { BelowNormalBadge } from './BelowNormalBadge';
 import { isWalkOnRide } from '../utils/walkOn';
-import { rideWaitLabel } from '../grouping';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
+import { useDebugMode } from '../context/DebugModeContext';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const SUPPRESSED_SCORE: ScoreResult = {
   score: 0,
@@ -29,160 +33,233 @@ const SUPPRESSED_SCORE: ScoreResult = {
   },
 };
 
+const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
+
+function trendDir(
+  b0: number | null,
+  b4: number | null
+): 'down' | 'up' | 'stable' | null {
+  if (!b0 || !b4 || b0 === 0) return null;
+  if (b4 < b0 * 0.9) return 'down';
+  if (b4 > b0 * 1.1) return 'up';
+  return 'stable';
+}
+
 interface RecommendationCardProps {
   rec: Recommendation;
-  ride: Ride | undefined;          // resolved from RideContext; undefined = ride list still loading
+  ride: Ride | undefined;
 }
 
 export function RecommendationCard({ rec, ride }: RecommendationCardProps): React.ReactElement {
   const { openDetail } = useNotificationDetail();
-  // Skeleton when ride context hasn't resolved the rideId yet — keeps the
-  // card height stable instead of popping rows in.
+  const { debugMode } = useDebugMode();
+
   if (!ride) {
     return (
-      <View style={styles.card} testID={`rec-card-${rec.rideId}`}>
+      <View style={styles.skeleton} testID={`rec-card-${rec.rideId}`}>
         <Text style={styles.skeletonText}>Loading…</Text>
       </View>
     );
   }
 
-  const ha = ride.historicalAverage;
   const isOperating = ride.status === 'OPERATING';
-  const showIndicators = isOperating && ha !== null;
-  const bucket0 = showIndicators && ha ? ha.buckets[0] : null;
-  const bucket4 = showIndicators && ha ? ha.buckets[4] : null;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
+  const ha = ride.historicalAverage;
+  const bucket0 = ha?.buckets[0] ?? null;
+  const bucket4 = ha?.buckets[4] ?? null;
+  const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const badge = scoreResult.badge;
-  // Only show walk-on badge if the arrival wait also stays in walk-on
-  // territory (≤15 min). When arrivalWait is null we can't tell, so we
-  // trust the current-wait signal. This prevents badge/number contradictions
-  // like 🚶 + "~20 min" that appear when a walk-on ride has a long walk.
-  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait)
+  const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
     && (rec.arrivalWait === null || rec.arrivalWait <= 15);
-  const walkLabel = rec.walkMinutes !== null
-    ? `~${rec.walkMinutes} min walk${rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
+  // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.
+  const showWalkOn = walkOnRaw && badge !== 'star';
+  const showBadge = badge !== null && !showWalkOn;
+  const trend = trendDir(bucket0?.wait ?? null, bucket4?.wait ?? null);
+
+  const isBelowNormal =
+    isOperating &&
+    (rec.arrivalWait ?? ride.currentWait) !== null &&
+    bucket0?.wait != null &&
+    bucket0.wait > 0 &&
+    (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
+    ((rec.arrivalWait ?? ride.currentWait) as number) < bucket0.wait * 0.75;
+
+  const waitColor = isBelowNormal ? colors.go : colors.textPrimary;
+
+  const waitDisplay = rec.arrivalWait !== null
+    ? `${rec.arrivalWait}`
+    : ride.currentWait !== null
+    ? `${ride.currentWait}`
     : null;
-  const waitLabel = rec.arrivalWait !== null
-    ? `~${rec.arrivalWait} min`
-    : rideWaitLabel(ride);
+
+  const walkLabel = rec.walkMinutes !== null
+    ? `~${rec.walkMinutes} min${debugMode && rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
+    : null;
+
+  const cardVariant = 'default' as const;
+  const cardAccent = badge === 'go' ? colors.go : badge === 'star' ? colors.star : undefined;
 
   return (
-    <View testID={`rec-card-${rec.rideId}`}>
-      <Pressable
-        onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse' })}
-        style={styles.card}
-      >
-        <View style={styles.headerRow}>
-          {badge === 'star'
-            ? <RecommendationBadge badge="star" />
-            : walkOn
-            ? <Text style={styles.walkOnEmoji} testID="rec-badge-walk-on">🚶</Text>
-            : <RecommendationBadge badge={badge} />}
-          <Text style={styles.rideName} numberOfLines={1}>{ride.name}</Text>
-          <View style={styles.rightCluster}>
-            <View style={styles.waitRow}>
-              <Text style={styles.rideWait}>{waitLabel}</Text>
-              {showIndicators && bucket4 ? (
+    <Pressable
+      onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse' })}
+      testID={`rec-card-${rec.rideId}`}
+      style={styles.pressable}
+    >
+      <Card variant={cardVariant} accent={cardAccent}>
+        {/* Row 1 */}
+        <View style={styles.row1}>
+          <Text style={styles.rideName}>{ride.name}</Text>
+          <View style={styles.waitCluster}>
+            {showWalkOn ? (
+              <View style={styles.walkOnCluster}>
+                <Footprints size={14} color={colors.textPrimary} />
+                <Text style={styles.walkOnLabel}>Walk On</Text>
+              </View>
+            ) : waitDisplay !== null ? (
+              <>
+                <Text style={[styles.waitNumber, { color: waitColor }]}>
+                  {waitDisplay}
+                </Text>
+                <Text style={styles.waitMin}> min</Text>
+              </>
+            ) : (
+              <Text style={styles.waitStatus}>—</Text>
+            )}
+            <ChevronRight size={14} color={colors.textTertiary} />
+          </View>
+        </View>
+
+        {/* Row 2 */}
+        {(showBadge || trend) ? (
+          <View style={styles.row2}>
+            <View style={styles.badgeRow}>
+              {showBadge ? <Pill variant={badge!} /> : null}
+            </View>
+            <View style={styles.trendRow}>
+              {trend ? (
+                <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
+              ) : null}
+              {bucket0?.wait != null && bucket4?.wait != null ? (
                 <TrendArrow
-                  bucket0Wait={ride.currentWait}
+                  bucket0Wait={bucket0.wait}
                   bucket2Wait={bucket4.wait}
                   lowConfidence={lowConfidence}
                 />
               ) : null}
             </View>
-            {showIndicators && bucket0 ? (
-              <BelowNormalBadge
-                currentWait={ride.currentWait}
-                bucket0Wait={bucket0.wait}
-                sampleCount={bucket0.sampleCount}
-              />
-            ) : null}
           </View>
-        </View>
+        ) : null}
 
-        <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
+        {/* Row 3 — AI copy */}
+        {rec.oneLiner ? (
+          <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
+        ) : null}
 
+        {/* Row 4 — walk-time pill */}
         {walkLabel ? (
           <View style={styles.walkPill} testID={`rec-walk-${rec.rideId}`}>
+            <Navigation2 size={11} color={colors.brand} />
             <Text style={styles.walkPillText}>{walkLabel}</Text>
           </View>
         ) : null}
-      </Pressable>
-
-    </View>
+      </Card>
+    </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
-    backgroundColor: '#fff',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
+  pressable: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.sm,
   },
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rideName: {
-    flex: 1,
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#222',
-    marginLeft: 4,
-  },
-  rightCluster: {
-    alignItems: 'flex-end',
-  },
-  waitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rideWait: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#222',
-  },
-  walkOnEmoji: {
-    fontSize: 18,
-    marginRight: 4,
-  },
-  oneLiner: {
-    fontSize: 13,
-    color: '#555',
-    marginTop: 6,
-    marginLeft: 32,
-  },
-  walkPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#eef0fb',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    marginTop: 6,
-    marginLeft: 32,
-  },
-  walkPillText: {
-    fontSize: 12,
-    color: '#4a4ec7',
-    fontWeight: '600',
-  },
-  paragraphContainer: {
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    backgroundColor: '#fafafa',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee',
-  },
-  paragraph: {
-    fontSize: 13,
-    color: '#444',
-    lineHeight: 19,
+  skeleton: {
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.sm,
+    padding: spacing.base,
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
   },
   skeletonText: {
-    color: '#aaa',
+    color: colors.textTertiary,
     fontStyle: 'italic',
+  },
+  row1: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  rideName: {
+    ...typography.cardTitle,
+    color: colors.textPrimary,
+    flex: 1,
+    marginRight: spacing.md,
+  },
+  waitCluster: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  waitNumber: {
+    ...typography.waitNumber,
+  },
+  waitMin: {
+    ...typography.label,
+    color: colors.textSecondary,
+    alignSelf: 'flex-end',
+    paddingBottom: 2,
+  },
+  waitStatus: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  walkOnCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  walkOnLabel: {
+    ...typography.label,
+    color: colors.textPrimary,
+    fontWeight: '600',
+  },
+  row2: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: spacing.sm,
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  trendLabel: {
+    ...typography.caption,
+    color: colors.textSecondary,
+    marginRight: 2,
+  },
+  oneLiner: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.sm,
+  },
+  walkPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    alignSelf: 'flex-start',
+    backgroundColor: colors.border,
+    borderRadius: radius.pill,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    marginTop: spacing.sm,
+  },
+  walkPillText: {
+    ...typography.caption,
+    color: colors.brand,
+    fontWeight: '600',
   },
 });

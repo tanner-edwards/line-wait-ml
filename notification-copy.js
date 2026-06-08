@@ -201,9 +201,9 @@ export function notificationBody(params) {
 
   if (type === 'peak') {
     const waitText = currentWait != null ? `${currentWait} min` : 'a long wait';
-    const compare = rideStats?.p50 != null ? ` — average is ${rideStats.p50} min` : '';
+    const compare = rideStats?.p50 != null ? ` — usually ${rideStats.p50} around now` : '';
     const pool = magnitude === 'strong' ? PEAK_STRONG : PEAK_MILD;
-    return `At ${waitText}${compare}. ${pickRandom(pool)}`;
+    return `Running at ${waitText}${compare}. ${pickRandom(pool)}`;
   }
 
   return '';

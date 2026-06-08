@@ -1,9 +1,10 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 interface Props {
   total: number;
-  current: number;  // 0-indexed
+  current: number; // 0-indexed
 }
 
 export function ProgressDots({ total, current }: Props): React.ReactElement {
@@ -14,8 +15,8 @@ export function ProgressDots({ total, current }: Props): React.ReactElement {
           key={i}
           style={[
             styles.dot,
-            i === current && styles.dotActive,
             i < current && styles.dotPast,
+            i === current && styles.dotActive,
           ]}
         />
       ))}
@@ -31,16 +32,18 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
   },
   dot: {
-    width: 8,
-    height: 8,
+    width: 7,
+    height: 7,
     borderRadius: 4,
-    backgroundColor: '#e0e0e0',
-  },
-  dotActive: {
-    backgroundColor: '#6b6bf5',
-    width: 24,
+    backgroundColor: colors.borderStrong,
   },
   dotPast: {
-    backgroundColor: '#b0b0e5',
+    backgroundColor: colors.brand,
+  },
+  dotActive: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: colors.brand,
   },
 });

@@ -1,5 +1,12 @@
 import { Badge, FactorBreakdown, Ride, ScoreResult } from '../types';
 
+// Minimum bucket0 sampleCount before scoring is considered trustworthy.
+// Raised from 1 → 10 on 2026-06-07 (~36 days of data). Raise toward 20
+// around 2026-07-07 once weekend counts reach ~60 samples/bucket.
+// Keep in sync with: scanner.js MIN_BUCKET_SAMPLE_COUNT,
+//                    app/frontend/src/scoreConstants.ts MIN_BUCKET_SAMPLE_COUNT
+export const MIN_BUCKET_SAMPLE_COUNT = 10;
+
 const SUPPRESSED: ScoreResult = {
   score: 0,
   badge: null,
@@ -38,7 +45,7 @@ export function scoreRide(ride: Ride): ScoreResult {
   // ~18 samples max (6 weekend days × 3 polls per 30-min bucket), so the
   // 20-cap suppressed every weekend score. Raise back toward 20 once the
   // wait_times collection has accumulated several months.
-  if (bucket0.sampleCount < 1) return SUPPRESSED;
+  if (bucket0.sampleCount < MIN_BUCKET_SAMPLE_COUNT) return SUPPRESSED;
 
   // --- Factor 1: current wait vs. t+0 bucket average (max ±2) ---
   let vsAvg: FactorBreakdown['vsAvg'];
@@ -131,12 +138,16 @@ export function scoreRide(ride: Ride): ScoreResult {
   // Gold star: rare exceptional opportunity. All four conditions must hold.
   // The p50 >= 25 guard prevents low-demand walk-on rides from earning a star
   // just because their already-short wait dipped slightly lower than usual.
+  // Gold star: three conditions, no projection requirement. A headliner at its
+  // historical floor and 30%+ below its slot average is a star moment whether
+  // the model says the wait bounces back in 90 min or stays low — the rarity
+  // IS the signal. The p50 >= 25 guard prevents permanent walk-on rides (Dumbo,
+  // Carousel) from earning stars just because their already-short wait dipped.
   const isGoldStar =
     rideStats != null &&
     rideStats.p50 >= 25 &&
     currentWait <= rideStats.p10 * 1.15 &&
-    vsAvg !== null && vsAvg.delta < -0.30 &&
-    projectedChange !== null && projectedChange.delta > 0.10;
+    vsAvg !== null && vsAvg.delta < -0.30;
 
   let badge: Badge;
   if (isGoldStar) {

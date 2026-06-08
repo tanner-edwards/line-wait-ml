@@ -1,6 +1,5 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Pressable,
   RefreshControl,
@@ -9,50 +8,29 @@ import {
   Text,
   View,
 } from 'react-native';
+import { Clock } from 'lucide-react-native';
+import { StateBlock } from '../components/StateBlock';
+import { colors } from '../theme/tokens';
 import { StatusBar } from 'expo-status-bar';
 import {
   ListItem,
   SortBy,
   flattenForList,
   flattenSorted,
-  haversineMeters,
-  rideWaitLabel,
 } from '../grouping';
-import { formatHHMM, formatTimeAgo, olderLastUpdated } from '../timestamp';
-import { TrendArrow } from '../components/TrendArrow';
-import { BelowNormalBadge } from '../components/BelowNormalBadge';
-import { RecommendationBadge } from '../components/RecommendationBadge';
+import { formatHHMM, olderLastUpdated } from '../timestamp';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
-import { isWalkOnRide } from '../utils/walkOn';
+import { GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
+import { RideRow } from '../components/RideRow';
+import { ArrowUpDown } from 'lucide-react-native';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
-import { usePersona } from '../context/PersonaContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { filterByDailyParks } from '../utils/parkFilter';
-import type { ScoreResult } from '../types';
 
-const WALK_SPEED_MPM = 83; // meters per minute (~5 km/h)
-function walkPathMultiplier(m: number) { return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3; }
-function walkMinsTo(origin: { lat: number; lng: number }, ride: { lat: number | null; lng: number | null }): number | null {
-  if (ride.lat == null || ride.lng == null) return null;
-  const raw = haversineMeters(origin.lat, origin.lng, ride.lat, ride.lng);
-  return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
-}
-
-const SUPPRESSED_SCORE: ScoreResult = {
-  score: 0,
-  badge: null,
-  factors: {
-    vsAvg: null,
-    vsRange: null,
-    projectedChange: null,
-    nearTermChange: null,
-    rapidChange: null,
-  },
-};
 
 export function Home() {
   // Shared ride state lives in RideProvider; the Browse screen owns only
@@ -88,8 +66,12 @@ export function Home() {
 
   if (loading && !data) {
     return (
-      <SafeAreaView style={styles.center} testID="home-loading">
-        <ActivityIndicator size="large" />
+      <SafeAreaView style={styles.container} testID="home-loading">
+        <StateBlock
+          loading
+          title="Club 32"
+          body="Loading ride data…"
+        />
         <StatusBar style="auto" />
       </SafeAreaView>
     );
@@ -122,45 +104,32 @@ export function Home() {
           <Text style={styles.errorBannerText}>{error}</Text>
         </View>
       )}
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.headerTitle}>Live Waits</Text>
+      <GradientHeader
+        title="Live Waits"
+        subtitle={
           <Pressable onPress={() => setShowTimeTravelModal(true)} testID="time-travel-trigger">
             <Text
-              style={[styles.headerSubtitle, timeTravelAt ? styles.headerSubtitleTimeTravel : null]}
+              style={timeTravelAt ? gradientHeaderTextStyles.subtitleActive : gradientHeaderTextStyles.subtitle}
               testID="last-update"
             >
               {timeTravelAt ? `Time set to: ${timeTravelLabel}` : `Last update: ${lastUpdate}`}
             </Text>
           </Pressable>
-        </View>
-        <Pressable
-          accessibilityRole="button"
-          onPress={() => setShowSortMenu(true)}
-          testID="sort-button"
-          style={styles.sortButton}
-        >
-          <Text style={[styles.sortIcon, sortBy ? styles.sortIconActive : null]}>⇅</Text>
-        </Pressable>
-        <NotificationBellButton />
-        <Pressable
-          accessibilityRole="button"
-          onPress={onRefresh}
-          disabled={refreshing}
-          testID="refresh-button"
-          style={({ pressed }) => [
-            styles.refreshButton,
-            refreshing && styles.refreshButtonDisabled,
-            pressed && styles.refreshButtonPressed,
-          ]}
-        >
-          {refreshing ? (
-            <ActivityIndicator size="small" />
-          ) : (
-            <Text style={styles.refreshButtonText}>Refresh</Text>
-          )}
-        </Pressable>
-      </View>
+        }
+        right={
+          <>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setShowSortMenu(true)}
+              testID="sort-button"
+              style={styles.sortButton}
+            >
+              <ArrowUpDown size={20} color={sortBy ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
+            </Pressable>
+            <NotificationBellButton />
+          </>
+        }
+      />
       <FlatList
         data={items}
         keyExtractor={item => item.key}
@@ -172,14 +141,15 @@ export function Home() {
         }
         ListEmptyComponent={
           !hasAnyData ? (
-            <View style={styles.empty} testID="empty-state">
-              <Text style={styles.emptyText}>
-                No wait time data available yet. Pull down to retry.
-              </Text>
-            </View>
+            <StateBlock
+              icon={<Clock size={48} color={colors.textTertiary} />}
+              title="No wait times yet"
+              body="Data should appear once the park opens and rides start posting wait times."
+              testID="empty-state"
+            />
           ) : null
         }
-        contentContainerStyle={items.length === 0 ? styles.emptyContent : undefined}
+        contentContainerStyle={items.length === 0 ? styles.emptyListContent : undefined}
       />
       <SortMenu
         visible={showSortMenu}
@@ -205,12 +175,6 @@ function ListRow({
   item: ListItem;
   walkOrigin: { lat: number; lng: number } | null;
 }) {
-  const { persona } = usePersona();
-  const { openDetail } = useNotificationDetail();
-  const mustDoIds = useMemo(
-    () => new Set(persona?.mustDoRideIds ?? []),
-    [persona]
-  );
   if (item.kind === 'park-header') {
     return (
       <View
@@ -231,194 +195,48 @@ function ListRow({
       </View>
     );
   }
-  const ride = item.ride;
-  const isOperating = ride.status === 'OPERATING';
-  const ha = ride.historicalAverage;
-  const showIndicators = isOperating && ha !== null;
-  const bucket0 = showIndicators && ha ? ha.buckets[0] : null;
-  const bucket4 = showIndicators && ha ? ha.buckets[4] : null;
-  // When the bucket0 sample count is low, the TrendArrow renders with a
-  // dashed "low confidence" border. Production target is ~20, matching the
-  // score and below-normal-badge gates. Currently set to 1 because data
-  // collection started 2026-05-02 — every cell would otherwise render as
-  // low-confidence on weekends. Raise back toward 20 with the other gates
-  // once wait_times has several months of history.
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < 1;
-  const scoreResult = ride.score ?? SUPPRESSED_SCORE;
-  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
-  const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
-  const isWatching = mustDoIds.has(ride.id);
-
-  return (
-    <Pressable
-      onPress={() => openDetail({ rideId: ride.id, type: null, source: 'browse' })}
-      testID={`ride-${ride.id}`}
-    >
-        <View style={styles.rideRow}>
-          {scoreResult.badge === 'star'
-            ? <RecommendationBadge badge="star" />
-            : walkOn
-            ? <Text style={styles.walkOnEmoji} testID="badge-walk-on">🚶</Text>
-            : <RecommendationBadge badge={scoreResult.badge} />
-          }
-          <Text style={styles.rideName} numberOfLines={1}>
-            {ride.name}
-          </Text>
-          <View style={styles.rideRowRight}>
-          {isWatching && (
-            <Text
-              style={styles.bellIndicator}
-              testID={`bell-indicator-${ride.id}`}
-              accessibilityLabel="Alert set"
-            >
-              🔔
-            </Text>
-          )}
-          <View style={styles.rideRight}>
-            <View style={styles.waitRow}>
-              <Text style={styles.rideWait}>{rideWaitLabel(ride)}</Text>
-              {showIndicators && bucket4 ? (
-                <TrendArrow
-                  bucket0Wait={ride.currentWait}
-                  bucket2Wait={bucket4.wait}
-                  lowConfidence={lowConfidence}
-                />
-              ) : null}
-            </View>
-            {showIndicators && bucket0 ? (
-              <BelowNormalBadge
-                currentWait={ride.currentWait}
-                bucket0Wait={bucket0.wait}
-                sampleCount={bucket0.sampleCount}
-              />
-            ) : null}
-            {walkMins != null ? (
-              <Text style={styles.walkLabel}>~{walkMins} min walk</Text>
-            ) : null}
-            {ride.status === 'DOWN' && ride.closedAt ? (
-              <Text style={styles.closedSince}>
-                since {formatHHMM(ride.closedAt)} ({formatTimeAgo(ride.closedAt)})
-              </Text>
-            ) : null}
-          </View>
-          </View>{/* rideRowRight */}
-        </View>
-    </Pressable>
-  );
+  return <RideRow ride={item.ride} walkOrigin={walkOrigin} />;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
+  container: { flex: 1, backgroundColor: colors.surface },
+  emptyListContent: { flexGrow: 1 },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: '#fff', // TODO: tokenize
   },
   errorBanner: {
-    backgroundColor: '#fde2e2',
+    backgroundColor: colors.skipBg,
     padding: 12,
-    borderBottomColor: '#f5b5b5',
-    borderBottomWidth: 1,
+    borderBottomColor: colors.skip,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  errorBannerText: { color: '#7a1f1f', fontSize: 14 },
-  header: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
+  errorBannerText: { color: colors.skip, fontSize: 14 },
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomColor: '#eee',
+    borderBottomColor: '#eee', // TODO: tokenize
     borderBottomWidth: 1,
   },
-  headerLeft: { flex: 1 },
-  headerTitle: { fontSize: 22, fontWeight: '700' },
-  headerSubtitle: { fontSize: 13, color: '#666', marginTop: 2 },
-  headerSubtitleTimeTravel: { color: '#6b6bf5' },
   sortButton: {
     paddingHorizontal: 10,
     paddingVertical: 8,
-    marginRight: 8,
+    marginRight: 4,
   },
-  sortIcon: {
-    fontSize: 20,
-    color: '#999',
-  },
-  sortIconActive: {
-    color: '#4a4ec7',
-  },
-  refreshButton: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#222',
-    minWidth: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  refreshButtonDisabled: { backgroundColor: '#999' },
-  refreshButtonPressed: { opacity: 0.7 },
-  refreshButtonText: { color: '#fff', fontSize: 14, fontWeight: '600' },
   parkHeader: {
-    backgroundColor: '#f4f4f7',
+    backgroundColor: '#f4f4f7', // TODO: tokenize
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
-  parkHeaderErrored: { backgroundColor: '#fde2e2' },
+  parkHeaderErrored: { backgroundColor: '#fde2e2' }, // TODO: tokenize
   parkHeaderText: { fontSize: 18, fontWeight: '700' },
-  parkHeaderErrText: { fontSize: 12, color: '#7a1f1f', marginTop: 2 },
+  parkHeaderErrText: { fontSize: 12, color: '#7a1f1f', marginTop: 2 }, // TODO: tokenize
   landHeader: {
     paddingHorizontal: 24,
     paddingVertical: 6,
-    backgroundColor: '#fafafa',
+    backgroundColor: '#fafafa', // TODO: tokenize
   },
-  landHeaderText: { fontSize: 14, fontWeight: '600', color: '#444' },
-  rideRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    paddingVertical: 10,
-    borderBottomColor: '#eee',
-    borderBottomWidth: 1,
-  },
-  rideName: { flex: 1, fontSize: 15, marginRight: 12 },
-  rideRowRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  bellIndicator: {
-    fontSize: 14,
-    color: '#999',
-    opacity: 0.85,
-  },
-  rideRight: {
-    alignItems: 'flex-end',
-  },
-  waitRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  rideWait: {
-    fontSize: 15,
-    fontVariant: ['tabular-nums'],
-    color: '#222',
-    minWidth: 64,
-    textAlign: 'right',
-  },
-  empty: { padding: 32, alignItems: 'center' },
-  emptyText: { color: '#666', textAlign: 'center', fontSize: 14 },
-  emptyContent: { flexGrow: 1, justifyContent: 'center' },
-  walkLabel: { fontSize: 11, color: '#888', marginTop: 2, textAlign: 'right' },
-  closedSince: { fontSize: 11, color: '#7a1f1f', marginTop: 2, textAlign: 'right' },
-  walkOnEmoji: {
-    width: 20,
-    height: 20,
-    marginRight: 8,
-    fontSize: 14,
-    textAlign: 'center',
-  },
+  landHeaderText: { fontSize: 14, fontWeight: '600', color: '#444' }, // TODO: tokenize
 });

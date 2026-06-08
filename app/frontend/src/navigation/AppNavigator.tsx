@@ -1,14 +1,12 @@
 // Bottom-tab nav. Three tabs:
-//   ≡  Home             (default — live wait list, filtered by daily park)
-//   ★  Recommendations  (LLM picks; respects persona + daily park)
-//   👤 Profile          (edit persona, debug reset)
-//
-// Tab bar height/padding is bumped above defaults so the icons sit a
-// little farther up from the home indicator / bottom edge — easier to tap.
+//   Home          (live wait list, filtered by daily park)
+//   Recommendations (LLM picks; respects persona + daily park)
+//   Profile       (edit persona, debug reset)
 
 import React from 'react';
-import { Platform, StyleSheet, Text } from 'react-native';
+import { Platform } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { Home as HomeIcon, Sparkles, User } from 'lucide-react-native';
 import { Home } from '../screens/Home';
 import { Recommendations } from '../screens/Recommendations';
 import { Profile } from '../screens/Profile';
@@ -29,32 +27,30 @@ export function AppNavigator(): React.ReactElement {
         name="Home"
         component={Home}
         options={{
-          tabBarIcon: ({ color }) => <TabIcon glyph="≡" color={color} />,
+          tabBarIcon: ({ color }) => <HomeIcon size={22} color={color} />,
         }}
       />
       <Tab.Screen
         name="Recommendations"
         component={Recommendations}
         options={{
-          tabBarIcon: ({ color }) => <TabIcon glyph="★" color={color} />,
+          tabBarIcon: ({ color, focused }) => (
+            <Sparkles size={22} color={color} fill={focused ? color : 'none'} />
+          ),
         }}
       />
       <Tab.Screen
         name="Profile"
         component={Profile}
         options={{
-          tabBarIcon: ({ color }) => <TabIcon glyph="👤" color={color} />,
+          tabBarIcon: ({ color }) => <User size={22} color={color} />,
         }}
       />
     </Tab.Navigator>
   );
 }
 
-function TabIcon({ glyph, color }: { glyph: string; color: string }) {
-  return <Text style={[styles.icon, { color }]}>{glyph}</Text>;
-}
-
-const styles = StyleSheet.create({
+const styles = {
   tabBar: {
     height: Platform.OS === 'ios' ? 107 : 87,
     paddingTop: 10,
@@ -63,5 +59,4 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     paddingBottom: 15,
   },
-  icon: { fontSize: 22, lineHeight: 24 },
-});
+};

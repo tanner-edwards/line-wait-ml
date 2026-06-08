@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   FlatList,
   Pressable,
+  RefreshControl,
   SafeAreaView,
   StyleSheet,
   Text,
@@ -27,8 +28,12 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { NotificationBellButton } from '../components/NotificationBellButton';
+import { GradientHeader } from '../components/GradientHeader';
+import { StateBlock } from '../components/StateBlock';
+import { CircleAlert, Info, LocateFixed, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
+import { colors, spacing, typography } from '../theme/tokens';
 
 const LOADING_LINES = [
   'Looking around the park…',
@@ -159,6 +164,12 @@ export function Recommendations(): React.ReactElement {
     }
   }, [recs, coords, dailyContext, persona]);
 
+  const onRefresh = useCallback(() => {
+    if (!coords) return;
+    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
+    void runFetch(coords.lat, coords.lng, park);
+  }, [coords, dailyContext?.parks, runFetch]);
+
   // Stable key derived from coordinates — changes only when GPS resolves or
   // debug coords are set, not on every context re-render.
   const coordsKey = coords ? `${coords.lat.toFixed(6)},${coords.lng.toFixed(6)}` : null;
@@ -183,8 +194,8 @@ export function Recommendations(): React.ReactElement {
 
   if (waitsLoading && !data) {
     return (
-      <SafeAreaView style={styles.center} testID="recs-loading-waits">
-        <ActivityIndicator size="large" />
+      <SafeAreaView style={styles.container} testID="recs-loading-waits">
+        <StateBlock loading title="Club 32" body="Loading ride data…" />
         <StatusBar style="auto" />
       </SafeAreaView>
     );
@@ -192,47 +203,40 @@ export function Recommendations(): React.ReactElement {
 
   if (waitsError && !data) {
     return (
-      <SafeAreaView style={styles.errorContainer} testID="recs-waits-error">
-        <Text style={styles.errorTitle}>Couldn't load ride data</Text>
-        <Text style={styles.errorBody}>{waitsError}</Text>
-        <Text style={styles.errorHint}>
-          We can't recommend rides until live ride data loads. Pull-to-refresh on the Browse tab to retry.
-        </Text>
+      <SafeAreaView style={styles.container} testID="recs-waits-error">
+        <StateBlock
+          icon={<CircleAlert size={48} color={colors.textTertiary} />}
+          title="Couldn't load ride data"
+          body="We can't recommend rides until live data loads. Pull-to-refresh on the Browse tab to retry."
+        />
         <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
 
-  // GPS denied — no location access.
   if (!debugMode && status === 'denied') {
     return (
-      <SafeAreaView style={styles.errorContainer} testID="recs-location-denied">
-        <Text style={styles.errorTitle}>Location access denied</Text>
-        <Text style={styles.errorBody}>
-          Club 32 needs your location to recommend what to ride next.
-        </Text>
-        <Text style={styles.errorHint}>
-          Enable location in your device settings and return to this tab.
-        </Text>
-        <Pressable style={styles.retryButton} onPress={retry} testID="recs-retry-location">
-          <Text style={styles.retryButtonText}>Try again</Text>
-        </Pressable>
+      <SafeAreaView style={styles.container} testID="recs-location-denied">
+        <StateBlock
+          icon={<MapPinOff size={48} color={colors.textTertiary} />}
+          title="Location access needed"
+          body="Club 32 uses your location to sort rides by how far you are. You can enable it in Settings."
+          action={{ label: 'Try again', onPress: retry, testID: 'recs-retry-location' }}
+        />
         <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
 
-  // Outside park boundaries.
   if (!debugMode && status === 'out-of-park') {
     return (
-      <SafeAreaView style={styles.errorContainer} testID="recs-out-of-park">
-        <Text style={styles.errorTitle}>You don't appear to be in the park</Text>
-        <Text style={styles.errorBody}>
-          Recommendations are available once you're inside Disneyland or California Adventure.
-        </Text>
-        <Pressable style={styles.retryButton} onPress={retry} testID="recs-retry-location">
-          <Text style={styles.retryButtonText}>Check again</Text>
-        </Pressable>
+      <SafeAreaView style={styles.container} testID="recs-out-of-park">
+        <StateBlock
+          icon={<MapPin size={48} color={colors.textTertiary} />}
+          title="You're outside the park"
+          body="Recommendations are based on where you are in the park. Head in and we'll pick up from there."
+          action={{ label: 'Check again', onPress: retry, testID: 'recs-retry-location' }}
+        />
         <StatusBar style="auto" />
       </SafeAreaView>
     );
@@ -244,68 +248,56 @@ export function Recommendations(): React.ReactElement {
 
   return (
     <SafeAreaView style={styles.container} testID="recs-loaded">
-      <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.titleRow}>
-            <Text style={styles.headerTitle}>Recommendations</Text>
-            {debugMode && <Text style={styles.debugBadge}>DEBUG</Text>}
-          </View>
-          {recs && !recsLoading ? (
-            <Text style={styles.headerSubtitle} numberOfLines={1}>
-              Near {recs.currentRide.name} · {parkDisplayName(recs.currentRide.park)}
-            </Text>
-          ) : null}
-          {recs && !recsLoading ? (
-            <Text style={styles.headerAsOf} testID="recs-as-of">
-              as of {formatHHMM(recs.lastUpdated)}
-            </Text>
-          ) : null}
-        </View>
-        {debugMode && (
-          <Pressable
-            onPress={() => setDebugPickerOpen(true)}
-            style={styles.changeButton}
-            testID="recs-change-location"
-          >
-            <Text style={styles.changeButtonText}>Change location</Text>
-          </Pressable>
-        )}
-      </View>
+      <GradientHeader
+        title={debugMode ? 'Recommendations  DEBUG' : 'Recommendations'}
+        subtitle={
+          recs && !recsLoading
+            ? `Near ${recs.currentRide.name} · ${parkDisplayName(recs.currentRide.park)}`
+            : undefined
+        }
+        right={
+          debugMode ? (
+            <Pressable
+              onPress={() => setDebugPickerOpen(true)}
+              style={styles.changeButton}
+              testID="recs-change-location"
+            >
+              <Text style={styles.changeButtonText}>Change</Text>
+            </Pressable>
+          ) : (
+            <NotificationBellButton />
+          )
+        }
+      />
 
       {(status === 'idle' || status === 'locating') && !debugMode ? (
-        <View style={styles.center} testID="recs-locating">
-          <ActivityIndicator size="large" />
-          <Text style={styles.loadingHint}>Locating you…</Text>
-        </View>
+        <StateBlock
+          icon={<LocateFixed size={48} color={colors.brand} />}
+          title="Finding your location"
+          body="Hang on just a moment."
+          testID="recs-locating"
+        />
       ) : derivedPark && !isParkOpen(derivedPark) ? (
-        <View style={styles.errorContainer} testID="recs-park-closed">
-          <Text style={styles.errorTitle}>{parkDisplayName(derivedPark)} is closed</Text>
-          <Text style={styles.errorBody}>
-            We don't recommend rides when the park isn't open — wait times aren't available yet.
-          </Text>
-          <Text style={styles.errorHint}>
-            Check back after the park opens (typically 8 AM PT).
-          </Text>
-        </View>
+        <StateBlock
+          icon={<MoonStar size={48} color={colors.textTertiary} />}
+          title="The park is closed right now"
+          body="Check back when the park opens. Predictions will be ready for you."
+          testID="recs-park-closed"
+        />
       ) : recsLoading ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={styles.loadingHint}>{loadingLine}</Text>
-        </View>
+        <StateBlock loading title={loadingLine} />
       ) : recsError ? (
-        <View style={styles.errorContainer} testID="recs-error">
-          <Text style={styles.errorTitle}>Couldn't get recommendations</Text>
-          <Text style={styles.errorBody}>{recsError}</Text>
-          {coords && derivedPark ? (
-            <Pressable
-              style={styles.retryButton}
-              onPress={() => void runFetch(coords.lat, coords.lng, derivedPark)}
-              testID="recs-retry"
-            >
-              <Text style={styles.retryButtonText}>Try again</Text>
-            </Pressable>
-          ) : null}
-        </View>
+        <StateBlock
+          icon={<CircleAlert size={48} color={colors.textTertiary} />}
+          title="Couldn't load recommendations"
+          body="Something went wrong on our end. Try again."
+          action={coords && derivedPark ? {
+            label: 'Try again',
+            onPress: () => void runFetch(coords.lat, coords.lng, derivedPark),
+            testID: 'recs-retry',
+          } : undefined}
+          testID="recs-error"
+        />
       ) : recs ? (
         <RecsList
           recs={recs}
@@ -313,6 +305,8 @@ export function Recommendations(): React.ReactElement {
           loadingMore={loadingMore}
           loadMoreError={loadMoreError}
           onShowMore={() => void loadMore()}
+          refreshing={recsLoading}
+          onRefresh={onRefresh}
         />
       ) : null}
 
@@ -342,21 +336,25 @@ function RecsList({
   loadingMore,
   loadMoreError,
   onShowMore,
+  refreshing,
+  onRefresh,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
   loadingMore: boolean;
   loadMoreError: string | null;
   onShowMore: () => void;
+  refreshing: boolean;
+  onRefresh: () => void;
 }): React.ReactElement {
   if (recs.recommendations.length === 0) {
     return (
-      <View style={styles.emptyContainer} testID="recs-empty">
-        <Text style={styles.emptyTitle}>No recommendations</Text>
-        <Text style={styles.emptyBody}>
-          The park doesn't have any operating rides available right now.
-        </Text>
-      </View>
+      <StateBlock
+        icon={<CircleAlert size={48} color={colors.textTertiary} />}
+        title="No recommendations"
+        body="The park doesn't have any operating rides available right now."
+        testID="recs-empty"
+      />
     );
   }
 
@@ -364,6 +362,8 @@ function RecsList({
     <FlatList
       data={recs.recommendations}
       keyExtractor={r => r.rideId}
+      contentContainerStyle={styles.listContent}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       renderItem={({ item }) => (
         <RecommendationCard
           rec={item}
@@ -373,9 +373,8 @@ function RecsList({
       ListHeaderComponent={
         recs.degraded ? (
           <View style={styles.degradedBanner} testID="recs-degraded">
-            <Text style={styles.degradedText}>
-              Recommendations are best-effort right now (AI layer unavailable).
-            </Text>
+            <Info size={14} color={colors.star} />
+            <Text style={styles.degradedText}>Recommendations are best-effort right now</Text>
           </View>
         ) : null
       }
@@ -387,7 +386,7 @@ function RecsList({
           </View>
         ) : loadMoreError ? (
           <View style={styles.moreErrorRow}>
-            <Text style={styles.moreErrorText}>{loadMoreError}</Text>
+            <Text style={styles.moreErrorBody}>{loadMoreError}</Text>
             <Pressable style={styles.moreButton} onPress={onShowMore} testID="recs-show-more-retry">
               <Text style={styles.moreButtonText}>Try again</Text>
             </Pressable>
@@ -403,73 +402,36 @@ function RecsList({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#fff' },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  header: {
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  toggleRow: {
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomColor: '#eee',
-    borderBottomWidth: 1,
-  },
-  headerLeft: { flex: 1, paddingRight: 12 },
-  titleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  headerTitle: { fontSize: 22, fontWeight: '700', color: '#222' },
-  debugBadge: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-    backgroundColor: '#f5a623',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-    overflow: 'hidden',
-  },
-  headerSubtitle: { fontSize: 12, color: '#666', marginTop: 2 },
-  headerAsOf: { fontSize: 11, color: '#888', marginTop: 2, fontStyle: 'italic' },
+  container: { flex: 1, backgroundColor: colors.surface },
+  listContent: { paddingTop: spacing.sm },
   changeButton: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 8,
-    backgroundColor: '#f4f4f7',
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.35)',
   },
-  changeButtonText: { color: '#444', fontSize: 13, fontWeight: '600' },
-  loadingHint: { color: '#666', marginTop: 12, fontSize: 13 },
-  errorContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
-  errorTitle: { fontSize: 16, fontWeight: '700', color: '#c41e3a', marginBottom: 6 },
-  errorBody: { fontSize: 14, color: '#444', textAlign: 'center' },
-  errorHint: { fontSize: 12, color: '#888', marginTop: 12, textAlign: 'center' },
-  retryButton: {
-    marginTop: 18,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: '#222',
-  },
-  retryButtonText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  emptyContainer: { padding: 32, alignItems: 'center' },
-  emptyTitle: { fontSize: 16, fontWeight: '700', color: '#222', marginBottom: 6 },
-  emptyBody: { fontSize: 13, color: '#666', textAlign: 'center' },
+  changeButtonText: { color: colors.textInverse, fontSize: 13, fontWeight: '600' },
   degradedBanner: {
-    backgroundColor: '#fff7e0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: colors.starBg,
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderBottomColor: '#f1d77a',
-    borderBottomWidth: 1,
+    paddingVertical: 10,
+    borderBottomColor: colors.star,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  degradedText: { fontSize: 12, color: '#7a5b00' },
+  degradedText: { ...typography.caption, color: colors.textSecondary },
   moreButton: {
     margin: 16,
     paddingVertical: 14,
     borderRadius: 10,
-    backgroundColor: '#6b6bf5',
+    backgroundColor: colors.brand,
     alignItems: 'center',
   },
-  moreButtonText: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  moreButtonText: { color: colors.textInverse, fontSize: 14, fontWeight: '700' },
   moreLoadingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -478,7 +440,7 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     gap: 8,
   },
-  moreLoadingText: { fontSize: 13, color: '#666' },
+  moreLoadingText: { ...typography.caption, color: colors.textSecondary },
   moreErrorRow: { margin: 16, alignItems: 'center' },
-  moreErrorText: { fontSize: 13, color: '#7a1f1f', marginBottom: 8, textAlign: 'center' },
+  moreErrorBody: { ...typography.caption, color: colors.skip, marginBottom: 8, textAlign: 'center' },
 });

@@ -3,6 +3,7 @@ import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
 import { Ride, ScoreResult } from '../types';
 import { formatBucketTimeSlot, formatHHMM } from '../timestamp';
+import { colors } from '../theme/tokens';
 
 interface DebugCardProps {
   ride: Ride;
@@ -41,7 +42,7 @@ function FactorRow({ label, value, points, skipped }: {
   points: number;
   skipped?: boolean;
 }) {
-  const color = skipped ? '#aaa' : points > 0 ? '#1a7f37' : points < 0 ? '#c41e3a' : '#666';
+  const color = skipped ? '#aaa' /* TODO: tokenize */ : points > 0 ? '#1a7f37' /* TODO: tokenize */ : points < 0 ? colors.skip : '#666'; // TODO: tokenize
   return (
     <View style={styles.factorRow}>
       <Text style={styles.factorLabel}>{label}</Text>
@@ -98,12 +99,12 @@ function Sparkline({ values }: { values: (number | null)[] }) {
               key={i}
               points={p}
               fill="none"
-              stroke="#6b6bf5"
+              stroke="#6b6bf5" /* TODO: tokenize */
               strokeWidth={1.5}
             />
           ))}
           {dots.map((d, i) => (
-            <Circle key={i} cx={d.x} cy={d.y} r={3} fill="#6b6bf5" />
+            <Circle key={i} cx={d.x} cy={d.y} r={3} fill="#6b6bf5" /* TODO: tokenize */ />
           ))}
         </Svg>
       )}
@@ -153,10 +154,10 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
     badge === 'skip' ? '✕ SKIP' :
                        'no badge';
   const badgeColor =
-    badge === 'star' ? '#d4af37' :
-    badge === 'go'   ? '#1a7f37' :
-    badge === 'skip' ? '#c41e3a' :
-                       '#888';
+    badge === 'star' ? '#d4af37' : // TODO: tokenize
+    badge === 'go'   ? '#1a7f37' : // TODO: tokenize
+    badge === 'skip' ? colors.skip :
+                       colors.textTertiary;
 
   // recentHistory is most-recent-first: [0]=t-20, [1]=t-40
   const tMinus20 = ride.recentHistory?.[0] ?? null;
@@ -255,11 +256,11 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#f4f4f7',
+    backgroundColor: '#f4f4f7', // TODO: tokenize
     paddingHorizontal: 16,
     paddingVertical: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
+    borderTopColor: '#e0e0e0', // TODO: tokenize
     gap: 8,
   },
 
@@ -276,22 +277,22 @@ const styles = StyleSheet.create({
   bucketDivider: {
     width: 1,
     height: 36,
-    backgroundColor: '#ddd',
+    backgroundColor: '#ddd', // TODO: tokenize
   },
   bucketLabel: {
     fontSize: 9,
-    color: '#999',
+    color: '#999', // TODO: tokenize
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   bucketWait: {
     fontSize: 14,
     fontWeight: '700',
-    color: '#222',
+    color: '#222', // TODO: tokenize
   },
   bucketN: {
     fontSize: 9,
-    color: '#aaa',
+    color: '#aaa', // TODO: tokenize
   },
 
   // Sparkline
@@ -307,13 +308,13 @@ const styles = StyleSheet.create({
   },
   rangeLabel: {
     fontSize: 11,
-    color: '#999',
+    color: '#999', // TODO: tokenize
     marginRight: 4,
   },
   rangeValue: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#444',
+    color: '#444', // TODO: tokenize
   },
   rangeSpacer: {
     flex: 1,
@@ -326,13 +327,13 @@ const styles = StyleSheet.create({
   },
   factorLabel: {
     fontSize: 11,
-    color: '#999',
+    color: '#999', // TODO: tokenize
     width: 44,
   },
   factorValue: {
     flex: 1,
     fontSize: 11,
-    color: '#444',
+    color: '#444', // TODO: tokenize
   },
   factorPoints: {
     fontSize: 12,
@@ -341,7 +342,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   skipped: {
-    color: '#bbb',
+    color: '#bbb', // TODO: tokenize
   },
 
   // Verdict
@@ -352,7 +353,7 @@ const styles = StyleSheet.create({
   },
   verdictScore: {
     fontSize: 12,
-    color: '#666',
+    color: '#666', // TODO: tokenize
     fontWeight: '600',
   },
   verdictBadge: {
@@ -362,12 +363,12 @@ const styles = StyleSheet.create({
 
   divider: {
     height: 1,
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#e0e0e0', // TODO: tokenize
   },
 
   noData: {
     fontSize: 11,
-    color: '#aaa',
+    color: '#aaa', // TODO: tokenize
     textAlign: 'center',
   },
 });

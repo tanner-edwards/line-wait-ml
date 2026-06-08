@@ -1,17 +1,13 @@
-// Shared layout for every onboarding question screen.
+// Shared layout shell for every onboarding step.
 //
 //   ← Back (top-left, only when stack has history)
 //   ProgressDots
 //   ─────────────
-//   Title (large)
+//   Title (Lora display, large)
 //   Optional subtitle
-//   {children}                      ← question content (typically rows)
+//   {children}
 //   ─────────────
-//   [ full-width bottom button ]    ← Skip / Continue / etc.
-//
-// For single-select questions the parent typically auto-advances on tap and
-// the bottom button stays as "Skip" the whole time. For multi-select the
-// parent flips the label to "Continue" once a selection exists.
+//   [ full-width bottom button ]
 
 import React from 'react';
 import {
@@ -24,9 +20,10 @@ import {
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { ProgressDots } from '../ProgressDots';
+import { colors, radius, spacing, typography } from '../../theme/tokens';
 
 interface Props {
-  step: number;        // 0-indexed
+  step: number;
   total: number;
   title: string;
   subtitle?: string;
@@ -89,14 +86,14 @@ export function OnboardingScreenShell({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingTop: 4,
+    paddingHorizontal: spacing.base,
+    paddingTop: spacing.xs,
   },
   backButton: {
     width: 44,
@@ -106,52 +103,50 @@ const styles = StyleSheet.create({
   },
   backIcon: {
     fontSize: 24,
-    color: '#444',
+    color: colors.textSecondary,
     paddingHorizontal: 8,
   },
   scroll: {
-    paddingHorizontal: 20,
-    paddingBottom: 16,
+    paddingHorizontal: spacing.lg,
+    paddingBottom: spacing.base,
     flexGrow: 1,
   },
   title: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: '#111',
-    marginTop: 8,
-    marginBottom: 6,
+    ...typography.screenTitle,
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginBottom: 24,
-    lineHeight: 20,
+    ...typography.body,
+    color: colors.textSecondary,
+    marginBottom: spacing.xl,
   },
   content: {
     flex: 1,
   },
   footer: {
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     borderTopWidth: 1,
-    borderTopColor: '#eee',
+    borderTopColor: colors.border,
   },
   bottomButton: {
     width: '100%',
-    backgroundColor: '#222',
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: colors.brand,
+    paddingVertical: spacing.base,
+    borderRadius: radius.card,
     alignItems: 'center',
   },
   bottomButtonDisabled: {
-    backgroundColor: '#bbb',
+    backgroundColor: colors.textTertiary,
   },
   bottomButtonPressed: {
     opacity: 0.85,
   },
   bottomButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 16,
     fontWeight: '600',
   },

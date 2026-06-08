@@ -1,5 +1,8 @@
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+import { Lora_600SemiBold, Lora_700Bold } from '@expo-google-fonts/lora';
+import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from '@expo-google-fonts/outfit';
 import { LocationProvider } from './src/context/LocationContext';
 import { RideProvider } from './src/context/RideContext';
 import { PersonaProvider } from './src/context/PersonaContext';
@@ -19,6 +22,19 @@ import { installConsoleMirror } from './src/utils/logger';
 installConsoleMirror();
 
 export default function App() {
+  const [fontsLoaded] = useFonts({
+    Lora_600SemiBold,
+    Lora_700Bold,
+    Outfit_400Regular,
+    Outfit_500Medium,
+    Outfit_600SemiBold,
+    Outfit_700Bold,
+  });
+
+  // Hold render until fonts are ready — prevents a flash of system font
+  // before Lora/Outfit load, which causes layout shifts on first paint.
+  if (!fontsLoaded) return null;
+
   return (
     <SafeAreaProvider>
       <NavigationContainer>
