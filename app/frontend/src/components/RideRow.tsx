@@ -11,10 +11,11 @@
 
 import React, { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, ChevronRight, Footprints, Navigation2 } from 'lucide-react-native';
+import { Bell, ChevronRight, Footprints } from 'lucide-react-native';
 import { Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
+import { WalkPill } from './WalkPill';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
@@ -139,12 +140,7 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
         {showRow2 ? (
           <View style={styles.row2}>
             <View style={styles.row2Left}>
-              {walkMins != null ? (
-                <View style={styles.walkPill}>
-                  <Navigation2 size={10} color={colors.textTertiary} />
-                  <Text style={styles.walkPillText}>~{walkMins} min</Text>
-                </View>
-              ) : null}
+              {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
             </View>
             <View style={styles.trendRow}>
               {trend ? <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text> : null}
@@ -241,19 +237,6 @@ const styles = StyleSheet.create({
   row2Left: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  walkPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    backgroundColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-  },
-  walkPillText: {
-    ...typography.caption,
-    color: colors.textTertiary,
   },
   trendRow: {
     flexDirection: 'row',

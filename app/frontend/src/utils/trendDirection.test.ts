@@ -63,7 +63,7 @@ describe('trendDirection — combined past + future signal', () => {
 
   describe('±5 min absolute threshold', () => {
     it("treats a +4 combined delta as 'stable'", () => {
-      // recent=28, current=30 → past=+2. b3=b4=32 → lateAvg=32, earlyAvg=30 → future=+2. Total=+4.
+      // same-direction: future=+2, past=+2 → combined = 2 + 0.4*2 = 2.8 → stable
       const r = trendDirection(input({
         currentWait: 30, recentWait: 28,
         bucket1Wait: 30, bucket3Wait: 32, bucket4Wait: 32,
@@ -71,11 +71,21 @@ describe('trendDirection — combined past + future signal', () => {
       expect(r).toBe('stable');
     });
 
-    it("boundary: exactly +5 combined delta flips to 'up'", () => {
-      // past=+2 (recent=28 → 30), future=+3 (b3=b4=33, earlyAvg=30)
+    it("boundary: weak same-direction signals stay 'stable' under new weighting", () => {
+      // same-direction: future=+3, past=+2 → combined = 3 + 0.4*2 = 3.8 → stable
+      // (old formula summed to 5 and fired 'up'; new formula weights past at 0.4)
       const r = trendDirection(input({
         currentWait: 30, recentWait: 28,
         bucket1Wait: 30, bucket3Wait: 33, bucket4Wait: 33,
+      }));
+      expect(r).toBe('stable');
+    });
+
+    it("future signal alone of +6 fires 'up' even with no past data", () => {
+      // No recentWait → pastDelta null → combined = futureDelta = 6 → up
+      const r = trendDirection(input({
+        currentWait: 30,
+        bucket1Wait: 30, bucket3Wait: 36, bucket4Wait: 36,
       }));
       expect(r).toBe('up');
     });
@@ -101,47 +111,57 @@ describe('trendDirection — combined past + future signal', () => {
     });
   });
 
-  describe("disagreement cancels — 'turning point' cases", () => {
-    it("past rising + future dropping = 'stable' (peaking)", () => {
-      // past=+10 (recent=20 → 30), future=-15 (b3=b4=15, earlyAvg=30) → total -5
+  describe("opposing signals — future wins", () => {
+    it("past rising + future dropping → future wins → 'down' (peaking)", () => {
+      // past=+10, future=-15 → opposing → combined = futureDelta = -15 → down
       const r = trendDirection(input({
         currentWait: 30, recentWait: 20,
         bucket1Wait: 30, bucket3Wait: 15, bucket4Wait: 15,
       }));
-      // |-5| === 5, fires 'down' — but the spirit is "peaking, hold steady".
-      // We accept the lean toward 'down' here because the future signal is
-      // larger; documented in the helper comment as expected behavior.
       expect(r).toBe('down');
     });
 
-    it("past dropping + future rising = 'stable' (bottoming) when magnitudes balance", () => {
-      // past=-10 (recent=40 → 30), future=+8 (b3=b4=38, earlyAvg=30) → total -2 → stable
+    it("past dropping + future rising → future wins → 'up' (bottoming)", () => {
+      // past=-10, future=+8 → opposing → combined = futureDelta = +8 → up
+      // The ride just dipped but the forward curve says it'll rise — go now.
       const r = trendDirection(input({
         currentWait: 30, recentWait: 40,
         bucket1Wait: 30, bucket3Wait: 38, bucket4Wait: 38,
       }));
-      expect(r).toBe('stable');
+      expect(r).toBe('up');
     });
 
-    it("near-equal opposing signals collapse to 'stable'", () => {
-      // past=+5 (recent=25 → 30), future=-6 (b3=b4=24, earlyAvg=30) → total -1 → stable
+    it("weak opposing signals: future=-6 wins over past=+5 → 'down'", () => {
+      // past=+5, future=-6 → opposing → combined = futureDelta = -6 → down
       const r = trendDirection(input({
         currentWait: 30, recentWait: 25,
         bucket1Wait: 30, bucket3Wait: 24, bucket4Wait: 24,
       }));
-      expect(r).toBe('stable');
+      expect(r).toBe('down');
     });
   });
 
   // --- Regression tests for the reported bugs ---
 
   describe("regression: Space Mountain 6pm — was 'Steady', should be 'Rising'", () => {
-    it("reads 'up' with current=60, future curve climbs to 73-79", () => {
-      // recent ~60 (just appeared), current=60, future climbs.
-      // past=0, future ~= avg(74,74) - avg(60,73) = 74 - 66.5 = +7.5 → up
+    it("reads 'up' when current=60 and forward curve climbs 73→79→74", () => {
+      // No recent movement: past=0, future = avg(79,74) - avg(60,73) = 76.5-66.5 = +10 → up.
       const r = trendDirection({
         currentWait: 60,
         recentWait: 60,
+        bucket1Wait: 73,
+        bucket3Wait: 79,
+        bucket4Wait: 74,
+      });
+      expect(r).toBe('up');
+    });
+
+    it("reads 'up' even when wait recently dipped before the rise", () => {
+      // past=-8 (68→60), future=+10 → opposing → future wins → combined=+10 → up.
+      // This was the real-world case that showed 'Steady' before the fix.
+      const r = trendDirection({
+        currentWait: 60,
+        recentWait: 68,
         bucket1Wait: 73,
         bucket3Wait: 79,
         bucket4Wait: 74,
@@ -152,15 +172,8 @@ describe('trendDirection — combined past + future signal', () => {
 
   describe("regression: Winnie the Pooh 9pm at the floor — was 'Dropping', should be 'Steady'", () => {
     it("reads 'stable' when current=5 (floor), recent dropped to floor, future stays near floor", () => {
-      // past=-10 (recent=15 → 5), future = avg(6,6) - avg(5,11) = 6 - 8 = -2 → total -12
-      // Hmm — past dominates because recent observed a 10-min drop. That's a real
-      // drop the line just took. But the future projection says we're now at the
-      // floor and bouncing. The combined delta of -12 reads 'down'.
-      //
-      // This test documents that behavior: the past observation IS real data
-      // showing the line moved. We don't artificially clamp at the floor; the
-      // signal reflects what happened. If we later want a "you're at the floor"
-      // suppression, that's a separate rule on top of trendDirection.
+      // Floor guard: currentWait=5 ≤ 10 → pastDelta suppressed → null.
+      // futureDelta = avg(6,6) - avg(5,11) = 6 - 8 = -2 → |combined|=2 < 5 → stable.
       const r = trendDirection({
         currentWait: 5,
         recentWait: 15,
@@ -168,18 +181,46 @@ describe('trendDirection — combined past + future signal', () => {
         bucket3Wait: 6,
         bucket4Wait: 6,
       });
-      expect(r).toBe('down');
+      expect(r).toBe('stable');
     });
 
     it("reads 'stable' when current=5 and past was already at the floor", () => {
-      // recent=5 (already at floor), current=5, future stays low.
-      // past=0, future = avg(6,6) - avg(5,11) = 6 - 8 = -2 → total -2 → stable
+      // Floor guard applies (currentWait=5); future weak → stable.
       const r = trendDirection({
         currentWait: 5,
         recentWait: 5,
         bucket1Wait: 11,
         bucket3Wait: 6,
         bucket4Wait: 6,
+      });
+      expect(r).toBe('stable');
+    });
+
+    it("floor guard boundary: currentWait=11 retains pastDelta, both signals down → 'down'", () => {
+      // currentWait=11 > 10 → pastDelta retained = 11-20 = -9.
+      // futureDelta: earlyAvg=(11+11)/2=11, lateAvg=6 → -5. Same sign → combined = -5+0.4*(-9) = -8.6 → down.
+      // Contrast with currentWait=5: floor guard suppresses past, futureDelta=-2 → stable.
+      const r = trendDirection({
+        currentWait: 11,
+        recentWait: 20,
+        bucket1Wait: 11,
+        bucket3Wait: 6,
+        bucket4Wait: 6,
+      });
+      expect(r).toBe('down');
+    });
+  });
+
+  describe("regression: Finding Nemo 12pm — past spike already over, future flat", () => {
+    it("reads 'stable' when recent spike (+20) is done and forward curve is flat", () => {
+      // past=+20 (10→30), future: earlyAvg=(30+24)/2=27, lateAvg=(25+28)/2=26.5 → delta=-0.5
+      // Opposing → future wins → combined = -0.5 → |combined| < 5 → stable.
+      const r = trendDirection({
+        currentWait: 30,
+        recentWait: 10,
+        bucket1Wait: 24,
+        bucket3Wait: 25,
+        bucket4Wait: 28,
       });
       expect(r).toBe('stable');
     });

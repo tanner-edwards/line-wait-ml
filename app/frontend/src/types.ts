@@ -114,6 +114,7 @@ export interface Recommendation {
                               //   Removed to halve LLM output tokens and speed up first paint.
                               //   May come back via a separate on-demand fetch when the user
                               //   taps to expand. See backend promptBuilder.ts TODO(paragraph).
+  restrictionNote: string | null; // LLM-populated only when a persona factor affected ranking
   walkMinutes: number | null;
   walkYards: number | null;
   arrivalWait: number | null; // LLM-estimated wait when guest arrives; null when unavailable

@@ -279,6 +279,7 @@ export function parseAndValidate(
     valid.push({
       rideId: e.rideId,
       oneLiner: e.oneLiner,
+      restrictionNote: typeof e.restrictionNote === 'string' ? e.restrictionNote : null,
       // paragraph: e.paragraph,
       walkMinutes: candidate.walkMinutes,
       walkYards: candidate.walkYards,
@@ -315,6 +316,7 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
   return sorted.slice(0, BATCH_SIZE).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,
     oneLiner: DEFAULT_FALLBACK_ONE_LINER,
+    restrictionNote: null,
     // paragraph: DEFAULT_FALLBACK_PARAGRAPH,  // [DROPPED] see promptBuilder.ts TODO(paragraph)
     walkMinutes,
     walkYards,

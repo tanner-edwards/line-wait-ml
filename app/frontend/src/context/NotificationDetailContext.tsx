@@ -26,6 +26,10 @@ export interface ActiveDetail {
   durationMs?: number | null;
   /** ISO timestamp of when the ride closed — from the reopen log entry. */
   closedAt?: string | null;
+  /** LLM-generated note when a persona factor (age, pregnancy, etc.) affected ranking. */
+  restrictionNote?: string | null;
+  /** AI one-liner from the recommendations page, if the detail was opened from there. */
+  oneLiner?: string | null;
 }
 
 interface NotificationDetailContextValue {

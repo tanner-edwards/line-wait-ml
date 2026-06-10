@@ -115,6 +115,14 @@ HARD RULES (apply regardless of persona):
 - Don't recommend a ride past the park's listed close time, if hours are known.
 - Return up to ${batchSize} rides — fewer if the list is shorter, but always return as many as you have ride entries for.
 
+RESTRICTION NOTE (restrictionNote field):
+- Only populate when a persona factor meaningfully affected how THIS specific ride was ranked.
+- Omit entirely (set to null) if no profile factor is relevant to this ride — do not default to filling it.
+- When to include: a height-restricted ride when the youngest is borderline; a rough-motion ride when pregnancy is flagged; a wheelchair-transfer attraction for a mobility guest; intense sensory elements for a DAS guest.
+- Write one short sentence (≤ 60 chars). Acknowledge the factor and its effect on ranking.
+- Good examples: "Ranked lower — your youngest may not meet the height requirement." / "Not ranked higher given your pregnant guest." / "Requires a wheelchair transfer."
+- Bad examples: do NOT include for rides that have no relevant restriction for this group.
+
 OUTPUT FORMAT — strict, machine-parsed:
 Respond with a single JSON object, no markdown fences, no commentary outside the JSON, exactly this shape:
 
@@ -122,7 +130,8 @@ Respond with a single JSON object, no markdown fences, no commentary outside the
   "recommendations": [
     {
       "rideId": "<UUID from the ride list>",
-      "oneLiner": "<short sentence, <= 80 chars, shown on a card>"
+      "oneLiner": "<short sentence, <= 80 chars, shown on a card>",
+      "restrictionNote": "<one sentence or null>"
     },
     ... priority order, up to ${batchSize} entries
   ]

@@ -35,9 +35,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Bell, CircleCheck, OctagonX, Star, X } from 'lucide-react-native';
+import { AlertTriangle, Bell, CircleCheck, Footprints, OctagonX, Star, X } from 'lucide-react-native';
 import { Sheet } from './Sheet';
-import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, Polygon, Polyline, Rect, Stop, Text as SvgText } from 'react-native-svg';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -49,6 +49,7 @@ import { haversineMeters } from '../grouping';
 import { formatBucketTimeSlot, formatHHMM, formatTimeAgo } from '../timestamp';
 import { formatDuration, notificationBody } from '../../../../notification-copy';
 import { RecommendationBadge } from './RecommendationBadge';
+import { WalkPill } from './WalkPill';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
@@ -104,15 +105,6 @@ export function RideDetailModal(): React.ReactElement {
       onClose={closeDetail}
       size="tall"
       backdropColor={active?.source === 'history' ? 'transparent' : undefined}
-      headerRight={
-        <Pressable
-          onPress={dismissAll}
-          hitSlop={12}
-          testID="ride-detail-dismiss"
-        >
-          <X size={18} color={colors.textSecondary} />
-        </Pressable>
-      }
       testID="ride-detail"
     >
       {ride ? (
@@ -122,6 +114,9 @@ export function RideDetailModal(): React.ReactElement {
           userCoords={coords}
           notifDurationMs={active?.durationMs ?? null}
           notifClosedAt={active?.closedAt ?? null}
+          restrictionNote={active?.restrictionNote ?? null}
+          oneLiner={active?.oneLiner ?? null}
+          onDismissAll={dismissAll}
         />
       ) : active ? (
         <View style={styles.fallbackBlock}>
@@ -140,12 +135,18 @@ function DetailBody({
   userCoords,
   notifDurationMs,
   notifClosedAt,
+  restrictionNote,
+  oneLiner,
+  onDismissAll,
 }: {
   ride: Ride;
   parkName: string | null;
   userCoords: { lat: number; lng: number } | null;
   notifDurationMs: number | null;
   notifClosedAt: string | null;
+  restrictionNote: string | null;
+  oneLiner: string | null;
+  onDismissAll: () => void;
 }): React.ReactElement {
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
@@ -183,13 +184,35 @@ function DetailBody({
   const anchorWait = isOperating ? ride.currentWait : closedWait;
 
   const walkMins = userCoords ? walkMinsBetween(userCoords, ride) : null;
-  const aboveBelow = computeAboveBelow(anchorWait, bucket0Wait);
   const bucket4Wait = buckets?.[4]?.wait ?? null;
   const lowConfidence = (buckets?.[0]?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
-  // Badge precedence matches the list: star > walkOn > go > skip. The detail
-  // header shows the precise minute number (not a "Walk On" label), but it
-  // suppresses the go/skip badge when the ride is a walk-on, same as the row.
-  const showBadge = badge !== null && !(walkOn && badge !== 'star');
+  const bucket0SampleCount = buckets?.[0]?.sampleCount ?? 0;
+  const isBelowNormal =
+    isOperating && anchorWait !== null && bucket0Wait !== null &&
+    bucket0Wait > 0 && bucket0SampleCount >= MIN_BUCKET_SAMPLE_COUNT &&
+    anchorWait < bucket0Wait * 0.75;
+  const isAboveNormal =
+    isOperating && anchorWait !== null && bucket0Wait !== null &&
+    bucket0Wait > 0 && bucket0SampleCount >= MIN_BUCKET_SAMPLE_COUNT &&
+    anchorWait > bucket0Wait * 1.25;
+  const waitColor = isBelowNormal ? colors.go : isAboveNormal ? colors.skip : INK;
+  // Badge precedence: star > walkOn > go > skip.
+  const showWalkOn = walkOn && badge !== 'star';
+
+  const trendDir = trendDirection({
+    currentWait: anchorWait,
+    recentWait: ride.recentHistory?.[0]?.wait ?? null,
+    bucket1Wait: buckets?.[1]?.wait ?? null,
+    bucket3Wait: buckets?.[3]?.wait ?? null,
+    bucket4Wait,
+  });
+  const trendLabel = trendDir === 'down' ? 'Dropping ↘'
+    : trendDir === 'up' ? 'Rising ↗'
+    : trendDir === 'stable' ? 'Steady →'
+    : null;
+  const trendColor = trendDir === 'down' ? GREEN
+    : trendDir === 'up' ? RED
+    : colors.textTertiary;
 
   // Per-ride notification history — latest entry per type for this ride.
   //
@@ -217,114 +240,118 @@ function DetailBody({
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
-      {/* Header block — ride name + subtitle tight pair, then wait/badge/trend */}
+      {/* ── Header block ───────────────────────────────────────────── */}
       <View style={styles.headerBlock}>
-        <Text style={styles.rideName}>{ride.name}</Text>
-        {/* Row 1: subtitle | wait number (4px below name) */}
-        <View style={styles.headerRow1}>
+
+        {/* Row 1: ride name + close */}
+        <View style={styles.nameCloseRow}>
+          <Text style={styles.rideName}>{ride.name}</Text>
+          <Pressable onPress={onDismissAll} hitSlop={12} testID="ride-detail-dismiss" style={styles.closeBtn}>
+            <X size={18} color={colors.textSecondary} />
+          </Pressable>
+        </View>
+
+        {/* Row 2: badge pill — omitted when no signal */}
+        {showWalkOn ? (
+          <View style={styles.walkOnBadgeRow}>
+            <Footprints size={14} color={colors.textSecondary} />
+            <Text style={styles.walkOnBadgeLabel}>Walk On</Text>
+          </View>
+        ) : badge === 'star' ? (
+          <View style={[styles.badgePill, { backgroundColor: colors.starBg }]}>
+            <Star size={12} color={colors.star} fill={colors.star} />
+            <Text style={[styles.badgePillText, { color: colors.star }]}>Rare find</Text>
+          </View>
+        ) : badge === 'go' ? (
+          <View style={[styles.badgePill, { backgroundColor: colors.goBg }]}>
+            <Text style={[styles.badgePillText, { color: colors.go }]}>Good time to ride</Text>
+          </View>
+        ) : badge === 'skip' ? (
+          <View style={[styles.badgePill, { backgroundColor: colors.skipBg }]}>
+            <Text style={[styles.badgePillText, { color: colors.skip }]}>Busier than usual</Text>
+          </View>
+        ) : null}
+
+        {/* Row 3: location + wait number */}
+        <View style={styles.locationWaitRow}>
           <Text style={styles.subtitle}>
             {ride.land}{parkName ? ` · ${parkName}` : ''}
           </Text>
-          <View style={styles.waitCluster}>
-            {isDown ? (
-              <View style={styles.waitWithAnnotation}>
-                <Text style={styles.statusClosed}>Closed</Text>
+          <View style={styles.waitRight}>
+            {showWalkOn ? (
+              <View style={styles.walkOnWaitRow}>
+                <Footprints size={14} color={colors.textSecondary} />
+                <Text style={styles.walkOnWaitText}>Walk On</Text>
+              </View>
+            ) : isDown ? (
+              <View style={styles.waitStack}>
+                <Text style={styles.closedLabel}>Closed</Text>
                 {anchorWait !== null ? (
-                  <Text style={styles.waitAnnotation}>{anchorWait} min at close</Text>
+                  <Text style={styles.closedAnnotation}>{anchorWait} min at close</Text>
                 ) : null}
               </View>
             ) : anchorWait !== null ? (
-              <View style={styles.waitWithAnnotation}>
-                <View style={styles.waitNumberRow}>
-                  <Text style={styles.statusWait}>{anchorWait}</Text>
-                  <Text style={styles.statusWaitUnit}> min</Text>
+              <View style={styles.waitStack}>
+                <View style={styles.waitNumberInline}>
+                  <Text style={[styles.waitBig, { color: waitColor }]}>{anchorWait}</Text>
+                  <Text style={styles.waitUnit}> min</Text>
                 </View>
-                {walkOn ? (
-                  <Text style={styles.waitAnnotation}>Walk On</Text>
+                {trendLabel ? (
+                  <Text style={[styles.trendText, { color: trendColor }]}>{trendLabel}</Text>
                 ) : null}
-              </View>
-            ) : (
-              <Text style={styles.statusOther}>{ride.status}</Text>
-            )}
-          </View>
-        </View>
-
-        {/* Row 2: badge + aboveBelow | trend */}
-        <View style={styles.headerRow2}>
-          <View style={styles.headerLeft}>
-            {showBadge ? <RecommendationBadge badge={badge} /> : null}
-            {aboveBelow ? (
-              <View style={[styles.abovebelowPill, { backgroundColor: aboveBelow.pillBg }]}>
-                <Text style={[styles.abovebelowText, { color: aboveBelow.color }]}>
-                  {aboveBelow.shortLabel}
-                </Text>
               </View>
             ) : null}
           </View>
-          <View style={styles.trendCluster}>
-            {(() => {
-              // Trend combines real past observations with the historical-average
-              // future curve. Single source of truth via trendDirection — so the
-              // label, arrow, AND caption can't disagree.
-              const trendInput = {
-                currentWait: anchorWait,
-                recentWait: ride.recentHistory?.[0]?.wait ?? null,
-                bucket1Wait: buckets?.[1]?.wait ?? null,
-                bucket3Wait: buckets?.[3]?.wait ?? null,
-                bucket4Wait,
-              };
-              const trend = trendDirection(trendInput);
-              if (trend === null) return null;
-              const label = trend === 'down' ? 'Dropping' : trend === 'up' ? 'Rising' : 'Steady';
-              return (
-                <>
-                  <Text style={styles.trendLabel}>{label}</Text>
-                  <TrendArrow {...trendInput} lowConfidence={lowConfidence} />
-                </>
-              );
-            })()}
-          </View>
         </View>
 
-        {/* Row 3: walk distance (left) + notify pill (right) */}
+        {/* Row 4: walk time (left) + notify (right) */}
         <View style={styles.walkNotifyRow}>
-          {walkMins != null ? (
-            <View style={styles.walkPill}>
-              <Text style={styles.walkPillText}>~{walkMins} min walk</Text>
-            </View>
-          ) : <View />}
+          <View style={styles.walkTimeArea}>
+            {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
+          </View>
           <Pressable
             onPress={onToggleWatch}
-            style={({ pressed }) => [styles.notifyPill, isWatching && styles.notifyPillActive, pressed && styles.notifyPillPressed]}
+            style={[styles.notifyBtn, isWatching && styles.notifyBtnWatching]}
             hitSlop={8}
             testID={`detail-bell-${ride.id}`}
             accessibilityRole="button"
             accessibilityLabel={isWatching ? 'Remove alert' : 'Set alert'}
           >
-            <Bell size={12} color={isWatching ? colors.brand : colors.textTertiary} />
-            <Text style={[styles.notifyPillText, isWatching && styles.notifyPillTextActive]}>
-              {isWatching ? 'Watching' : 'Notify'}
+            <Bell size={14} color={isWatching ? colors.star : colors.textInverse} />
+            <Text style={[styles.notifyBtnText, isWatching && styles.notifyBtnWatchingText]}>
+              {isWatching ? 'Watching' : 'Watch'}
             </Text>
           </Pressable>
         </View>
+
       </View>
 
-      {/* Right-now tile — moved ABOVE the graph since the current-vs-typical
-          comparison is the most decision-relevant single number on the page. */}
-      {bucket0Wait != null ? (
+
+      {/* Restriction note — only shown when the LLM flagged a persona conflict */}
+      {restrictionNote ? (
+        <View style={styles.restrictionBanner}>
+          <AlertTriangle size={13} color={colors.star} style={styles.restrictionIcon} />
+          <Text style={styles.restrictionText}>{restrictionNote}</Text>
+        </View>
+      ) : null}
+
+      {/* AI one-liner — only present when opened from the recommendations page */}
+      {oneLiner ? (
         <Tile>
-          <TileLabel>Right now vs typical</TileLabel>
-          <Text style={styles.rightNowLine}>
-            <Text style={styles.rightNowNumber}>
-              {isDown ? 'Closed' : (anchorWait != null ? `${anchorWait} min` : '—')}
-            </Text>
-            <Text style={styles.rightNowDim}> · usually ~{bucket0Wait} min around now</Text>
-          </Text>
-          {aboveBelow ? (
-            <Text style={[styles.rightNowDelta, { color: aboveBelow.color }]}>
-              {aboveBelow.arrow} {Math.abs(aboveBelow.percent)}% {aboveBelow.percent < 0 ? 'below' : 'above'} typical
-            </Text>
-          ) : null}
+          <Text style={styles.oneLiner}>{oneLiner}</Text>
+        </Tile>
+      ) : null}
+
+      {/* Today's Range — merged range bar + typical marker + tagline */}
+      {ride.rideStats ? (
+        <Tile>
+          <TileLabel>Today's Range</TileLabel>
+          <TodaysRange
+            p10={ride.rideStats.p10}
+            p90={ride.rideStats.p90}
+            current={anchorWait}
+            typicalWait={bucket0Wait}
+          />
         </Tile>
       ) : null}
 
@@ -345,19 +372,6 @@ function DetailBody({
             bucket1Wait={buckets?.[1]?.wait ?? null}
             bucket3Wait={buckets?.[3]?.wait ?? null}
             bucket4Wait={bucket4Wait}
-          />
-        </Tile>
-      ) : null}
-
-      {/* Range band — min/max range with current marker */}
-      {ride.rideStats ? (
-        <Tile>
-          <TileLabel>Where it sits in this ride's range</TileLabel>
-          <RangeBand
-            p10={ride.rideStats.p10}
-            p90={ride.rideStats.p90}
-            current={anchorWait}
-            isDown={isDown}
           />
         </Tile>
       ) : null}
@@ -640,127 +654,189 @@ function niceTickStep(max: number): number {
   return Math.ceil(max / 5);
 }
 
-// ---- Range band (SVG p10 – p90) -----------------------------------
+// ---- Today's Range bar (merged range + typical + tagline) ----------
 
-// Tall, chunky band — the visual is a single horizontal value, so vertical
-// height is all about giving the bar + dot + labels real presence rather
-// than a thin strip.
-const RB_W = 360;
-const RB_H = 80;
-const RB_RENDER_H = 80;
-// Side padding kept small so the bar genuinely spans the screen in the
-// happy path. End-cap labels are anchored at bandStart/bandEnd so they
-// follow the bar position even when it shifts for an out-of-band dot.
-const RB_PAD_X = 16;
-const RB_BAR_Y = 36;
+const TR_W = 360;
+const TR_PAD_X = 12;
+const HALF_BUBBLE = 22;          // half of bubble width (44 total)
+const BUBBLE_TOP_Y = 4;
+const BUBBLE_H = 18;
+const BUBBLE_BOTTOM_Y = BUBBLE_TOP_Y + BUBBLE_H;     // 22
+const POINTER_H = 7;
+const POINTER_TIP_Y = BUBBLE_BOTTOM_Y + POINTER_H;   // 29
+const TRACK_TOP_Y = POINTER_TIP_Y + 2;               // 31
+const TRACK_H = 8;
+const TRACK_CY = TRACK_TOP_Y + TRACK_H / 2;          // 35
+const TRACK_BOTTOM_Y = TRACK_TOP_Y + TRACK_H;         // 39
+const LABEL_Y = TRACK_BOTTOM_Y + 16;                  // 55
+const TR_H = LABEL_Y + 10;                            // 65
 
-function RangeBand({
+function buildTagline(current: number | null, typical: number | null): string | null {
+  if (current == null || typical == null) return null;
+  const diff = Math.abs(Math.round(current - typical));
+  if (diff <= 2) return 'Right around the usual wait for this time.';
+  return current < typical
+    ? `About ${diff} min less than usual right now.`
+    : `About ${diff} min more than usual right now.`;
+}
+
+function TodaysRange({
   p10,
   p90,
   current,
-  isDown,
+  typicalWait,
 }: {
   p10: number;
   p90: number;
   current: number | null;
-  isDown: boolean;
+  typicalWait: number | null;
 }): React.ReactElement {
-  // Layout model:
-  //  • Happy path (p10 ≤ current ≤ p90): the bar spans the full inner width.
-  //    The dot sits on the bar proportionally between the end-caps.
-  //  • Below p10: the bar shifts right to make room for a green dashed
-  //    extension on the left. Extension length is proportional to how
-  //    far below the value is, capped at MAX_EXTENSION_FRAC of total
-  //    width so the band itself never shrinks below ~70%.
-  //  • Above p90: mirror — bar shifts left, red dashed extension on right.
-  //  • The bar is just lines (end-caps + a connector) with no interior
-  //    fill — keeps the "|—————|" feel clean.
+  const [renderW, setRenderW] = useState(0);
 
-  const innerLeft = RB_PAD_X;
-  const innerRight = RB_W - RB_PAD_X;
+  const innerLeft = TR_PAD_X;
+  const innerRight = TR_W - TR_PAD_X;
   const totalW = innerRight - innerLeft;
-  const MAX_EXTENSION_FRAC = 0.30;
-  const maxExtension = totalW * MAX_EXTENSION_FRAC;
   const range = Math.max(1, p90 - p10);
 
-  let bandStart = innerLeft;
-  let bandEnd = innerRight;
-  let dotX: number | null = null;
-  let dotColor: string = isDown ? RED : BRAND;
-  let extension: { x1: number; x2: number; color: string } | null = null;
+  // Fill and dot use brand indigo — verdict lives in the header badge.
+  const fillColor = '#4F46E5';
 
-  if (current != null) {
-    if (current >= p10 && current <= p90) {
-      // Happy path — full-width bar, dot proportionally placed.
-      const ratio = (current - p10) / range;
-      dotX = innerLeft + ratio * totalW;
-    } else if (current < p10) {
-      // Below band — bar shifts right, green dashed extension on the left.
-      const outRatio = Math.min(1, (p10 - current) / range);
-      const extW = outRatio * maxExtension;
-      bandStart = innerLeft + extW;
-      bandEnd = innerRight;
-      dotX = innerLeft;
-      dotColor = GREEN;
-      extension = { x1: innerLeft, x2: bandStart, color: GREEN };
-    } else {
-      // Above band — bar shifts left, red dashed extension on the right.
-      const outRatio = Math.min(1, (current - p90) / range);
-      const extW = outRatio * maxExtension;
-      bandStart = innerLeft;
-      bandEnd = innerRight - extW;
-      dotX = innerRight;
-      dotColor = RED;
-      extension = { x1: bandEnd, x2: innerRight, color: RED };
-    }
-  }
+  // Current wait position (clamped to bar)
+  const dotRatio = current != null
+    ? Math.max(0, Math.min(1, (current - p10) / range))
+    : null;
+  const dotX = dotRatio != null ? innerLeft + dotRatio * totalW : null;
 
-  const bandY = RB_BAR_Y;
-  // Measure container width — see TrendGraph for the same rationale.
-  const [renderW, setRenderW] = useState(0);
+  // Bubble center — nudge away from edges so it doesn't clip
+  const bubbleCx = dotX != null
+    ? Math.max(innerLeft + HALF_BUBBLE, Math.min(innerRight - HALF_BUBBLE, dotX))
+    : null;
+  const bubbleLeft = bubbleCx != null ? bubbleCx - HALF_BUBBLE : null;
+
+  // Typical marker — floats LEFT of track when typicalWait < p10 (below observed min).
+  // When floating, we render it as a React Native element beside the SVG so we don't
+  // need negative SVG x-coordinates. The visual gap between the marker and the track's
+  // left edge communicates that current conditions are above the historical baseline.
+  const typicalIsFloating = typicalWait != null && typicalWait < p10;
+  const typicalRatio = !typicalIsFloating && typicalWait != null
+    ? Math.max(0, Math.min(1, (typicalWait - p10) / range))
+    : null;
+  const typicalX = typicalRatio != null ? innerLeft + typicalRatio * totalW : null;
+  const typicalLabelX = typicalX != null
+    ? Math.max(innerLeft + 28, Math.min(innerRight - 28, typicalX))
+    : null;
+
+  // Nudge the p10 endpoint label right when the floating marker is present
+  // so they don't overlap.
+  const p10LabelX = typicalIsFloating ? innerLeft + 22 : innerLeft;
+
+  const tagline = buildTagline(current, typicalWait);
+
   return (
-    <View
-      style={styles.rangeWrap}
-      onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
-    >
-      {renderW > 0 ? (
-      <Svg
-        width={renderW}
-        height={RB_RENDER_H}
-        viewBox={`0 0 ${RB_W} ${RB_H}`}
-        preserveAspectRatio="none"
-      >
-        {/* Out-of-band dashed extension (green for below, red for above) */}
-        {extension ? (
-          <Line
-            x1={extension.x1} x2={extension.x2}
-            y1={bandY} y2={bandY}
-            stroke={extension.color} strokeWidth={1.5} strokeDasharray="4,3"
-            strokeLinecap="round"
-          />
+    <View>
+      {/* Bar row — floating typical marker sits to the left when needed */}
+      <View style={styles.rangeBarRow}>
+        {typicalIsFloating ? (
+          <View style={styles.floatingTypical}>
+            <View style={styles.floatingTypicalLine} />
+            <Text style={styles.floatingTypicalLabel}>{`usually ${typicalWait}m`}</Text>
+          </View>
         ) : null}
+        <View
+          style={{ flex: 1 }}
+          onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
+        >
+          {renderW > 0 ? (
+            <Svg
+              width={renderW}
+              height={TR_H}
+              viewBox={`0 0 ${TR_W} ${TR_H}`}
+              preserveAspectRatio="none"
+            >
+              {/* Track background — plain neutral, no gradient */}
+              <Rect
+                x={innerLeft} y={TRACK_TOP_Y}
+                width={totalW} height={TRACK_H}
+                rx={TRACK_H / 2}
+                fill={colors.border}
+              />
 
-        {/* The bar itself — left cap, connector, right cap. Thin & clean. */}
-        <Line x1={bandStart} x2={bandStart} y1={bandY - 7} y2={bandY + 7} stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
-        <Line x1={bandEnd}   x2={bandEnd}   y1={bandY - 7} y2={bandY + 7} stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
-        <Line x1={bandStart} x2={bandEnd}   y1={bandY}     y2={bandY}     stroke={BRAND_DIM} strokeWidth={1.5} strokeLinecap="round" />
+              {/* Fill — from left edge to current position */}
+              {dotX != null ? (
+                <Rect
+                  x={innerLeft} y={TRACK_TOP_Y}
+                  width={Math.max(0, dotX - innerLeft)} height={TRACK_H}
+                  rx={TRACK_H / 2}
+                  fill={fillColor}
+                />
+              ) : null}
 
-        {/* min / max labels under the end-caps — value on one row, label on the next */}
-        <SvgText x={bandStart} y={bandY + 21} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p10}</SvgText>
-        <SvgText x={bandStart} y={bandY + 35} fontSize="11" fill={MUTED} textAnchor="middle">min</SvgText>
-        <SvgText x={bandEnd}   y={bandY + 21} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">{p90}</SvgText>
-        <SvgText x={bandEnd}   y={bandY + 35} fontSize="11" fill={MUTED} textAnchor="middle">max</SvgText>
+              {/* Typical marker — only when it falls within the track */}
+              {typicalX != null ? (
+                <Line
+                  x1={typicalX} x2={typicalX}
+                  y1={TRACK_TOP_Y - 4} y2={TRACK_BOTTOM_Y + 4}
+                  stroke={MUTED} strokeWidth={2}
+                />
+              ) : null}
 
-        {/* Current-wait dot + value label above. Small dot, light typography. */}
-        {dotX != null && current != null ? (
-          <>
-            <Circle cx={dotX} cy={bandY} r={6} fill={dotColor} />
-            <SvgText x={dotX} y={bandY - 12} fontSize="13" fontWeight="600" fill={INK} textAnchor="middle">
-              {current}
-            </SvgText>
-          </>
-        ) : null}
-      </Svg>
+              {/* "usually Xm" label under typical marker */}
+              {typicalX != null && typicalLabelX != null && typicalWait != null ? (
+                <SvgText
+                  x={typicalLabelX} y={LABEL_Y}
+                  fontSize="10.5" fontWeight="500"
+                  fill={SUBINK} textAnchor="middle"
+                >
+                  {`usually ${typicalWait}m`}
+                </SvgText>
+              ) : null}
+
+              {/* Endpoint labels — min left, max right */}
+              <SvgText x={p10LabelX} y={LABEL_Y} fontSize="10.5" fill={MUTED} textAnchor="start">{p10}m</SvgText>
+              <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={MUTED} textAnchor="end">{p90}m</SvgText>
+
+              {/* Current wait dot */}
+              {dotX != null ? (
+                <Circle
+                  cx={dotX} cy={TRACK_CY}
+                  r={7} fill={fillColor}
+                  stroke="white" strokeWidth={2}
+                />
+              ) : null}
+
+              {/* Callout bubble above dot — pill shape */}
+              {dotX != null && bubbleLeft != null && bubbleCx != null && current != null ? (
+                <>
+                  <Rect
+                    x={bubbleLeft} y={BUBBLE_TOP_Y}
+                    width={HALF_BUBBLE * 2} height={BUBBLE_H}
+                    rx={BUBBLE_H / 2}
+                    fill={fillColor}
+                  />
+                  <Polygon
+                    points={`${bubbleCx - 5},${BUBBLE_BOTTOM_Y} ${bubbleCx + 5},${BUBBLE_BOTTOM_Y} ${dotX},${POINTER_TIP_Y}`}
+                    fill={fillColor}
+                  />
+                  <SvgText
+                    x={bubbleCx} y={BUBBLE_TOP_Y + BUBBLE_H - 5}
+                    fontSize="11" fontWeight="700"
+                    fill="white" textAnchor="middle"
+                  >
+                    {`${current}m`}
+                  </SvgText>
+                </>
+              ) : null}
+            </Svg>
+          ) : null}
+        </View>
+      </View>
+
+      {/* Tagline below bar */}
+      {tagline ? (
+        <>
+          <View style={styles.taglineDivider} />
+          <Text style={styles.tagline}>{tagline}</Text>
+        </>
       ) : null}
     </View>
   );
@@ -806,105 +882,98 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     paddingBottom: 12,
   },
-  titleRow: {
+  // ── Header styles ─────────────────────────────────────────────────
+  nameCloseRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 8,
-  },
-  titleBadge: {
-    // Vertical nudge so the badge optically aligns with the first line
-    // of the larger Lora display name rather than sitting baseline-high.
-    marginTop: 5,
+    justifyContent: 'space-between',
+    marginBottom: 4,
   },
   rideName: {
-    fontFamily: 'Lora_700Bold',
-    fontSize: 22,
-    fontWeight: '700',
+    fontFamily: 'Lora_600SemiBold',
+    fontSize: 20,
+    fontWeight: '600',
     color: INK,
-    lineHeight: 28,
+    lineHeight: 26,
     flex: 1,
+    marginRight: 12,
   },
-  headerRow1: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    justifyContent: 'space-between',
-    marginTop: 4, // tight gap between name and subtitle
-    marginBottom: 6,
-  },
-  subtitle: { fontSize: 13, color: SUBINK, flexShrink: 1, marginRight: 8 },
-  waitCluster: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 1,
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
     flexShrink: 0,
+    marginTop: 2,
   },
-  statusWait: { fontSize: 36, fontWeight: '700', fontFamily: 'Outfit_700Bold', color: INK },
-  statusWaitUnit: { fontSize: 16, fontWeight: '500', color: SUBINK },
-  statusClosed: { fontSize: 32, fontWeight: '700', fontFamily: 'Outfit_700Bold', color: RED },
-  statusOther: { fontSize: 14, fontWeight: '600', color: SUBINK },
-  waitWithAnnotation: { alignItems: 'flex-end' },
-  waitNumberRow: { flexDirection: 'row', alignItems: 'baseline', gap: 1 },
-  waitAnnotation: { fontSize: 10, color: RED, marginTop: -2 },
-  headerRow2: {
+  walkOnBadgeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: 5,
     marginBottom: 6,
   },
-  headerLeft: {
+  walkOnBadgeLabel: { fontSize: 13, color: SUBINK },
+  badgePill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    flex: 1,
-    flexWrap: 'wrap',
+    gap: 5,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 100,
+    marginBottom: 6,
   },
+  badgePillText: { fontSize: 12, fontWeight: '600' },
+  locationWaitRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  subtitle: { fontSize: 13, color: SUBINK, flex: 1, marginRight: 12, marginTop: 2 },
+  waitRight: { alignItems: 'flex-end', flexShrink: 0 },
+  waitNumberInline: { flexDirection: 'row', alignItems: 'baseline' },
+  waitBig: {
+    fontSize: 36,
+    fontWeight: '700',
+    fontFamily: 'Outfit_700Bold',
+    color: INK,
+    fontVariant: ['tabular-nums'],
+    letterSpacing: -0.72,
+    lineHeight: 36,
+  },
+  waitUnit: { fontSize: 12, color: SUBINK, marginLeft: 2 },
+  walkOnWaitRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  walkOnWaitText: { fontSize: 13, color: SUBINK },
+  waitStack: { alignItems: 'flex-end', gap: 2 },
+  closedLabel: { fontSize: 15, fontWeight: '600', color: MUTED },
+  closedAnnotation: { fontSize: 11, color: MUTED, textAlign: 'right' },
+  trendText: { fontSize: 12.5, fontWeight: '600' },
   walkNotifyRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginTop: 6,
+    marginTop: 2,
   },
-  notifyPill: {
+  walkTimeArea: { flexDirection: 'row', alignItems: 'center' },
+  notifyBtn: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
+    gap: 5,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: 100,
+    backgroundColor: BRAND,
+  },
+  notifyBtnWatching: {
+    backgroundColor: 'transparent',
     borderWidth: 1,
     borderColor: colors.borderStrong,
-    backgroundColor: colors.surface,
   },
-  notifyPillActive: {
-    borderColor: colors.brand,
-    backgroundColor: colors.bg,
-  },
-  notifyPillPressed: { opacity: 0.7 },
-  notifyPillText: { fontSize: 12, color: colors.textTertiary, fontWeight: '500' },
-  notifyPillTextActive: { color: colors.brand, fontWeight: '600' },
-  abovebelowPill: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  abovebelowText: { fontSize: 11, fontWeight: '700' },
-  trendCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trendLabel: {
-    fontSize: 12,
-    color: SUBINK,
-    marginRight: 2,
-  },
-  walkPill: {
-    alignSelf: 'flex-start',
-    backgroundColor: colors.border,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-  },
-  walkPillText: { fontSize: 12, color: BRAND, fontWeight: '600' },
+  notifyBtnText: { fontSize: 13, fontWeight: '600', color: colors.textInverse },
+  notifyBtnWatchingText: { color: colors.textSecondary, fontWeight: '500' },
 
   tile: {
     backgroundColor: colors.bg,
@@ -923,6 +992,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   tileBody: { fontSize: 14, color: INK, lineHeight: 20 },
+  oneLiner: { fontSize: 14, color: SUBINK, lineHeight: 20 },
 
   graphWrap: { alignItems: 'stretch', minHeight: GRAPH_RENDER_H, width: '100%' },
   columnsRow: {
@@ -937,12 +1007,32 @@ const styles = StyleSheet.create({
   columnValueNow: { color: BRAND, fontSize: 14 },
   tinyHint: { fontSize: 12, color: SUBINK, marginTop: 6, fontStyle: 'italic' },
 
-  rangeWrap: { alignItems: 'stretch', height: RB_RENDER_H, width: '100%' },
-
-  rightNowLine: { fontSize: 15, color: INK },
-  rightNowNumber: { fontWeight: '700' },
-  rightNowDim: { color: SUBINK },
-  rightNowDelta: { fontSize: 13, fontWeight: '600', marginTop: 6 },
+  rangeBarRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  floatingTypical: {
+    width: 44,
+    paddingTop: TRACK_TOP_Y - 4, // align with track
+    alignItems: 'center',
+  },
+  floatingTypicalLine: {
+    width: 2,
+    height: TRACK_H + 8,
+    backgroundColor: MUTED,
+    borderRadius: 2,
+  },
+  floatingTypicalLabel: {
+    fontSize: 10.5,
+    fontWeight: '500',
+    color: SUBINK,
+    marginTop: 4,
+    textAlign: 'center',
+  },
+  taglineDivider: {
+    height: StyleSheet.hairlineWidth,
+    backgroundColor: '#eef',
+    marginTop: 10,
+    marginBottom: 8,
+  },
+  tagline: { fontSize: 13, color: SUBINK, fontStyle: 'italic' },
 
   closureLine: { fontSize: 14, color: INK },
   closureFutureHint: { fontSize: 12, color: MUTED, marginTop: 6, fontStyle: 'italic' },
@@ -972,4 +1062,18 @@ const styles = StyleSheet.create({
 
   fallbackBlock: { flex: 1, justifyContent: 'center', padding: 32 },
   fallback: { fontSize: 14, color: SUBINK, textAlign: 'center' },
+
+  restrictionBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    backgroundColor: colors.starBg,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    gap: 8,
+  },
+  restrictionIcon: { marginTop: 1 },
+  restrictionText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 18 },
 });

@@ -100,7 +100,7 @@ describe('parseAndValidate', () => {
     // r1 has currentWait=10, walkMinutes=3, no historical average → flat → arrivalWait=10
     // (paragraph is dropped from the output shape — see promptBuilder TODO(paragraph))
     expect(recs).toEqual([
-      { rideId: 'r1', oneLiner: 'Closest, line is short', walkMinutes: 3, walkYards: 240, arrivalWait: 10 },
+      { rideId: 'r1', oneLiner: 'Closest, line is short', restrictionNote: null, walkMinutes: 3, walkYards: 240, arrivalWait: 10 },
     ]);
   });
 

@@ -21,13 +21,24 @@
 //     and stays anchored to currentWait on the early side so it reflects
 //     where the ride actually is now (not just historical patterns).
 //
-// Combined delta = pastDelta + futureDelta, with a ±5 min absolute floor.
+// Combined delta with two corrections:
 //
-// Why summing works for the "turning point" case: if past says +10 (already
-// rising) but future says −15 (will turn down), combined = −5 → 'stable'.
-// That correctly reads as "peaking — no single direction to act on." Same
-// thing in reverse for bottoming. When past and future agree, magnitudes
-// add and the label fires with conviction.
+//   1. Opposing signals → future wins.
+//      When past and future pull in opposite directions (one positive, one
+//      negative), the sum would cancel toward zero and produce a misleading
+//      'stable'. Instead we trust the forward-looking signal: it describes
+//      what the guest will actually face when they arrive, not what already
+//      happened. The past is informative only when it reinforces the future.
+//
+//   2. Floor guard (currentWait ≤ 10 min).
+//      At walk-on territory, a recent drop from 15 → 5 is noise: the ride
+//      is already at its practical floor and can't meaningfully improve
+//      further. Suppressing pastDelta avoids a "Dropping" label that implies
+//      more headroom than exists.
+//
+// When past and future agree (same sign), combined = futureDelta + 0.4 * pastDelta.
+// The 0.4 weight keeps the historical future curve as the primary signal while
+// letting a real recent move nudge the label in borderline cases.
 
 /**
  * Direction the wait is heading, combining recent past observations with
@@ -59,8 +70,11 @@ export function trendDirection(input: TrendInput): 'up' | 'down' | 'stable' | nu
   const { currentWait, recentWait, bucket1Wait, bucket3Wait, bucket4Wait } = input;
   if (currentWait === null) return null;
 
-  // Past delta — actual movement over the last poll interval.
-  const pastDelta = recentWait !== null ? currentWait - recentWait : null;
+  // Past delta — actual movement since the last poll.
+  // Suppressed at the floor (≤ 10 min): a drop from 15 → 5 is hitting the
+  // walk-on floor, not a signal of further improvement.
+  const rawPastDelta = recentWait !== null ? currentWait - recentWait : null;
+  const pastDelta = (rawPastDelta !== null && currentWait > 10) ? rawPastDelta : null;
 
   // Future delta — early-window vs late-window historical averages.
   // Mirrors scoreRide's Factor 3. earlyAvg always anchors on currentWait
@@ -76,7 +90,22 @@ export function trendDirection(input: TrendInput): 'up' | 'down' | 'stable' | nu
   // No usable signal in either direction.
   if (pastDelta === null && futureDelta === null) return null;
 
-  const combined = (pastDelta ?? 0) + (futureDelta ?? 0);
+  // Combine signals. When past and future oppose (one positive, other negative),
+  // trust the future — it describes what the guest will face on arrival.
+  // When they agree, boost by a fraction of the past observation.
+  const opposing = pastDelta !== null && futureDelta !== null && pastDelta * futureDelta < 0;
+  let combined: number;
+  if (futureDelta === null) {
+    // Future unavailable — past only, with reduced confidence.
+    combined = (pastDelta ?? 0) * 0.4;
+  } else if (pastDelta === null || opposing) {
+    // No past, or signals pull in opposite directions — forward curve wins.
+    combined = futureDelta;
+  } else {
+    // Aligned — future dominates; past provides a measured boost.
+    combined = futureDelta + 0.4 * pastDelta;
+  }
+
   if (Math.abs(combined) < 5) return 'stable';
   return combined > 0 ? 'up' : 'down';
 }

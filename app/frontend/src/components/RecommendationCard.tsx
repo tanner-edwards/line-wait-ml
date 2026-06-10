@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { ChevronRight, Footprints, Navigation2 } from 'lucide-react-native';
+import { AlertTriangle, ChevronRight, Footprints, Navigation2 } from 'lucide-react-native';
 import { Recommendation, Ride, ScoreResult } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
@@ -105,14 +105,19 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
 
   return (
     <Pressable
-      onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse' })}
+      onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse', restrictionNote: rec.restrictionNote, oneLiner: rec.oneLiner ?? null })}
       testID={`rec-card-${rec.rideId}`}
       style={styles.pressable}
     >
       <Card variant={cardVariant} accent={cardAccent}>
         {/* Row 1 */}
         <View style={styles.row1}>
-          <Text style={styles.rideName}>{ride.name}</Text>
+          <View style={styles.nameRow}>
+            <Text style={styles.rideName}>{ride.name}</Text>
+            {rec.restrictionNote ? (
+              <AlertTriangle size={13} color={colors.star} />
+            ) : null}
+          </View>
           <View style={styles.waitCluster}>
             {showWalkOn ? (
               <View style={styles.walkOnCluster}>
@@ -191,11 +196,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  nameRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginRight: spacing.md,
+  },
   rideName: {
     ...typography.cardTitle,
     color: colors.textPrimary,
-    flex: 1,
-    marginRight: spacing.md,
+    flexShrink: 1,
   },
   waitCluster: {
     flexDirection: 'row',
