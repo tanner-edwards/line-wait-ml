@@ -9,11 +9,11 @@
 // WalkOn replaces the wait number when it applies (and the ride isn't a star).
 // Status color on the wait number only: go=below-normal, skip=above-normal.
 
-import React, { useMemo } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bell, ChevronRight, Footprints } from 'lucide-react-native';
 import { Ride } from '../types';
-import { colors, radius, spacing, typography } from '../theme/tokens';
+import { colors, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
 import { TrendArrow } from './TrendArrow';
@@ -21,13 +21,13 @@ import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
 import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
-import { usePersona } from '../context/PersonaContext';
-import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 interface RideRowProps {
   ride: Ride;
   walkOrigin: { lat: number; lng: number } | null;
+  isWatching: boolean;
+  onPress: () => void;
 }
 
 const WALK_SPEED_MPM = 83;
@@ -45,15 +45,7 @@ function walkMinsTo(
 
 const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
 
-export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement {
-  const { persona } = usePersona();
-  const { openDetail } = useNotificationDetail();
-
-  const isWatching = useMemo(
-    () => persona?.mustDoRideIds.includes(ride.id) ?? false,
-    [persona, ride.id]
-  );
-
+export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps): React.ReactElement {
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const ha = ride.historicalAverage;
@@ -98,7 +90,7 @@ export function RideRow({ ride, walkOrigin }: RideRowProps): React.ReactElement 
 
   return (
     <Pressable
-      onPress={() => openDetail({ rideId: ride.id, type: null, source: 'browse' })}
+      onPress={onPress}
       testID={`ride-${ride.id}`}
     >
       <View style={[styles.row, isDown && styles.rowDown]}>

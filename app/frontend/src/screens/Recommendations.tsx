@@ -25,6 +25,7 @@ import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useLocation } from '../context/LocationContext';
 import { useDebugMode } from '../context/DebugModeContext';
+import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { NotificationBellButton } from '../components/NotificationBellButton';
@@ -59,6 +60,7 @@ export function Recommendations(): React.ReactElement {
   const { context: dailyContext } = useDailyContext();
   const { coords, status, retry, setDebugCoords } = useLocation();
   const { debugMode } = useDebugMode();
+  const { openDetail } = useNotificationDetail();
 
   const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
   const [recsLoading, setRecsLoading] = useState(false);
@@ -307,6 +309,16 @@ export function Recommendations(): React.ReactElement {
           onShowMore={() => void loadMore()}
           refreshing={recsLoading}
           onRefresh={onRefresh}
+          debugMode={debugMode}
+          onCardPress={(rec) =>
+            openDetail({
+              rideId: rec.rideId,
+              type: null,
+              source: 'browse',
+              restrictionNote: rec.restrictionNote,
+              oneLiner: rec.oneLiner ?? null,
+            })
+          }
         />
       ) : null}
 
@@ -338,6 +350,8 @@ function RecsList({
   onShowMore,
   refreshing,
   onRefresh,
+  debugMode,
+  onCardPress,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
@@ -346,6 +360,8 @@ function RecsList({
   onShowMore: () => void;
   refreshing: boolean;
   onRefresh: () => void;
+  debugMode: boolean;
+  onCardPress: (rec: RecommendationsResponse['recommendations'][number]) => void;
 }): React.ReactElement {
   if (recs.recommendations.length === 0) {
     return (
@@ -368,6 +384,8 @@ function RecsList({
         <RecommendationCard
           rec={item}
           ride={ridesById.get(item.rideId)}
+          debugMode={debugMode}
+          onPress={() => onCardPress(item)}
         />
       )}
       ListHeaderComponent={

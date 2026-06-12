@@ -14,6 +14,7 @@ import React, {
   useRef,
   useState,
 } from 'react';
+import { Alert } from 'react-native';
 import {
   armDeviceForToday,
   registerDevice,
@@ -159,6 +160,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   const enableNotifications = useCallback(async (): Promise<boolean> => {
     if (!deviceId) return false;
+    // Optimistic: flip the switch immediately so the UI doesn't freeze
+    // while the async permission + registration work runs. On any failure
+    // we revert below and surface an alert.
+    setNotificationsEnabled(true);
     setBusy(true);
     setError(null);
     try {
@@ -167,11 +172,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       const permission = await svc.requestPermission();
       logInfo(`enableNotifications: permission = ${permission}`, 'notif');
       if (permission !== 'granted') {
-        setError(
-          permission === 'unsupported'
-            ? "This device doesn't support notifications yet."
-            : 'Notification permission was denied.'
-        );
+        const msg = permission === 'unsupported'
+          ? "This device doesn't support notifications yet."
+          : 'Notification permission was denied.';
+        setNotificationsEnabled(false);
+        setError(msg);
+        Alert.alert("Couldn't enable notifications", msg);
         return false;
       }
       // Use resubscribe (not getSubscription) so the browser drops any
@@ -190,7 +196,6 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         notificationsEnabled: true,
       });
       logInfo('enableNotifications: device registered', 'notif');
-      setNotificationsEnabled(true);
       void writeNotificationsEnabled(true);
       lastSyncedMustDoRef.current = [...(persona?.mustDoRideIds ?? [])].sort().join(',');
       return true;
@@ -199,7 +204,12 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       // generic so the Profile UI isn't cluttered with technical strings.
       const detail = err instanceof Error ? err.message : String(err);
       logError(`enableNotifications failed: ${detail}`, 'notif');
+      setNotificationsEnabled(false);
       setError('Could not enable notifications');
+      Alert.alert(
+        "Couldn't enable notifications",
+        "Something went wrong. Check your connection and try again."
+      );
       return false;
     } finally {
       setBusy(false);
@@ -208,6 +218,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
 
   const disableNotifications = useCallback(async (): Promise<void> => {
     if (!deviceId) return;
+    // Optimistic: flip off immediately. Revert + alert on failure.
+    setNotificationsEnabled(false);
     setBusy(true);
     setError(null);
     try {
@@ -218,13 +230,17 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         mustDoRideIds: persona?.mustDoRideIds ?? [],
         notificationsEnabled: false,
       });
-      setNotificationsEnabled(false);
       void writeNotificationsEnabled(false);
       logInfo('disableNotifications: device cleared', 'notif');
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       logError(`disableNotifications failed: ${detail}`, 'notif');
+      setNotificationsEnabled(true);
       setError('Could not disable notifications');
+      Alert.alert(
+        "Couldn't turn notifications off",
+        "Something went wrong. Check your connection and try again."
+      );
     } finally {
       setBusy(false);
     }

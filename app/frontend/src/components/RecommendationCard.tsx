@@ -10,16 +10,15 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, ChevronRight, Footprints, Navigation2 } from 'lucide-react-native';
+import { AlertTriangle, ChevronRight, Footprints } from 'lucide-react-native';
 import { Recommendation, Ride, ScoreResult } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
 import { Pill } from './Pill';
 import { TrendArrow } from './TrendArrow';
+import { WalkPill } from './WalkPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
-import { useNotificationDetail } from '../context/NotificationDetailContext';
-import { useDebugMode } from '../context/DebugModeContext';
 import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const SUPPRESSED_SCORE: ScoreResult = {
@@ -39,12 +38,11 @@ const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as cons
 interface RecommendationCardProps {
   rec: Recommendation;
   ride: Ride | undefined;
+  debugMode: boolean;
+  onPress: () => void;
 }
 
-export function RecommendationCard({ rec, ride }: RecommendationCardProps): React.ReactElement {
-  const { openDetail } = useNotificationDetail();
-  const { debugMode } = useDebugMode();
-
+export function RecommendationCard({ rec, ride, debugMode, onPress }: RecommendationCardProps): React.ReactElement {
   if (!ride) {
     return (
       <View style={styles.skeleton} testID={`rec-card-${rec.rideId}`}>
@@ -96,16 +94,12 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
     ? `${ride.currentWait}`
     : null;
 
-  const walkLabel = rec.walkMinutes !== null
-    ? `~${rec.walkMinutes} min${debugMode && rec.walkYards !== null ? ` · ${rec.walkYards} yds` : ''}`
-    : null;
-
   const cardVariant = 'default' as const;
   const cardAccent = badge === 'go' ? colors.go : badge === 'star' ? colors.star : undefined;
 
   return (
     <Pressable
-      onPress={() => openDetail({ rideId: rec.rideId, type: null, source: 'browse', restrictionNote: rec.restrictionNote, oneLiner: rec.oneLiner ?? null })}
+      onPress={onPress}
       testID={`rec-card-${rec.rideId}`}
       style={styles.pressable}
     >
@@ -164,10 +158,14 @@ export function RecommendationCard({ rec, ride }: RecommendationCardProps): Reac
         ) : null}
 
         {/* Row 4 — walk-time pill */}
-        {walkLabel ? (
-          <View style={styles.walkPill} testID={`rec-walk-${rec.rideId}`}>
-            <Navigation2 size={11} color={colors.brand} />
-            <Text style={styles.walkPillText}>{walkLabel}</Text>
+        {rec.walkMinutes !== null ? (
+          <View style={styles.walkPillRow}>
+            <WalkPill
+              minutes={rec.walkMinutes}
+              yards={debugMode ? rec.walkYards : null}
+              emphasized
+              testID={`rec-walk-${rec.rideId}`}
+            />
           </View>
         ) : null}
       </Card>
@@ -260,20 +258,7 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     marginTop: spacing.sm,
   },
-  walkPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    alignSelf: 'flex-start',
-    backgroundColor: colors.border,
-    borderRadius: radius.pill,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
+  walkPillRow: {
     marginTop: spacing.sm,
-  },
-  walkPillText: {
-    ...typography.caption,
-    color: colors.brand,
-    fontWeight: '600',
   },
 });

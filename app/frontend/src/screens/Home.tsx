@@ -29,6 +29,7 @@ import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
+import { usePersona } from '../context/PersonaContext';
 import { filterByDailyParks } from '../utils/parkFilter';
 
 
@@ -39,6 +40,14 @@ export function Home() {
   const { data, error, loading, refreshing, lastRefreshedAt, refresh } = useRides();
   const { coords: locationCoords, status: locationStatus } = useLocation();
   const { context: dailyContext } = useDailyContext();
+  const { openDetail } = useNotificationDetail();
+  const { persona } = usePersona();
+
+  // Build once per render; rows look up via Set.has() for O(1) per-row.
+  const mustDoSet = React.useMemo(
+    () => new Set(persona?.mustDoRideIds ?? []),
+    [persona]
+  );
 
   const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
@@ -134,7 +143,12 @@ export function Home() {
         data={items}
         keyExtractor={item => item.key}
         renderItem={({ item }) => (
-          <ListRow item={item} walkOrigin={walkOrigin} />
+          <ListRow
+            item={item}
+            walkOrigin={walkOrigin}
+            mustDoSet={mustDoSet}
+            onRidePress={(rideId) => openDetail({ rideId, type: null, source: 'browse' })}
+          />
         )}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
@@ -171,9 +185,13 @@ export function Home() {
 function ListRow({
   item,
   walkOrigin,
+  mustDoSet,
+  onRidePress,
 }: {
   item: ListItem;
   walkOrigin: { lat: number; lng: number } | null;
+  mustDoSet: ReadonlySet<string>;
+  onRidePress: (rideId: string) => void;
 }) {
   if (item.kind === 'park-header') {
     return (
@@ -195,7 +213,14 @@ function ListRow({
       </View>
     );
   }
-  return <RideRow ride={item.ride} walkOrigin={walkOrigin} />;
+  return (
+    <RideRow
+      ride={item.ride}
+      walkOrigin={walkOrigin}
+      isWatching={mustDoSet.has(item.ride.id)}
+      onPress={() => onRidePress(item.ride.id)}
+    />
+  );
 }
 
 const styles = StyleSheet.create({

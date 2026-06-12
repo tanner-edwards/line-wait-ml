@@ -1,17 +1,10 @@
-// Bottom-sheet showing recent notifications for this device.
-//
-// Stale-while-revalidate: on open we immediately show the cached list from
-// AsyncStorage, then fetch fresh data in the background. A small loading
-// indicator at the top of the list signals the refresh without replacing the
-// content — so the user sees something instantly and isn't surprised by new
-// entries appearing.
-//
-// Each row recomposes a tight summary from the log entry's data rather than
-// persisting the OS-notification body verbatim. Tradeoff: if we later improve
-// message wording the history reflects the new wording automatically.
+// Bottom-sheet showing recent notifications for this device. The
+// stale-while-revalidate fetch logic lives in useDeviceNotifications — this
+// file is just the render layer plus the context wiring that decides when
+// the sheet is open and what to do on a row tap.
 
 import { notificationBody } from '../../../../notification-copy';
-import React, { useCallback, useEffect, useState } from 'react';
+import React from 'react';
 import { colors, typography } from '../theme/tokens';
 import {
   ActivityIndicator,
@@ -24,44 +17,18 @@ import {
 import { CircleCheck, OctagonX, Star, TrendingUp } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
-import { ApiError, fetchDeviceNotifications } from '../api';
+import { useDeviceNotifications } from '../hooks/useDeviceNotifications';
 import { NotificationLogEntry } from '../types';
 import { formatTimeAgo } from '../timestamp';
-import { getCachedNotifications, setCachedNotifications } from '../utils/notificationHistoryStorage';
 import { Sheet } from './Sheet';
 
 export function NotificationHistorySheet(): React.ReactElement {
   const { deviceId } = useDevice();
   const { openDetail, historySheetOpen, closeHistorySheet } = useNotificationDetail();
-  const [entries, setEntries] = useState<NotificationLogEntry[] | null>(null);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    if (!deviceId) return;
-
-    const cached = await getCachedNotifications(deviceId);
-    if (cached) setEntries(cached);
-
-    setRefreshing(true);
-    setError(null);
-    try {
-      const next = await fetchDeviceNotifications(deviceId);
-      setEntries(next);
-      void setCachedNotifications(deviceId, next);
-    } catch (err) {
-      if (!cached) {
-        const message = err instanceof ApiError ? err.message : 'Could not load notifications';
-        setError(message);
-      }
-    } finally {
-      setRefreshing(false);
-    }
-  }, [deviceId]);
-
-  useEffect(() => {
-    if (historySheetOpen) void load();
-  }, [historySheetOpen, load]);
+  const { entries, refreshing, error } = useDeviceNotifications(
+    deviceId ?? null,
+    historySheetOpen,
+  );
 
   return (
     <Sheet

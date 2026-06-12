@@ -73,8 +73,6 @@ export function Profile(): React.ReactElement {
   const {
     notificationsEnabled,
     notificationTypes,
-    busy: deviceBusy,
-    error: deviceError,
     enableNotifications,
     disableNotifications,
     setNotificationTypeEnabled,
@@ -165,10 +163,8 @@ export function Profile(): React.ReactElement {
         <Card flush style={styles.sectionCard}>
           <ToggleRow
             label="Enable notifications"
-            value={deviceError ?? (notificationsEnabled ? 'Heads-up on your must-do rides' : 'Off')}
-            valueColor={deviceError ? colors.skip : undefined}
+            value={notificationsEnabled ? 'Heads-up on your must-do rides' : 'Off'}
             enabled={notificationsEnabled}
-            disabled={deviceBusy}
             onValueChange={() => {
               LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
               void (notificationsEnabled ? disableNotifications() : enableNotifications());
