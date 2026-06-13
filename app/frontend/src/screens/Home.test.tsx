@@ -1,4 +1,5 @@
 import React from 'react';
+import { RefreshControl } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Home } from './Home';
 import * as api from '../api';
@@ -187,7 +188,7 @@ describe('Home — initial successful load', () => {
 
     // Ride rows render with the right labels
     expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();
-    expect(screen.getByText('55 min')).toBeTruthy();
+    expect(screen.getByText('55')).toBeTruthy();
 
     // Missing wait renders as "—"
     expect(screen.getByText('Snow White')).toBeTruthy();
@@ -221,15 +222,16 @@ describe('Home — first-load failure', () => {
   });
 });
 
-describe('Home — refresh button', () => {
-  it('re-fetches data when the Refresh button is pressed', async () => {
+describe('Home — pull-to-refresh', () => {
+  it('re-fetches data when the user pulls to refresh', async () => {
     mockFetchWaits.mockResolvedValue(happyResponse);
-    renderHome();
+    const { UNSAFE_getByType } = renderHome();
 
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
     expect(mockFetchWaits).toHaveBeenCalledTimes(1);
 
-    fireEvent.press(screen.getByTestId('refresh-button'));
+    // Simulate the RefreshControl firing its onRefresh callback.
+    fireEvent(UNSAFE_getByType(RefreshControl), 'refresh');
 
     await waitFor(() => expect(mockFetchWaits).toHaveBeenCalledTimes(2));
   });
@@ -303,7 +305,7 @@ describe('Home — v1 historical-context indicators', () => {
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByText('40 min')).toBeTruthy();
+    expect(screen.getByText('40')).toBeTruthy();
     expect(screen.queryByTestId('trend-arrow-down')).toBeNull();
     expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
     expect(screen.queryByTestId('trend-arrow-stable')).toBeNull();

@@ -9,7 +9,7 @@ export async function fetchRecentHistory(
   const db = getFirestore();
   const parkId = PARKS[parkSlug].id;
   const upperBound = new Date(referenceDate.getTime() - 8 * 60_000);
-  const lowerBound = new Date(referenceDate.getTime() - 45 * 60_000);
+  const lowerBound = new Date(referenceDate.getTime() - 55 * 60_000);
 
   let snap: admin.firestore.QuerySnapshot;
   try {

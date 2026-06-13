@@ -16,6 +16,7 @@ import { Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
+import { BelowNormalBadge } from './BelowNormalBadge';
 import { TrendArrow } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
@@ -108,7 +109,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
           {/* Right side: Walk On OR wait number */}
           <View style={styles.waitCluster}>
             {showWalkOn ? (
-              <View style={styles.walkOnCluster}>
+              <View style={styles.walkOnCluster} testID="badge-walk-on">
                 <Footprints size={14} color={colors.textPrimary} />
                 <Text style={styles.walkOnLabel}>Walk On</Text>
               </View>
@@ -133,6 +134,11 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
           <View style={styles.row2}>
             <View style={styles.row2Left}>
               {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
+              <BelowNormalBadge
+                currentWait={ride.currentWait}
+                bucket0Wait={bucket0?.wait ?? null}
+                sampleCount={bucket0?.sampleCount ?? 0}
+              />
             </View>
             <View style={styles.trendRow}>
               {trend ? <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text> : null}
@@ -217,6 +223,7 @@ const styles = StyleSheet.create({
   },
   walkOnLabel: {
     ...typography.label,
+    fontSize: 16,
     color: colors.textPrimary,
     fontWeight: '600',
   },

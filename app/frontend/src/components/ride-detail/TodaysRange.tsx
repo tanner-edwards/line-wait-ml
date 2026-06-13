@@ -1,10 +1,18 @@
 // Horizontal range bar: |─●─| from p10 → p90 with the current wait as a
 // dot + callout bubble above. A "typical for this slot" tick floats inside
-// the track (or beside it when typical < p10), and a tagline below sums
-// up how today compares to the usual.
+// the track (or outside it when out of range), and a tagline below sums up
+// how today compares to the usual.
 //
-// Layout is fixed at viewBox=360×TR_H and stretched with preserveAspectRatio
-// so it scales to whatever container width it lives in.
+// Out-of-bounds design principle (both sides):
+//   When current or typical falls outside the P10–P90 range, the element
+//   renders beyond the track edge with a dashed connector back to the track.
+//   The gap is proportional to how far outside the range that value sits.
+//   FLOAT_PAD reserves space on each side for these floating elements, but
+//   only expands when something actually needs it — in-bounds states use
+//   PAD_NORMAL on both sides so the bar remains centered.
+//
+// Geometry is extracted into computeLayout() so it can be unit tested
+// without rendering SVG.
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -14,21 +22,23 @@ import { colors } from '../../theme/tokens';
 const MUTED = '#bbb'; // TODO: tokenize
 const SUBINK = '#666'; // TODO: tokenize
 
-// Geometry constants. All in the viewBox coordinate system.
-const TR_W = 360;
-const TR_PAD_X = 12;
-const HALF_BUBBLE = 22;
-const BUBBLE_TOP_Y = 4;
-const BUBBLE_H = 18;
+// Geometry constants — all in the viewBox coordinate system.
+export const TR_W = 360;
+export const PAD_NORMAL = 12;  // padding when nothing floats out of bounds
+export const FLOAT_PAD  = 52;  // padding on a side that accommodates OOB elements
+export const HALF_BUBBLE = 22;
+const BUBBLE_TOP_Y    = 4;
+const BUBBLE_H        = 18;
 const BUBBLE_BOTTOM_Y = BUBBLE_TOP_Y + BUBBLE_H;
-const POINTER_H = 7;
-const POINTER_TIP_Y = BUBBLE_BOTTOM_Y + POINTER_H;
-const TRACK_TOP_Y = POINTER_TIP_Y + 2;
-const TRACK_H = 8;
-const TRACK_CY = TRACK_TOP_Y + TRACK_H / 2;
-const TRACK_BOTTOM_Y = TRACK_TOP_Y + TRACK_H;
-const LABEL_Y = TRACK_BOTTOM_Y + 16;
-const TR_H = LABEL_Y + 10;
+const POINTER_H       = 7;
+const POINTER_TIP_Y   = BUBBLE_BOTTOM_Y + POINTER_H;
+export const TRACK_TOP_Y    = POINTER_TIP_Y + 2;
+export const TRACK_H        = 8;
+export const TRACK_CY       = TRACK_TOP_Y + TRACK_H / 2;
+const TRACK_BOTTOM_Y  = TRACK_TOP_Y + TRACK_H;
+export const LABEL_Y        = TRACK_BOTTOM_Y + 16;
+export const TR_H           = LABEL_Y + 10;
+const PROX            = 44;   // proximity threshold for dropping typical label
 
 function buildTagline(current: number | null, typical: number | null): string | null {
   if (current == null || typical == null) return null;
@@ -46,141 +56,194 @@ interface Props {
   typicalWait: number | null;
 }
 
-export function TodaysRange({
-  p10,
-  p90,
-  current,
-  typicalWait,
-}: Props): React.ReactElement {
-  const [renderW, setRenderW] = useState(0);
+export interface RangeLayout {
+  innerLeft: number;
+  innerRight: number;
+  totalW: number;
+  dotX: number | null;
+  dotFloatingLeft: boolean;
+  dotFloatingRight: boolean;
+  bubbleCx: number | null;
+  bubbleLeft: number | null;
+  typicalX: number | null;
+  typicalInBounds: boolean;
+  typicalLabelX: number | null;
+  typicalLabelY: number;
+  svgH: number;
+}
 
-  const innerLeft = TR_PAD_X;
-  const innerRight = TR_W - TR_PAD_X;
-  const totalW = innerRight - innerLeft;
+/** Pure geometry computation — exported for unit testing. */
+export function computeLayout(
+  p10: number,
+  p90: number,
+  current: number | null,
+  typicalWait: number | null,
+): RangeLayout {
   const range = Math.max(1, p90 - p10);
 
-  // Fill and dot use brand indigo — verdict lives in the header badge.
-  const fillColor = '#4F46E5';
+  const dotRatio     = current     != null ? (current     - p10) / range : null;
+  const typicalRatio = typicalWait != null ? (typicalWait - p10) / range : null;
 
-  // Current wait position (clamped to bar)
-  const dotRatio = current != null
-    ? Math.max(0, Math.min(1, (current - p10) / range))
-    : null;
-  const dotX = dotRatio != null ? innerLeft + dotRatio * totalW : null;
+  // Expand padding only on the side that needs it.
+  const needsLeftFloat  = (dotRatio != null && dotRatio < 0) || (typicalRatio != null && typicalRatio < 0);
+  const needsRightFloat = (dotRatio != null && dotRatio > 1) || (typicalRatio != null && typicalRatio > 1);
 
-  // Bubble center — nudge away from edges so it doesn't clip
-  const bubbleCx = dotX != null
-    ? Math.max(innerLeft + HALF_BUBBLE, Math.min(innerRight - HALF_BUBBLE, dotX))
-    : null;
+  const innerLeft  = needsLeftFloat  ? FLOAT_PAD : PAD_NORMAL;
+  const innerRight = TR_W - (needsRightFloat ? FLOAT_PAD : PAD_NORMAL);
+  const totalW     = innerRight - innerLeft;
+
+  // Dot — unclamped; capped only at SVG edges (dot radius = 7).
+  const rawDotX = dotRatio != null ? innerLeft + dotRatio * totalW : null;
+  const dotX    = rawDotX != null ? Math.max(7, Math.min(TR_W - 7, rawDotX)) : null;
+  const dotFloatingLeft  = rawDotX != null && rawDotX < innerLeft;
+  const dotFloatingRight = rawDotX != null && rawDotX > innerRight;
+
+  // Bubble follows dot, clamped to SVG bounds (not track bounds).
+  const bubbleCx   = dotX != null ? Math.max(HALF_BUBBLE, Math.min(TR_W - HALF_BUBBLE, dotX)) : null;
   const bubbleLeft = bubbleCx != null ? bubbleCx - HALF_BUBBLE : null;
 
-  // Typical marker — floats LEFT of track when typicalWait < p10 (below observed min).
-  // When floating, render it as a React Native element beside the SVG so we don't
-  // need negative SVG x-coordinates.
-  const typicalIsFloating = typicalWait != null && typicalWait < p10;
-  const typicalRatio = !typicalIsFloating && typicalWait != null
-    ? Math.max(0, Math.min(1, (typicalWait - p10) / range))
-    : null;
-  const typicalX = typicalRatio != null ? innerLeft + typicalRatio * totalW : null;
+  // Typical marker — unclamped on both sides.
+  const rawTypicalX = typicalRatio != null ? innerLeft + typicalRatio * totalW : null;
+  const typicalX    = rawTypicalX  != null ? Math.max(7, Math.min(TR_W - 7, rawTypicalX)) : null;
+  const typicalInBounds = rawTypicalX != null && rawTypicalX >= innerLeft && rawTypicalX <= innerRight;
+
+  // Label: nudge away from track endpoints when in-bounds; anchor near tick when floating.
   const typicalLabelX = typicalX != null
-    ? Math.max(innerLeft + 28, Math.min(innerRight - 28, typicalX))
+    ? typicalInBounds
+      ? Math.max(innerLeft + 28, Math.min(innerRight - 28, typicalX))
+      : Math.max(HALF_BUBBLE, Math.min(TR_W - HALF_BUBBLE, typicalX))
     : null;
 
-  // Nudge the p10 endpoint label right when the floating marker is present
-  // so they don't overlap.
-  const p10LabelX = typicalIsFloating ? innerLeft + 22 : innerLeft;
+  // Drop typical label to a second row only when in-bounds and crowding an endpoint label.
+  const typicalDropped = typicalInBounds && typicalLabelX != null && (
+    typicalLabelX - innerLeft < PROX || innerRight - typicalLabelX < PROX
+  );
+
+  return {
+    innerLeft, innerRight, totalW,
+    dotX, dotFloatingLeft, dotFloatingRight,
+    bubbleCx, bubbleLeft,
+    typicalX, typicalInBounds, typicalLabelX,
+    typicalLabelY: typicalDropped ? LABEL_Y + 14 : LABEL_Y,
+    svgH: typicalDropped ? TR_H + 14 : TR_H,
+  };
+}
+
+export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.ReactElement {
+  const [renderW, setRenderW] = useState(0);
+
+  const fillColor = '#4F46E5';
+  const {
+    innerLeft, innerRight, totalW,
+    dotX, dotFloatingLeft, dotFloatingRight,
+    bubbleCx, bubbleLeft,
+    typicalX, typicalLabelX, typicalLabelY, svgH,
+  } = computeLayout(p10, p90, current, typicalWait);
 
   const tagline = buildTagline(current, typicalWait);
 
   return (
     <View>
-      <View style={styles.rangeBarRow}>
-        {typicalIsFloating ? (
-          <View style={styles.floatingTypical}>
-            <View style={styles.floatingTypicalLine} />
-            <Text style={styles.floatingTypicalLabel}>{`usually ${typicalWait}m`}</Text>
-          </View>
-        ) : null}
-        <View
-          style={{ flex: 1 }}
-          onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}
-        >
-          {renderW > 0 ? (
-            <Svg
-              width={renderW}
-              height={TR_H}
-              viewBox={`0 0 ${TR_W} ${TR_H}`}
-              preserveAspectRatio="none"
-            >
+      <View onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}>
+        {renderW > 0 ? (
+          <Svg
+            width={renderW}
+            height={svgH}
+            viewBox={`0 0 ${TR_W} ${svgH}`}
+            preserveAspectRatio="none"
+          >
+            {/* Track background */}
+            <Rect
+              x={innerLeft} y={TRACK_TOP_Y}
+              width={totalW} height={TRACK_H}
+              rx={TRACK_H / 2}
+              fill={colors.border}
+            />
+
+            {/* Dashed connector — left float */}
+            {dotX != null && dotFloatingLeft ? (
+              <Line
+                x1={dotX} x2={innerLeft}
+                y1={TRACK_CY} y2={TRACK_CY}
+                stroke={fillColor} strokeWidth={1.5}
+                strokeDasharray="3 4" opacity={0.5}
+              />
+            ) : null}
+
+            {/* Dashed connector — right float */}
+            {dotX != null && dotFloatingRight ? (
+              <Line
+                x1={innerRight} x2={dotX}
+                y1={TRACK_CY} y2={TRACK_CY}
+                stroke={fillColor} strokeWidth={1.5}
+                strokeDasharray="3 4" opacity={0.5}
+              />
+            ) : null}
+
+            {/* Fill: none when below range, full when above range, partial when in range */}
+            {dotX != null && !dotFloatingLeft ? (
               <Rect
                 x={innerLeft} y={TRACK_TOP_Y}
-                width={totalW} height={TRACK_H}
+                width={dotFloatingRight ? totalW : dotX - innerLeft}
+                height={TRACK_H}
                 rx={TRACK_H / 2}
-                fill={colors.border}
+                fill={fillColor}
               />
+            ) : null}
 
-              {dotX != null ? (
+            {/* Typical marker tick */}
+            {typicalX != null ? (
+              <Line
+                x1={typicalX} x2={typicalX}
+                y1={TRACK_TOP_Y - 4} y2={TRACK_BOTTOM_Y + 4}
+                stroke={MUTED} strokeWidth={2}
+              />
+            ) : null}
+
+            {/* Typical label */}
+            {typicalX != null && typicalLabelX != null && typicalWait != null ? (
+              <SvgText
+                x={typicalLabelX} y={typicalLabelY}
+                fontSize="10.5" fontWeight="500"
+                fill={SUBINK} textAnchor="middle"
+              >
+                {`usually ${typicalWait}m`}
+              </SvgText>
+            ) : null}
+
+            {/* P10 / P90 endpoint labels */}
+            <SvgText x={innerLeft}  y={LABEL_Y} fontSize="10.5" fill={SUBINK} textAnchor="start">{p10}m</SvgText>
+            <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={SUBINK} textAnchor="end">{p90}m</SvgText>
+
+            {/* Current wait dot */}
+            {dotX != null ? (
+              <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
+            ) : null}
+
+            {/* Current wait bubble */}
+            {dotX != null && bubbleLeft != null && bubbleCx != null && current != null ? (
+              <>
                 <Rect
-                  x={innerLeft} y={TRACK_TOP_Y}
-                  width={Math.max(0, dotX - innerLeft)} height={TRACK_H}
-                  rx={TRACK_H / 2}
+                  x={bubbleLeft} y={BUBBLE_TOP_Y}
+                  width={HALF_BUBBLE * 2} height={BUBBLE_H}
+                  rx={BUBBLE_H / 2}
                   fill={fillColor}
                 />
-              ) : null}
-
-              {typicalX != null ? (
-                <Line
-                  x1={typicalX} x2={typicalX}
-                  y1={TRACK_TOP_Y - 4} y2={TRACK_BOTTOM_Y + 4}
-                  stroke={MUTED} strokeWidth={2}
+                <Polygon
+                  points={`${bubbleCx - 5},${BUBBLE_BOTTOM_Y} ${bubbleCx + 5},${BUBBLE_BOTTOM_Y} ${dotX},${POINTER_TIP_Y}`}
+                  fill={fillColor}
                 />
-              ) : null}
-
-              {typicalX != null && typicalLabelX != null && typicalWait != null ? (
                 <SvgText
-                  x={typicalLabelX} y={LABEL_Y}
-                  fontSize="10.5" fontWeight="500"
-                  fill={SUBINK} textAnchor="middle"
+                  x={bubbleCx} y={BUBBLE_TOP_Y + BUBBLE_H - 5}
+                  fontSize="11" fontWeight="700"
+                  fill="white" textAnchor="middle"
                 >
-                  {`usually ${typicalWait}m`}
+                  {`${current}m`}
                 </SvgText>
-              ) : null}
-
-              <SvgText x={p10LabelX} y={LABEL_Y} fontSize="10.5" fill={MUTED} textAnchor="start">{p10}m</SvgText>
-              <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={MUTED} textAnchor="end">{p90}m</SvgText>
-
-              {dotX != null ? (
-                <Circle
-                  cx={dotX} cy={TRACK_CY}
-                  r={7} fill={fillColor}
-                  stroke="white" strokeWidth={2}
-                />
-              ) : null}
-
-              {dotX != null && bubbleLeft != null && bubbleCx != null && current != null ? (
-                <>
-                  <Rect
-                    x={bubbleLeft} y={BUBBLE_TOP_Y}
-                    width={HALF_BUBBLE * 2} height={BUBBLE_H}
-                    rx={BUBBLE_H / 2}
-                    fill={fillColor}
-                  />
-                  <Polygon
-                    points={`${bubbleCx - 5},${BUBBLE_BOTTOM_Y} ${bubbleCx + 5},${BUBBLE_BOTTOM_Y} ${dotX},${POINTER_TIP_Y}`}
-                    fill={fillColor}
-                  />
-                  <SvgText
-                    x={bubbleCx} y={BUBBLE_TOP_Y + BUBBLE_H - 5}
-                    fontSize="11" fontWeight="700"
-                    fill="white" textAnchor="middle"
-                  >
-                    {`${current}m`}
-                  </SvgText>
-                </>
-              ) : null}
-            </Svg>
-          ) : null}
-        </View>
+              </>
+            ) : null}
+          </Svg>
+        ) : null}
       </View>
 
       {tagline ? (
@@ -194,25 +257,6 @@ export function TodaysRange({
 }
 
 const styles = StyleSheet.create({
-  rangeBarRow: { flexDirection: 'row', alignItems: 'flex-start' },
-  floatingTypical: {
-    width: 44,
-    paddingTop: TRACK_TOP_Y - 4,
-    alignItems: 'center',
-  },
-  floatingTypicalLine: {
-    width: 2,
-    height: TRACK_H + 8,
-    backgroundColor: MUTED,
-    borderRadius: 2,
-  },
-  floatingTypicalLabel: {
-    fontSize: 10.5,
-    fontWeight: '500',
-    color: SUBINK,
-    marginTop: 4,
-    textAlign: 'center',
-  },
   taglineDivider: {
     height: StyleSheet.hairlineWidth,
     backgroundColor: '#eef', // TODO: tokenize
