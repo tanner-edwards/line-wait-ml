@@ -41,6 +41,7 @@ import { TrendGraph } from './ride-detail/TrendGraph';
 import { TrendCaption } from './ride-detail/TrendCaption';
 import { ClosureTile } from './ride-detail/ClosureTile';
 import { RideAlertHistory } from './ride-detail/RideAlertHistory';
+import { FullDayForecast } from './ride-detail/FullDayForecast';
 
 const SUBINK = '#666'; // TODO: tokenize
 
@@ -263,6 +264,12 @@ function DetailBody({
           notifClosedAt={notifClosedAt}
           notifDurationMs={notifDurationMs}
         />
+      ) : null}
+
+      {ride.fullDayForecast ? (
+        <Tile>
+          <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} />
+        </Tile>
       ) : null}
 
       <RideAlertHistory entries={rideNotifs} />

@@ -166,7 +166,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
 const styles = StyleSheet.create({
   row: {
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.md,
+    paddingVertical: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
@@ -236,6 +236,7 @@ const styles = StyleSheet.create({
   row2Left: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
   },
   trendRow: {
     flexDirection: 'row',

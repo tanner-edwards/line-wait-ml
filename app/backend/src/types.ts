@@ -115,6 +115,16 @@ export interface RecentSnapshot {
   status: string;       // "OPERATING", "CLOSED", etc.
 }
 
+// One 30-minute historical-average slot for the full-day forecast.
+// startMinutes is minutes from midnight LA-local (480 = 8:00 AM).
+// wait is null when the park was historically not operating that window.
+export interface FullDaySlot {
+  timeSlot: string;      // "08:00-08:30" LA-local
+  startMinutes: number;
+  wait: number | null;
+  sampleCount: number;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -136,6 +146,10 @@ export interface Ride {
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.
   score?: ScoreResult;
+  // 30-min historical-average slots from ~7 AM to midnight. Null when
+  // the ride has no historical data at all. Individual slots with
+  // wait: null indicate the park was closed during that window historically.
+  fullDayForecast?: FullDaySlot[] | null;
 }
 
 export interface ParkData {

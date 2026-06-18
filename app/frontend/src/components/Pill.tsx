@@ -77,11 +77,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pill: {
-    alignSelf: 'flex-end',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: radius.pill,
-    marginTop: 4,
   },
   pillText: {
     fontSize: 11,

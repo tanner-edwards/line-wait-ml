@@ -55,6 +55,13 @@ export interface RecentSnapshot {
   status: string;
 }
 
+export interface FullDaySlot {
+  timeSlot: string;      // "08:00-08:30" LA-local
+  startMinutes: number;  // minutes from midnight
+  wait: number | null;
+  sampleCount: number;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -74,6 +81,7 @@ export interface Ride {
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;
+  fullDayForecast?: FullDaySlot[] | null;
 }
 
 export interface ParkData {

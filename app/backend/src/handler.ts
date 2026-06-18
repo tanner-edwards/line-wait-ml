@@ -1,6 +1,7 @@
 import type { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
   ErrorResponse,
+  FullDaySlot,
   HistoricalAverage,
   HistoricalBucket,
   ParkData,
@@ -117,6 +118,40 @@ async function buildRideStats(
   return lookupRideStats(statsMap, parkSlug, rideId, dayType);
 }
 
+// All 30-min slots from 7:00 AM to 11:30 PM (34 slots). Covers the full
+// operating range of any Disney park including early-entry hours.
+const FULL_DAY_SLOTS: { timeSlot: string; startMinutes: number }[] = (() => {
+  const slots: { timeSlot: string; startMinutes: number }[] = [];
+  const p = (n: number) => n.toString().padStart(2, '0');
+  for (let h = 7; h < 24; h++) {
+    const hNext = h + 1;
+    slots.push({ timeSlot: `${p(h)}:00-${p(h)}:30`,        startMinutes: h * 60 });
+    slots.push({ timeSlot: `${p(h)}:30-${p(hNext % 24)}:00`, startMinutes: h * 60 + 30 });
+  }
+  return slots;
+})();
+
+async function buildFullDayForecast(
+  parkSlug: ParkSlug,
+  rideId: string,
+  now: Date
+): Promise<FullDaySlot[] | null> {
+  let averages: Map<string, { mean: number; sampleCount: number }>;
+  try {
+    averages = await ensureLoaded();
+  } catch (err) {
+    console.warn('historical_averages load failed; serving without fullDayForecast', err);
+    return null;
+  }
+  const dayType = classifyDayType(now);
+  const slots: FullDaySlot[] = FULL_DAY_SLOTS.map(({ timeSlot, startMinutes }) => {
+    const v = lookupAverage(averages, parkSlug, rideId, timeSlot, dayType);
+    return { timeSlot, startMinutes, wait: v?.mean ?? null, sampleCount: v?.sampleCount ?? 0 };
+  });
+  if (slots.every(s => s.wait === null)) return null;
+  return slots;
+}
+
 export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
@@ -141,9 +176,10 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
       // rideStats is looked up for all rides (not just operating) so the
       // non-ride filter below can use it to drop chronic walk-ons /
       // walkthroughs / experiences regardless of current status.
-      const [historicalAverage, rideStats] = await Promise.all([
+      const [historicalAverage, rideStats, fullDayForecast] = await Promise.all([
         isOperating ? buildHistoricalAverage(parkSlug, entity.id, now) : Promise.resolve(null),
         buildRideStats(parkSlug, entity.id, dayType),
+        buildFullDayForecast(parkSlug, entity.id, now),
       ]);
       const meta = lookupRideMetadata(metadataMap, entity.id);
       const status = entity.status ?? 'UNKNOWN';
@@ -162,6 +198,7 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         // Only meaningful when status is DOWN — the scanner only records
         // OPERATING → DOWN transitions. For other states we leave null.
         closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
+        fullDayForecast,
       };
       ride.score = scoreRide(ride);
       return ride;

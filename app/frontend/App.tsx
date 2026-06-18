@@ -1,3 +1,4 @@
+import * as Notifications from 'expo-notifications';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -20,6 +21,15 @@ import { installConsoleMirror } from './src/utils/logger';
 // Capture console.warn/error into the in-app log buffer (DebugLogModal).
 // Runs once at module load, before any component renders.
 installConsoleMirror();
+
+// Show local notifications (e.g., ride reminders) even when the app is foregrounded.
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 
 export default function App() {
   const [fontsLoaded] = useFonts({
