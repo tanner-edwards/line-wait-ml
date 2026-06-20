@@ -4,6 +4,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { Lora_600SemiBold, Lora_700Bold } from '@expo-google-fonts/lora';
 import { Outfit_400Regular, Outfit_500Medium, Outfit_600SemiBold, Outfit_700Bold } from '@expo-google-fonts/outfit';
+import { AuthProvider } from './src/context/AuthContext';
+import { TripProvider } from './src/context/TripContext';
 import { LocationProvider } from './src/context/LocationContext';
 import { RideProvider } from './src/context/RideContext';
 import { PersonaProvider } from './src/context/PersonaContext';
@@ -48,25 +50,29 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <PersonaProvider>
-          <DailyContextProvider>
-            <DeviceProvider>
-              <DebugModeProvider>
-                <LocationProvider>
-                  <RideProvider>
-                    <NotificationDetailProvider>
-                      <RootNavigator />
-                      <NotificationHistorySheet />
-                      <RideDetailModal />
-                      <NotificationDeepLinkHandler />
-                      <LocationNotificationPrompt />
-                    </NotificationDetailProvider>
-                  </RideProvider>
-                </LocationProvider>
-              </DebugModeProvider>
-            </DeviceProvider>
-          </DailyContextProvider>
-        </PersonaProvider>
+        <AuthProvider>
+          <TripProvider>
+            <PersonaProvider>
+              <DailyContextProvider>
+                <DeviceProvider>
+                  <DebugModeProvider>
+                    <LocationProvider>
+                      <RideProvider>
+                        <NotificationDetailProvider>
+                          <RootNavigator />
+                          <NotificationHistorySheet />
+                          <RideDetailModal />
+                          <NotificationDeepLinkHandler />
+                          <LocationNotificationPrompt />
+                        </NotificationDetailProvider>
+                      </RideProvider>
+                    </LocationProvider>
+                  </DebugModeProvider>
+                </DeviceProvider>
+              </DailyContextProvider>
+            </PersonaProvider>
+          </TripProvider>
+        </AuthProvider>
       </NavigationContainer>
     </SafeAreaProvider>
   );

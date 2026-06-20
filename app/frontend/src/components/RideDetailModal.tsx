@@ -15,18 +15,21 @@
 // Opened from a notification history-sheet row tap or service-worker
 // deep-link via NotificationDetailContext.
 
-import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AlertTriangle } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Sheet } from './Sheet';
 import { DebugCard } from './DebugCard';
+import { PaywallTeaser } from './PaywallTeaser';
+import { PaywallScreen } from '../screens/PaywallScreen';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDebugMode } from '../context/DebugModeContext';
 import { useDevice } from '../context/DeviceContext';
+import { useTrip } from '../context/TripContext';
 import { useRideNotificationHistory } from '../hooks/useRideNotificationHistory';
 import { haversineMeters } from '../grouping';
 import { isWalkOnRide } from '../utils/walkOn';
@@ -124,11 +127,15 @@ function DetailBody({
   const { persona, setPersona } = usePersona();
   const { debugMode } = useDebugMode();
   const { deviceId } = useDevice();
+  const { hasActiveTrip } = useTrip();
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
-  const badge = ride.score?.badge ?? null;
+  const rawBadge = ride.score?.badge ?? null;
+  // Star badge is a paid feature — downgrade to 'go' when no active trip.
+  const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
 
   const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
   const onToggleWatch = () => {
@@ -226,51 +233,71 @@ function DetailBody({
         />
       ) : null}
 
-      {!isDown && ride.rideStats ? (
-        <Tile>
-          <TodaysRange
-            p10={ride.rideStats.p10}
-            p90={ride.rideStats.p90}
-            current={anchorWait}
-            typicalWait={bucket0Wait}
-          />
-        </Tile>
-      ) : null}
+      {hasActiveTrip ? (
+        <>
+          {!isDown && ride.rideStats ? (
+            <Tile>
+              <TodaysRange
+                p10={ride.rideStats.p10}
+                p90={ride.rideStats.p90}
+                current={anchorWait}
+                typicalWait={bucket0Wait}
+              />
+            </Tile>
+          ) : null}
 
-      {!isDown && ((ride.recentHistory && ride.recentHistory.length > 0) || buckets) ? (
-        <Tile>
-          <TrendGraph
-            recentHistory={ride.recentHistory ?? []}
-            anchorWait={anchorWait}
-            isDown={isDown}
-            buckets={buckets ?? null}
-          />
-          <TrendCaption
-            anchorWait={anchorWait}
-            isDown={isDown}
-            recentWait={ride.recentHistory?.[0]?.wait ?? null}
-            bucket1Wait={buckets?.[1]?.wait ?? null}
-            bucket3Wait={buckets?.[3]?.wait ?? null}
-            bucket4Wait={bucket4Wait}
-          />
-        </Tile>
-      ) : null}
+          {!isDown && ((ride.recentHistory && ride.recentHistory.length > 0) || buckets) ? (
+            <Tile>
+              <TrendGraph
+                recentHistory={ride.recentHistory ?? []}
+                anchorWait={anchorWait}
+                isDown={isDown}
+                buckets={buckets ?? null}
+              />
+              <TrendCaption
+                anchorWait={anchorWait}
+                isDown={isDown}
+                recentWait={ride.recentHistory?.[0]?.wait ?? null}
+                bucket1Wait={buckets?.[1]?.wait ?? null}
+                bucket3Wait={buckets?.[3]?.wait ?? null}
+                bucket4Wait={bucket4Wait}
+              />
+            </Tile>
+          ) : null}
 
-      {/* Reopen case: ride is back up but recently reopened — show closure context near bottom. */}
-      {!isDown ? (
-        <ClosureTile
-          isDown={isDown}
-          rideClosedAt={ride.closedAt ?? null}
-          notifClosedAt={notifClosedAt}
-          notifDurationMs={notifDurationMs}
-        />
-      ) : null}
+          {/* Reopen case: ride is back up but recently reopened — show closure context near bottom. */}
+          {!isDown ? (
+            <ClosureTile
+              isDown={isDown}
+              rideClosedAt={ride.closedAt ?? null}
+              notifClosedAt={notifClosedAt}
+              notifDurationMs={notifDurationMs}
+            />
+          ) : null}
 
-      {ride.fullDayForecast ? (
-        <Tile>
-          <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} />
-        </Tile>
-      ) : null}
+          {ride.fullDayForecast ? (
+            <Tile>
+              <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} />
+            </Tile>
+          ) : null}
+        </>
+      ) : (
+        <>
+          <PaywallTeaser
+            rideName={ride.name}
+            fullDayForecast={ride.fullDayForecast}
+            onUnlock={() => setPaywallOpen(true)}
+          />
+          <Modal
+            visible={paywallOpen}
+            animationType="slide"
+            presentationStyle="pageSheet"
+            onRequestClose={() => setPaywallOpen(false)}
+          >
+            <PaywallScreen onClose={() => setPaywallOpen(false)} />
+          </Modal>
+        </>
+      )}
 
       <RideAlertHistory entries={rideNotifs} />
 

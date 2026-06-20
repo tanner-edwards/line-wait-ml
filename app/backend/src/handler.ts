@@ -36,7 +36,9 @@ import {
   RecommendationsResponse,
   RideCategory,
   TripDuration,
+  UserResponse,
 } from './types';
+import { upsertUser, getUser, getTrip, deleteUserData } from './users';
 import {
   DAILY_PARKS_VALUES,
   DailyParks,
@@ -223,9 +225,25 @@ function corsHeaders(): Record<string, string> {
   const origin = process.env.CORS_ORIGIN ?? '*';
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'x-api-key, content-type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'x-api-key, content-type, authorization',
+    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   };
+}
+
+async function verifyAuth(event: APIGatewayProxyEvent): Promise<string | null> {
+  const headers = event.headers ?? {};
+  const authHeader = headers['authorization'] ?? headers['Authorization'] ?? '';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token) return null;
+  try {
+    const { initFirebase } = await import('./firestoreClient');
+    const app = initFirebase();
+    const admin = await import('firebase-admin');
+    const decoded = await admin.auth(app).verifyIdToken(token);
+    return decoded.uid;
+  } catch {
+    return null;
+  }
 }
 
 function jsonResponse(
@@ -261,6 +279,10 @@ type RouteKind =
   | { kind: 'device-daily-parks'; deviceId: string }
   | { kind: 'device-notification-types'; deviceId: string }
   | { kind: 'device-notifications-list'; deviceId: string }
+  | { kind: 'user-upsert' }
+  | { kind: 'user-me' }
+  | { kind: 'user-delete' }
+  | { kind: 'user-trip' }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -272,6 +294,9 @@ function routeFromPath(
     return { kind: 'recommendations' };
   }
   if (method === 'POST') {
+    if (path.endsWith('/v1/users')) {
+      return { kind: 'user-upsert' };
+    }
     if (path.endsWith('/v1/devices')) {
       return { kind: 'device-register' };
     }
@@ -285,8 +310,13 @@ function routeFromPath(
     if (notifTypesMatch) return { kind: 'device-notification-types', deviceId: notifTypesMatch[1] };
   }
   if (method === 'GET') {
+    if (path.endsWith('/v1/users/me')) return { kind: 'user-me' };
+    if (path.endsWith('/v1/users/trip')) return { kind: 'user-trip' };
     const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
     if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
+  }
+  if (method === 'DELETE' && path.endsWith('/v1/users/me')) {
+    return { kind: 'user-delete' };
   }
   if (path.endsWith('/v0/waits/disneyland')) {
     return { kind: 'park', slug: 'disneyland' };
@@ -319,6 +349,22 @@ export async function handler(
 
   if (route.kind === 'recommendations') {
     return handleRecommendations(event);
+  }
+
+  if (route.kind === 'user-upsert') {
+    return handleUserUpsert(event);
+  }
+
+  if (route.kind === 'user-me') {
+    return handleUserMe(event);
+  }
+
+  if (route.kind === 'user-delete') {
+    return handleUserDelete(event);
+  }
+
+  if (route.kind === 'user-trip') {
+    return handleUserTrip(event);
   }
 
   if (route.kind === 'device-register') {
@@ -680,6 +726,94 @@ async function handleDeviceDailyParks(
   try {
     await setDailyParks(deviceId, body.dailyParks as DailyParks);
     return jsonResponse(200, { deviceId, dailyParks: body.dailyParks });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+// --- User + trip endpoints ---
+
+async function handleUserUpsert(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: { appleId?: unknown; email?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+  const appleId = typeof body.appleId === 'string' ? body.appleId : uid;
+  const email = typeof body.email === 'string' ? body.email : null;
+
+  try {
+    const { record, isNew } = await upsertUser(uid, appleId, email);
+    const trip = await getTrip(uid);
+    const response: UserResponse = {
+      userId: uid,
+      freeTripClaimed: record.freeTripClaimed,
+      bypass: record.bypass,
+      isNew,
+      trip,
+    };
+    return jsonResponse(200, response);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleUserMe(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  try {
+    const [record, trip] = await Promise.all([getUser(uid), getTrip(uid)]);
+    if (!record) return jsonResponse(404, errorBody('NOT_FOUND', 'User not found'));
+
+    const response: UserResponse = {
+      userId: uid,
+      freeTripClaimed: record.freeTripClaimed,
+      bypass: record.bypass,
+      isNew: false,
+      trip,
+    };
+    return jsonResponse(200, response);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleUserDelete(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  try {
+    await deleteUserData(uid);
+    return jsonResponse(200, { deleted: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleUserTrip(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  try {
+    const trip = await getTrip(uid);
+    return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));

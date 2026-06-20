@@ -5,6 +5,7 @@
 
 import React, { useState } from 'react';
 import {
+  Alert,
   LayoutAnimation,
   Pressable,
   SafeAreaView,
@@ -17,6 +18,9 @@ import { useDailyContext } from '../context/DailyContextContext';
 import { useDebugMode } from '../context/DebugModeContext';
 import { useDevice } from '../context/DeviceContext';
 import { useRides } from '../context/RideContext';
+import { useAuth } from '../context/AuthContext';
+import { useTrip } from '../context/TripContext';
+import { deleteAccount } from '../api';
 import {
   AccessibilityNeed,
   Persona,
@@ -78,6 +82,8 @@ export function Profile(): React.ReactElement {
     setNotificationTypeEnabled,
   } = useDevice();
   const { data } = useRides();
+  const { user, userRecord, getIdToken, signOut } = useAuth();
+  const { trip } = useTrip();
   const [editing, setEditing] = useState<PersonaField | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [parkPickerOpen, setParkPickerOpen] = useState(false);
@@ -201,6 +207,53 @@ export function Profile(): React.ReactElement {
           ) : null}
         </Card>
 
+        {/* ── Account ────────────────────────────────── */}
+        <SectionHeader title="Account" />
+        <Card flush style={styles.sectionCard}>
+          <TapEditRow
+            label="Signed in as"
+            value={user?.email ?? userRecord?.userId?.slice(0, 12) ?? 'Apple account'}
+            onPress={() => undefined}
+          />
+          {trip ? (
+            <TapEditRow
+              label="Active trip"
+              value={`${trip.tripStart} – ${trip.tripEnd}`}
+              onPress={() => undefined}
+            />
+          ) : null}
+          <Pressable
+            onPress={() => void signOut()}
+            style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
+          >
+            <Text style={styles.signOutText}>Sign out</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => {
+              Alert.alert(
+                'Delete account',
+                'This permanently removes your account, trip history, and device records. This cannot be undone.',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                      const token = await getIdToken();
+                      if (token) await deleteAccount(token);
+                      await Promise.all([clearPersona(), clearDailyContext()]);
+                      await signOut();
+                    },
+                  },
+                ]
+              );
+            }}
+            style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
+          >
+            <Text style={styles.deleteText}>Delete account</Text>
+          </Pressable>
+        </Card>
+
         {/* ── Debug ──────────────────────────────────── */}
         <SectionHeader title="Debug" />
         <Card flush style={styles.debugSectionCard}>
@@ -258,5 +311,7 @@ const styles = StyleSheet.create({
   },
   resetRowPressed: { opacity: 0.6 },
   resetText: { fontSize: 16, color: colors.skip },
+  signOutText: { fontSize: 16, color: colors.brand },
+  deleteText: { fontSize: 16, color: colors.skip },
   placeholder: { padding: 32, fontSize: 14, color: colors.textTertiary, textAlign: 'center' },
 });

@@ -53,6 +53,20 @@ Expo PWA + Lambda + API Gateway + API key auth. Lambda calls Themeparks.wiki, re
 
 ---
 
+## 🔄 vAuth — Login, accounts & paywall
+
+- Sign in with Apple (native) → Firebase Auth ID token on all user API calls
+- Per-user Firestore records (`users/{uid}`, `trips/{uid}`)
+- Trip-based paywall: $10 consumable IAP unlocks a 10-day window
+- Free-tier enforcement: ride list + go/skip badges available to all; TodaysRange, TrendGraph, FullDayForecast, and star badges gated behind active trip
+- `bypass: boolean` on user Firestore record for developer elevated access
+- Launch free trip for new signups; promo code system
+- Native iOS build required (StoreKit / Sign in with Apple)
+
+**Status as of June 2026:** Auth + user record + paywall gating implemented (Phases 0–3). IAP receipt verification (Phase 4) and promo codes (Phase 5) are stubbed and not yet wired.
+
+---
+
 ## 📋 v6 — Lightning Lane integration
 
 User logs which Lightning Lane / Individual Lightning Lane windows they've booked. AI doesn't recommend rides already covered by LL; optimizes activity in gaps between LL windows.

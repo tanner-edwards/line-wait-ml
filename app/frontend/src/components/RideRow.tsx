@@ -23,6 +23,7 @@ import { trendDirection } from '../utils/trendDirection';
 import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
 import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
+import { useTrip } from '../context/TripContext';
 
 interface RideRowProps {
   ride: Ride;
@@ -54,7 +55,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const bucket1 = ha?.buckets[1] ?? null;
   const bucket3 = ha?.buckets[3] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;
-  const badge = ride.score?.badge ?? null;
+  const { hasActiveTrip } = useTrip();
+  const rawBadge = ride.score?.badge ?? null;
+  const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
   const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;

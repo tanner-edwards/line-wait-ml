@@ -213,6 +213,24 @@ export interface NotificationLogEntry {
   waitAtClose?: number | null;
 }
 
+// --- Accounts + paywall (mirrors backend src/types.ts) ---
+
+export interface TripRecord {
+  tripStart: string;   // YYYY-MM-DD
+  tripEnd: string;     // YYYY-MM-DD
+  purchasedAt: string; // ISO
+  source: 'iap' | 'promo' | 'free';
+  promoCode?: string;
+}
+
+export interface UserResponse {
+  userId: string;
+  freeTripClaimed: boolean;
+  bypass: boolean;
+  isNew: boolean;
+  trip: TripRecord | null;
+}
+
 export function emptyPersona(): Persona {
   return {
     tripDuration: null,

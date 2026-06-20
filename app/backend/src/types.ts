@@ -253,3 +253,31 @@ export interface ErrorResponse {
   message: string;
   lastUpdated: null;
 }
+
+// --- Accounts + paywall ---
+
+export interface UserRecord {
+  userId: string;
+  appleId: string;
+  email: string | null;
+  createdAt: string;
+  freeTripClaimed: boolean;
+  bypass: boolean;
+}
+
+export interface TripRecord {
+  tripStart: string;   // YYYY-MM-DD
+  tripEnd: string;     // YYYY-MM-DD
+  purchasedAt: string; // ISO
+  source: 'iap' | 'promo' | 'free';
+  promoCode?: string;
+}
+
+// Returned by POST /v1/users and GET /v1/users/me
+export interface UserResponse {
+  userId: string;
+  freeTripClaimed: boolean;
+  bypass: boolean;
+  isNew: boolean;
+  trip: TripRecord | null;
+}

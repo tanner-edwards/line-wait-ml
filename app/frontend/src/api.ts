@@ -5,6 +5,8 @@ import {
   ParkSlug,
   Persona,
   RecommendationsResponse,
+  TripRecord,
+  UserResponse,
 } from './types';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
@@ -175,6 +177,83 @@ export async function fetchDeviceNotifications(deviceId: string): Promise<Notifi
   return body.notifications ?? [];
 }
 
+// --- User + trip endpoints ---
+
+export async function createOrFetchUser(
+  idToken: string,
+  input: { appleId: string; email: string | null }
+): Promise<UserResponse> {
+  const body = await authedPostJson('/v1/users', idToken, input);
+  return body as UserResponse;
+}
+
+export async function fetchUserTrip(idToken: string): Promise<TripRecord | null> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/users/trip`, {
+      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+  const data = (await res.json()) as { trip: TripRecord | null };
+  return data.trip;
+}
+
+export async function fetchUserMe(idToken: string): Promise<UserResponse> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/users/me`, {
+      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+  return (await res.json()) as UserResponse;
+}
+
+export async function deleteAccount(idToken: string): Promise<void> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/users/me`, {
+      method: 'DELETE',
+      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+}
+
 // Tiny shared POST helper for the devices endpoints. Threads the same
 // API key + error-shape conventions as the v0/v2 endpoints above.
 async function postJson(path: string, body: object): Promise<unknown> {
@@ -203,6 +282,38 @@ async function postJson(path: string, body: object): Promise<unknown> {
     } catch {
       // body wasn't JSON
     }
+    throw new ApiError(res.status, detail);
+  }
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+async function authedPostJson(path: string, idToken: string, body: object): Promise<unknown> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      headers: {
+        'x-api-key': API_KEY,
+        'content-type': 'application/json',
+        'authorization': `Bearer ${idToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch { /* not JSON */ }
     throw new ApiError(res.status, detail);
   }
   try {
