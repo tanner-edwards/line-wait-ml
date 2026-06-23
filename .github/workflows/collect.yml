@@ -32,3 +32,18 @@ jobs:
           VAPID_PUBLIC_KEY: ${{ secrets.VAPID_PUBLIC_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
           VAPID_SUBJECT: ${{ secrets.VAPID_SUBJECT }}
+      # Trigger ML predictions after fresh data is written. Runs as a Cloud
+      # Run Job so it has access to the models bucket without bundling Python
+      # deps into the Action. Best-effort: a failed prediction run doesn't
+      # fail the collect step — the app degrades to historical averages.
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      - name: Trigger ML predictions
+        run: |
+          gcloud run jobs execute club32-predict-cron \
+            --region us-west1 \
+            --project llm-wait-times \
+            --wait \
+            --format none
+        continue-on-error: true

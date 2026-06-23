@@ -8,6 +8,7 @@ import {
   ParkError,
   ParkSlug,
   PARK_ORDER,
+  Prediction,
   Ride,
 } from './types';
 import { fetchLiveData, UpstreamError } from './themeparksClient';
@@ -25,6 +26,7 @@ import {
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
+import { loadPredictions, MLPredictionDoc } from './mlPredictions';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
@@ -66,12 +68,28 @@ const recsCache = new TTLCache<string, RecommendationsResponse>(RECS_TTL_MS);
 async function buildHistoricalAverage(
   parkSlug: ParkSlug,
   rideId: string,
-  now: Date
+  now: Date,
+  currentWait: number | null,
+  mlPred?: MLPredictionDoc,
 ): Promise<HistoricalAverage | null> {
-  // historical_averages reads can fail (Firestore down, bad credentials).
-  // We swallow here so a missing averages dataset doesn't take down the
-  // entire /v0/waits response — the rider still gets live data; the
-  // ride simply renders without the historical comparison.
+  const dayType = classifyDayType(now);
+  const [b0, b30, b60, b90, b120, b150] = bucketsAroundNow(now);
+
+  if (mlPred !== undefined && currentWait !== null) {
+    return {
+      dayType,
+      buckets: [
+        { offsetMinutes: 0 as const,   timeSlot: b0,   wait: currentWait,  sampleCount: 1 },
+        { offsetMinutes: 30 as const,  timeSlot: b30,  wait: mlPred.t30,   sampleCount: 1 },
+        { offsetMinutes: 60 as const,  timeSlot: b60,  wait: mlPred.t60,   sampleCount: 1 },
+        { offsetMinutes: 90 as const,  timeSlot: b90,  wait: mlPred.t90,   sampleCount: 1 },
+        { offsetMinutes: 120 as const, timeSlot: b120, wait: mlPred.t120,  sampleCount: 1 },
+        { offsetMinutes: 150 as const, timeSlot: b150, wait: mlPred.t150,  sampleCount: 1 },
+      ],
+    };
+  }
+
+  // Fall back to historical averages when no ML prediction is available.
   let averages;
   try {
     averages = await ensureLoaded();
@@ -80,8 +98,6 @@ async function buildHistoricalAverage(
     return null;
   }
 
-  const dayType = classifyDayType(now);
-  const [b0, b30, b60, b90, b120, b150] = bucketsAroundNow(now);
   const v0   = lookupAverage(averages, parkSlug, rideId, b0,   dayType);
   const v30  = lookupAverage(averages, parkSlug, rideId, b30,  dayType);
   const v60  = lookupAverage(averages, parkSlug, rideId, b60,  dayType);
@@ -89,9 +105,6 @@ async function buildHistoricalAverage(
   const v120 = lookupAverage(averages, parkSlug, rideId, b120, dayType);
   const v150 = lookupAverage(averages, parkSlug, rideId, b150, dayType);
 
-  // Spec: historicalAverage is null when no average exists for the ride's
-  // CURRENT bucket on the current day type. (We still return the t+30…t+150
-  // entries inside the buckets array even if individually missing.)
   if (v0 === null) return null;
 
   const buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket] = [
@@ -136,8 +149,18 @@ const FULL_DAY_SLOTS: { timeSlot: string; startMinutes: number }[] = (() => {
 async function buildFullDayForecast(
   parkSlug: ParkSlug,
   rideId: string,
-  now: Date
+  now: Date,
+  mlPred?: MLPredictionDoc,
 ): Promise<FullDaySlot[] | null> {
+  if (mlPred !== undefined && mlPred.full_day.length > 0) {
+    return mlPred.full_day.map(s => ({
+      timeSlot: s.time_slot,
+      startMinutes: s.start_minutes,
+      wait: s.wait,
+      sampleCount: 1,
+    }));
+  }
+
   let averages: Map<string, { mean: number; sampleCount: number }>;
   try {
     averages = await ensureLoaded();
@@ -154,6 +177,24 @@ async function buildFullDayForecast(
   return slots;
 }
 
+function buildPrediction(mlPred: MLPredictionDoc): Prediction {
+  return {
+    t10:         mlPred.t10,
+    t20:         mlPred.t20,
+    t30:         mlPred.t30,
+    t40:         mlPred.t40,
+    t50:         mlPred.t50,
+    t60:         mlPred.t60,
+    t90:         mlPred.t90,
+    t120:        mlPred.t120,
+    t150:        mlPred.t150,
+    trend:       mlPred.trend as Prediction['trend'],
+    trendDelta30: mlPred.trend_delta_30,
+    confidence:  mlPred.confidence as Prediction['confidence'],
+    updatedAt:   mlPred.updated_at,
+  };
+}
+
 export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
@@ -163,25 +204,29 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
 
   const now = referenceDate ?? new Date();
   const dayType = classifyDayType(now);
-  const [live, recentHistoryMap, metadataMap, closuresMap] = await Promise.all([
+  const [live, recentHistoryMap, metadataMap, closuresMap, predictionsMap] = await Promise.all([
     fetchLiveData(parkSlug),
     fetchRecentHistory(parkSlug, now),
     ensureRideMetadataLoaded().catch(() => new Map()),
     // Best-effort: a missing/failed current_closures fetch just means no
     // closedAt timestamps, never a 5xx for the whole response.
     loadCurrentClosures().catch(() => new Map()),
+    // Best-effort: missing predictions degrade gracefully to historical averages.
+    loadPredictions().catch(() => new Map<string, import('./mlPredictions').MLPredictionDoc>()),
   ]);
 
   const allRides: Ride[] = await Promise.all(
     filterToRides(live.liveData).map(async entity => {
       const isOperating = entity.status === 'OPERATING';
+      const currentWait = isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null;
+      const mlPred = predictionsMap.get(entity.id);
       // rideStats is looked up for all rides (not just operating) so the
       // non-ride filter below can use it to drop chronic walk-ons /
       // walkthroughs / experiences regardless of current status.
       const [historicalAverage, rideStats, fullDayForecast] = await Promise.all([
-        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now) : Promise.resolve(null),
+        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now, currentWait, mlPred) : Promise.resolve(null),
         buildRideStats(parkSlug, entity.id, dayType),
-        buildFullDayForecast(parkSlug, entity.id, now),
+        buildFullDayForecast(parkSlug, entity.id, now, mlPred),
       ]);
       const meta = lookupRideMetadata(metadataMap, entity.id);
       const status = entity.status ?? 'UNKNOWN';
@@ -190,10 +235,10 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         name: entity.name,
         land: resolveLand(entity.id, parkSlug),
         status,
-        currentWait: isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null,
+        currentWait,
         historicalAverage,
         rideStats,
-        prediction: null,
+        prediction: mlPred ? buildPrediction(mlPred) : null,
         recentHistory: recentHistoryMap.get(entity.id) ?? null,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,

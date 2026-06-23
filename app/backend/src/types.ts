@@ -74,8 +74,21 @@ export interface HistoricalAverage {
   buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket];
 }
 
-// Reserved for vAnytime ML predictions. Always null in v1.
-export type Prediction = null;
+export interface Prediction {
+  t10: number;
+  t20: number;
+  t30: number;
+  t40: number;
+  t50: number;
+  t60: number;
+  t90: number;
+  t120: number;
+  t150: number;
+  trend: 'rising' | 'falling' | 'stable' | 'peak' | 'trough';
+  trendDelta30: number;
+  confidence: 'high' | 'medium' | 'low';
+  updatedAt: string;
+}
 
 // p10/p90 floor/ceiling for a ride on a given dayType. Used by the scoring
 // function to contextualise the current wait against the ride's historic
