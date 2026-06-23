@@ -3,7 +3,7 @@
 // and extracted a valid uid.
 
 import { getFirestore } from './firestoreClient';
-import { TripRecord, UserRecord, UserResponse } from './types';
+import { PromoCode, TripRecord, UserRecord, UserResponse } from './types';
 
 export async function upsertUser(
   uid: string,
@@ -56,6 +56,77 @@ export async function deleteUserData(uid: string): Promise<void> {
   devicesSnap.docs.forEach(doc => batch.delete(doc.ref));
 
   await batch.commit();
+}
+
+export async function claimFreeTrip(
+  uid: string,
+  appleId: string,
+  tripStart: string,
+  tripEnd: string
+): Promise<TripRecord> {
+  const db = getFirestore();
+  const userRef = db.collection('users').doc(uid);
+  const claimedRef = db.collection('claimedFreeTrips').doc(appleId);
+
+  // Check both the user record AND the durable appleId ledger. The user record
+  // is deleted on account deletion, so it alone can't prevent re-claim after
+  // a delete + re-signup with the same Apple ID.
+  const [userSnap, claimedSnap] = await Promise.all([userRef.get(), claimedRef.get()]);
+
+  if (!userSnap.exists) throw new Error('User not found');
+  if (claimedSnap.exists) throw new Error('Free trip already claimed');
+  const user = userSnap.data() as UserRecord;
+  if (user.freeTripClaimed) throw new Error('Free trip already claimed');
+
+  const trip: TripRecord = {
+    tripStart,
+    tripEnd,
+    purchasedAt: new Date().toISOString(),
+    source: 'free',
+  };
+
+  const batch = db.batch();
+  batch.set(db.collection('trips').doc(uid), trip);
+  batch.update(userRef, { freeTripClaimed: true });
+  // Write the durable ledger entry — survives account deletion.
+  batch.set(claimedRef, { uid, claimedAt: new Date().toISOString() });
+  await batch.commit();
+
+  return trip;
+}
+
+export async function validatePromoCode(
+  uid: string,
+  code: string,
+  tripStart: string,
+  tripEnd: string
+): Promise<TripRecord> {
+  const db = getFirestore();
+  const normalizedCode = code.trim().toUpperCase();
+  const codeRef = db.collection('promoCodes').doc(normalizedCode);
+  const codeSnap = await codeRef.get();
+
+  if (!codeSnap.exists) throw new Error('Invalid promo code');
+  const promo = codeSnap.data() as PromoCode;
+
+  if (!promo.active) throw new Error('This code is no longer active');
+  if (new Date(promo.expiresAt) < new Date()) throw new Error('This code has expired');
+  if (promo.timesUsed >= promo.maxUses) throw new Error('This code has been fully redeemed');
+
+  const trip: TripRecord = {
+    tripStart,
+    tripEnd,
+    purchasedAt: new Date().toISOString(),
+    source: 'promo',
+    promoCode: normalizedCode,
+  };
+
+  const batch = db.batch();
+  batch.set(db.collection('trips').doc(uid), trip);
+  batch.update(codeRef, { timesUsed: promo.timesUsed + 1 });
+  await batch.commit();
+
+  return trip;
 }
 
 export async function buildUserResponse(

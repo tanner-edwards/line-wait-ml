@@ -1,16 +1,20 @@
 // Single factory entry point. The rest of the app should import
 // `getNotificationService()` from here — never construct an impl directly.
-// When the native swap happens (Phase v6+), this is the only place the
-// wiring changes.
+// Platform detection happens here — web gets WebPush/VAPID; native gets
+// expo-notifications (ExpoNotificationService).
 
+import { Platform } from 'react-native';
 import { NotificationService } from './NotificationService';
 import { WebPushNotificationService } from './WebPushNotificationService';
+import { ExpoNotificationService } from './ExpoNotificationService';
 
 let instance: NotificationService | null = null;
 
 export function getNotificationService(): NotificationService {
   if (!instance) {
-    instance = new WebPushNotificationService();
+    instance = Platform.OS === 'web'
+      ? new WebPushNotificationService()
+      : new ExpoNotificationService();
   }
   return instance;
 }

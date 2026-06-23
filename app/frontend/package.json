@@ -4,7 +4,8 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
-    "ios": "expo run:ios",
+    "ios": "expo run:ios --device",
+    "ios:release": "expo run:ios --configuration Release --device",
     "test": "jest",
     "test:watch": "jest --watch",
     "typecheck": "tsc --noEmit",

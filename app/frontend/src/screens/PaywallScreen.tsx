@@ -5,7 +5,7 @@
 // Phase 5 will add promo code redemption.
 // For now the screen is the UI shell — the CTA is stubbed.
 
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   SafeAreaView,
   ScrollView,
@@ -17,6 +17,10 @@ import {
   Platform,
 } from 'react-native';
 import { ChevronLeft, Check } from 'lucide-react-native';
+import { validatePromoCode } from '../api';
+import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
+import { useAuth } from '../context/AuthContext';
+import { useTrip } from '../context/TripContext';
 import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 
 interface PaywallScreenProps {
@@ -32,26 +36,46 @@ const BENEFITS = [
 ];
 
 export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactElement {
+  const { getIdToken, refetchUser } = useAuth();
+  const { refetchTrip } = useTrip();
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const defaultEnd = new Date(today);
+  defaultEnd.setDate(today.getDate() + 2);
+
+  const rangeRef = useRef<TripDateRange>({
+    tripStart: toYMD(today),
+    tripEnd: toYMD(defaultEnd),
+  });
+
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [promoSuccess, setPromoSuccess] = useState(false);
 
   const handlePurchase = () => {
     // TODO Phase 4: trigger StoreKit purchase via expo-in-app-purchases
-    // then call POST /v1/users/trip/purchase with receipt + trip dates
     console.log('[PaywallScreen] purchase tapped — IAP not yet wired');
   };
 
   const handlePromoRedeem = async () => {
-    if (!promoCode.trim()) return;
+    const code = promoCode.trim();
+    if (!code) return;
     setPromoLoading(true);
     setPromoError(null);
+    setPromoSuccess(false);
     try {
-      // TODO Phase 5: POST /v1/promo/validate
-      console.log('[PaywallScreen] promo code:', promoCode);
-      setPromoError('Promo codes coming soon.');
-    } catch {
-      setPromoError('Invalid or expired code.');
+      const token = await getIdToken();
+      if (!token) throw new Error('Not signed in');
+      await validatePromoCode(token, { code, ...rangeRef.current });
+      setPromoSuccess(true);
+      await Promise.all([refetchUser(), refetchTrip()]);
+      onClose();
+    } catch (err) {
+      setPromoError(err instanceof Error ? err.message : 'Invalid or expired code.');
     } finally {
       setPromoLoading(false);
     }
@@ -79,6 +103,10 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
               <Text style={styles.benefitText}>{b}</Text>
             </View>
           ))}
+        </View>
+
+        <View style={styles.pickerCard}>
+          <TripDatePicker onChange={range => { rangeRef.current = range; }} />
         </View>
 
         <View style={styles.priceCard}>
@@ -117,6 +145,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
             </TouchableOpacity>
           </View>
           {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
+          {promoSuccess ? <Text style={styles.promoSuccess}>Code applied! Unlocking your trip…</Text> : null}
         </View>
 
         <Text style={styles.legal}>
@@ -243,9 +272,19 @@ const styles = StyleSheet.create({
     ...typography.label,
     color: colors.textInverse,
   },
+  pickerCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: spacing.lg,
+    ...shadows.card,
+  },
   promoError: {
     ...typography.caption,
     color: colors.skip,
+  },
+  promoSuccess: {
+    ...typography.caption,
+    color: colors.go,
   },
   legal: {
     ...typography.caption,

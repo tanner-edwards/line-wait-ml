@@ -254,6 +254,16 @@ export interface ErrorResponse {
   lastUpdated: null;
 }
 
+// --- Promo codes ---
+
+export interface PromoCode {
+  type: 'free_trip';
+  maxUses: number;
+  timesUsed: number;
+  expiresAt: string; // ISO
+  active: boolean;
+}
+
 // --- Accounts + paywall ---
 
 export interface UserRecord {

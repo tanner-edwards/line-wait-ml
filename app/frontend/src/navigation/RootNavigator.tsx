@@ -9,13 +9,14 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
+import { ClaimFreeTripScreen } from '../screens/ClaimFreeTripScreen';
 import { SignInScreen } from '../screens/SignInScreen';
 import { OnboardingNavigator } from '../onboarding/OnboardingNavigator';
 import { DailyParkSheet } from '../components/DailyParkSheet';
 import { AppNavigator } from './AppNavigator';
 
 export function RootNavigator(): React.ReactElement {
-  const { user, loading: authLoading } = useAuth();
+  const { user, userRecord, loading: authLoading } = useAuth();
   const { persona, loading: personaLoading } = usePersona();
   const { isStale: dailyIsStale, loading: dailyLoading } = useDailyContext();
 
@@ -33,6 +34,12 @@ export function RootNavigator(): React.ReactElement {
 
   if (persona === null) {
     return <OnboardingNavigator />;
+  }
+
+  // Free trip gate: shown once after onboarding for users who haven't claimed
+  // their free trip yet. Bypass users skip this — they already have access.
+  if (userRecord && !userRecord.freeTripClaimed && !userRecord.bypass) {
+    return <ClaimFreeTripScreen />;
   }
 
   return (

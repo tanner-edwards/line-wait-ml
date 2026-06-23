@@ -14,7 +14,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.tannere.club32"
+      "bundleIdentifier": "com.tannere.club32",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Club 32 uses your location to find your nearest ride and calculate walk times."
+      }
     },
     "android": {
       "adaptiveIcon": {

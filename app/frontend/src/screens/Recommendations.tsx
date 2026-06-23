@@ -10,6 +10,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
   FlatList,
+  Linking,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -222,8 +223,8 @@ export function Recommendations(): React.ReactElement {
         <StateBlock
           icon={<MapPinOff size={48} color={colors.textTertiary} />}
           title="Location access needed"
-          body="Club 32 uses your location to sort rides by how far you are. You can enable it in Settings."
-          action={{ label: 'Try again', onPress: retry, testID: 'recs-retry-location' }}
+          body="Club 32 uses your location to sort rides by how far you are. Enable it in Settings, then come back."
+          action={{ label: 'Open Settings', onPress: () => void Linking.openSettings(), testID: 'recs-retry-location' }}
         />
         <StatusBar style="auto" />
       </SafeAreaView>

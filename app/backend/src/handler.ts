@@ -38,7 +38,7 @@ import {
   TripDuration,
   UserResponse,
 } from './types';
-import { upsertUser, getUser, getTrip, deleteUserData } from './users';
+import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode } from './users';
 import {
   DAILY_PARKS_VALUES,
   DailyParks,
@@ -283,6 +283,8 @@ type RouteKind =
   | { kind: 'user-me' }
   | { kind: 'user-delete' }
   | { kind: 'user-trip' }
+  | { kind: 'user-trip-claim-free' }
+  | { kind: 'promo-validate' }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -296,6 +298,12 @@ function routeFromPath(
   if (method === 'POST') {
     if (path.endsWith('/v1/users')) {
       return { kind: 'user-upsert' };
+    }
+    if (path.endsWith('/v1/users/trip/claim-free')) {
+      return { kind: 'user-trip-claim-free' };
+    }
+    if (path.endsWith('/v1/promo/validate')) {
+      return { kind: 'promo-validate' };
     }
     if (path.endsWith('/v1/devices')) {
       return { kind: 'device-register' };
@@ -365,6 +373,14 @@ export async function handler(
 
   if (route.kind === 'user-trip') {
     return handleUserTrip(event);
+  }
+
+  if (route.kind === 'user-trip-claim-free') {
+    return handleClaimFreeTrip(event);
+  }
+
+  if (route.kind === 'promo-validate') {
+    return handlePromoValidate(event);
   }
 
   if (route.kind === 'device-register') {
@@ -817,6 +833,76 @@ async function handleUserTrip(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleClaimFreeTrip(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: { tripStart?: unknown; tripEnd?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const tripStart = typeof body.tripStart === 'string' ? body.tripStart : null;
+  const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
+  if (!tripStart || !tripEnd) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'tripStart and tripEnd are required (YYYY-MM-DD)'));
+  }
+
+  try {
+    const userRecord = await getUser(uid);
+    if (!userRecord) return jsonResponse(404, errorBody('NOT_FOUND', 'User not found'));
+    const trip = await claimFreeTrip(uid, userRecord.appleId, tripStart, tripEnd);
+    return jsonResponse(200, { trip });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const status = message === 'Free trip already claimed' ? 409 : 500;
+    return jsonResponse(status, errorBody(status === 409 ? 'CONFLICT' : 'INTERNAL_ERROR', message));
+  }
+}
+
+async function handlePromoValidate(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: { code?: unknown; tripStart?: unknown; tripEnd?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const code = typeof body.code === 'string' ? body.code : null;
+  const tripStart = typeof body.tripStart === 'string' ? body.tripStart : null;
+  const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
+  if (!code || !tripStart || !tripEnd) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'code, tripStart, and tripEnd are required'));
+  }
+
+  try {
+    const trip = await validatePromoCode(uid, code, tripStart, tripEnd);
+    return jsonResponse(200, { trip });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    // Validation failures are 422 so the frontend can surface them directly.
+    const isValidationError = [
+      'Invalid promo code',
+      'This code is no longer active',
+      'This code has expired',
+      'This code has been fully redeemed',
+    ].includes(message);
+    return jsonResponse(
+      isValidationError ? 422 : 500,
+      errorBody(isValidationError ? 'INVALID_PROMO' : 'INTERNAL_ERROR', message)
+    );
   }
 }
 

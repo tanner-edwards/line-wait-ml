@@ -3,12 +3,14 @@
 // Config values come from EXPO_PUBLIC_FIREBASE_* env vars — add them to
 // .env.local from Firebase Console → Project Settings → Your apps → Web app.
 //
-// Firebase v12 with Metro (Expo) resolves firebase/auth to the react-native
-// bundle at runtime, which uses AsyncStorage for token persistence automatically.
-// No explicit persistence setup is needed.
+// Metro resolves firebase/auth to the React Native bundle at runtime, which
+// exports getReactNativePersistence. TypeScript uses the browser type
+// definitions and can't see it, so we pull it via require() to sidestep the
+// type gap while still getting the correct runtime module.
 
 import { initializeApp, getApps, FirebaseApp } from 'firebase/app';
-import { getAuth, Auth } from 'firebase/auth';
+import { initializeAuth, getAuth, Auth } from 'firebase/auth';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const firebaseConfig = {
   apiKey:            process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
@@ -24,10 +26,25 @@ let auth: Auth;
 
 if (getApps().length === 0) {
   app = initializeApp(firebaseConfig);
+  try {
+    // getReactNativePersistence is exported by the RN bundle Metro resolves at
+    // runtime but absent from the browser type declarations TypeScript reads.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getReactNativePersistence } = require('firebase/auth') as {
+      getReactNativePersistence: (storage: typeof AsyncStorage) => unknown;
+    };
+    auth = initializeAuth(app, {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch {
+    // Fallback for web/test environments where getReactNativePersistence
+    // isn't available — getAuth() uses in-memory persistence there.
+    auth = getAuth(app);
+  }
 } else {
   app = getApps()[0]!;
+  auth = getAuth(app);
 }
-auth = getAuth(app);
 
 export { auth };
 export default app;

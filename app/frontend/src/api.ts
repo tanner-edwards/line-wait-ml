@@ -232,6 +232,22 @@ export async function fetchUserMe(idToken: string): Promise<UserResponse> {
   return (await res.json()) as UserResponse;
 }
 
+export async function claimFreeTrip(
+  idToken: string,
+  input: { tripStart: string; tripEnd: string }
+): Promise<TripRecord> {
+  const body = await authedPostJson('/v1/users/trip/claim-free', idToken, input);
+  return (body as { trip: TripRecord }).trip;
+}
+
+export async function validatePromoCode(
+  idToken: string,
+  input: { code: string; tripStart: string; tripEnd: string }
+): Promise<TripRecord> {
+  const body = await authedPostJson('/v1/promo/validate', idToken, input);
+  return (body as { trip: TripRecord }).trip;
+}
+
 export async function deleteAccount(idToken: string): Promise<void> {
   if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
   let res: Response;
