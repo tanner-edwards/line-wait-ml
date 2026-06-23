@@ -94,6 +94,50 @@ def is_holiday(when: datetime, tz: ZoneInfo = DEFAULT_TZ) -> bool:
     return local in candidates
 
 
+def holiday_features(when: datetime, tz: ZoneInfo = DEFAULT_TZ) -> dict:
+    """Return the four holiday features stored on every wait_times doc.
+
+    Mirrors the logic in holidays.js so inference features match training features.
+    """
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    local = when.astimezone(tz)
+    local_date = local.date()
+    year = local_date.year
+
+    all_holidays: set = set(
+        _holidays_for_year(year - 1)
+        + _holidays_for_year(year)
+        + _holidays_for_year(year + 1)
+    )
+
+    is_hol = local_date in all_holidays
+
+    days_until = 0 if is_hol else next(
+        (i for i in range(1, 366) if (local_date + timedelta(days=i)) in all_holidays),
+        365,
+    )
+    days_since = 0 if is_hol else next(
+        (i for i in range(1, 366) if (local_date - timedelta(days=i)) in all_holidays),
+        365,
+    )
+
+    # Fri/Sat/Sun/Mon adjacent to a holiday (Python weekday: Mon=0, Fri=4, Sat=5, Sun=6)
+    is_weekend_adj = local.weekday() in (4, 5, 6, 0)
+    adjacent = (
+        (local_date - timedelta(days=1)) in all_holidays
+        or local_date in all_holidays
+        or (local_date + timedelta(days=1)) in all_holidays
+    )
+
+    return {
+        "is_holiday":               is_hol,
+        "is_holiday_weekend":       is_weekend_adj and adjacent,
+        "days_until_next_holiday":  days_until,
+        "days_since_last_holiday":  days_since,
+    }
+
+
 def classify_day_type(when: datetime, tz: ZoneInfo = DEFAULT_TZ) -> DayType:
     if is_holiday(when, tz):
         return "holiday"
