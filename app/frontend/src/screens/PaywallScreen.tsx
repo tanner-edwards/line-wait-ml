@@ -28,11 +28,11 @@ interface PaywallScreenProps {
 }
 
 const BENEFITS = [
-  'Full-day wait forecast for every ride',
-  'AI-powered "go now" recommendations',
-  'Trough alerts — know the perfect moment',
-  'Gold-star ride detection',
-  'Notifications on your must-do rides',
+  'See how wait times are going to change throughout the day',
+  'Know the right time to head to any ride',
+  'Get alerted when a ride hits its shortest wait',
+  'AI-powered recommendations',
+  'Notifications on the rides you care about most',
 ];
 
 export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactElement {
@@ -119,7 +119,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
           onPress={handlePurchase}
           activeOpacity={0.85}
         >
-          <Text style={styles.purchaseBtnText}>$10 · Activate trip access</Text>
+          <Text style={styles.purchaseBtnText}>Activate trip access</Text>
         </TouchableOpacity>
 
         {/* Promo code entry */}

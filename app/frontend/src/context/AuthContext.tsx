@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
-      if (firebaseUser) {
+      if (firebaseUser && !firebaseUser.isAnonymous) {
         await syncUserRecord(firebaseUser);
       } else {
         setUserRecord(null);

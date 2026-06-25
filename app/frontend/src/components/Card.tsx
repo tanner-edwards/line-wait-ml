@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.card,
     borderWidth: 1,
     borderColor: colors.border,
-    padding: spacing.base,
+    padding: 14,
     ...shadows.card,
   },
   highlight: {

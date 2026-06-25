@@ -147,6 +147,9 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  // Pure historical-average baseline — only present when an ML prediction
+  // also exists, so the frontend can overlay both lines for comparison.
+  historicalBaseline?: HistoricalAverage | null;
   recentHistory: RecentSnapshot[] | null;
   lat: number | null;
   lng: number | null;

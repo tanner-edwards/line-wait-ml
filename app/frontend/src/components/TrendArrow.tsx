@@ -25,18 +25,23 @@ export function TrendArrow({
   const direction = trendDirection(input);
   if (direction === null) return null;
 
+  // Trend indicators are intentionally NEUTRAL — the arrow shape carries
+  // direction; color used to be go/skip (green/red) but paired conflicting
+  // signals with the wait number (e.g. green "Rising" arrow next to a green
+  // below-typical wait). textTertiary for actionable directions, trendFlat
+  // for the quieter Steady state.
   let Icon: typeof TrendingDown;
   let color: string;
 
   if (direction === 'down') {
     Icon = TrendingDown;
-    color = colors.go;
+    color = colors.trendDown;
   } else if (direction === 'up') {
     Icon = TrendingUp;
-    color = colors.skip;
+    color = colors.trendUp;
   } else {
     Icon = Minus;
-    color = colors.textSecondary;
+    color = colors.trendFlat;
   }
 
   return (

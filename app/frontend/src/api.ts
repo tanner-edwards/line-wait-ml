@@ -124,6 +124,7 @@ interface RegisterDeviceInput {
   pushTokenType: 'web' | 'expo' | null;
   mustDoRideIds: string[];
   notificationsEnabled: boolean;
+  tripEnd: string | null;
 }
 
 export async function registerDevice(input: RegisterDeviceInput): Promise<void> {

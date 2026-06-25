@@ -17,8 +17,14 @@ export interface HistoricalAverage {
   buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket];
 }
 
-// Always null in v1; shape reserved for vAnytime when the ML model lands.
-export type Prediction = null;
+export interface Prediction {
+  t10: number; t20: number; t30: number; t40: number; t50: number; t60: number;
+  t90: number; t120: number; t150: number;
+  trend: 'rising' | 'falling' | 'stable' | 'peak' | 'trough';
+  trendDelta30: number;
+  confidence: 'high' | 'medium' | 'low';
+  updatedAt: string;
+}
 
 export interface RideStats {
   p10: number;
@@ -71,6 +77,7 @@ export interface Ride {
   historicalAverage: HistoricalAverage | null;
   rideStats: RideStats | null;
   prediction: Prediction | null;
+  historicalBaseline?: HistoricalAverage | null;
   recentHistory: RecentSnapshot[] | null;
   lat: number | null;
   lng: number | null;

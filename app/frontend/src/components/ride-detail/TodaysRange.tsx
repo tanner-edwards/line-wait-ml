@@ -40,14 +40,6 @@ export const LABEL_Y        = TRACK_BOTTOM_Y + 16;
 export const TR_H           = LABEL_Y + 10;
 const PROX            = 44;   // proximity threshold for dropping typical label
 
-function buildTagline(current: number | null, typical: number | null): string | null {
-  if (current == null || typical == null) return null;
-  const diff = Math.abs(Math.round(current - typical));
-  if (diff <= 2) return 'Right around the usual wait for this time.';
-  return current < typical
-    ? `About ${diff} min less than usual right now.`
-    : `About ${diff} min more than usual right now.`;
-}
 
 interface Props {
   p10: number;
@@ -132,15 +124,15 @@ export function computeLayout(
 export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.ReactElement {
   const [renderW, setRenderW] = useState(0);
 
-  const fillColor = '#4F46E5';
+  // Range fill + bubble use brand teal — verdict lives in the header badge,
+  // not this bar.
+  const fillColor = colors.brand;
   const {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
     bubbleCx, bubbleLeft,
     typicalX, typicalLabelX, typicalLabelY, svgH,
   } = computeLayout(p10, p90, current, typicalWait);
-
-  const tagline = buildTagline(current, typicalWait);
 
   return (
     <View>
@@ -246,22 +238,8 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
         ) : null}
       </View>
 
-      {tagline ? (
-        <>
-          <View style={styles.taglineDivider} />
-          <Text style={styles.tagline}>{tagline}</Text>
-        </>
-      ) : null}
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  taglineDivider: {
-    height: StyleSheet.hairlineWidth,
-    backgroundColor: '#eef', // TODO: tokenize
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  tagline: { fontSize: 13, color: SUBINK, fontStyle: 'italic' },
-});
+const styles = StyleSheet.create({});

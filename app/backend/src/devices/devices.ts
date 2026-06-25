@@ -27,6 +27,7 @@ export interface DeviceRecord {
   // skips devices whose armedDate doesn't match — that's the "auto-disarm
   // at park close" mechanism, no cron cleanup needed.
   armedDate: string | null;
+  tripEnd: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,6 +37,7 @@ export interface UpsertFields {
   pushTokenType?: PushTokenType | null;
   mustDoRideIds?: string[];
   notificationsEnabled?: boolean;
+  tripEnd?: string | null;
 }
 
 export async function upsertDevice(deviceId: string, fields: UpsertFields): Promise<void> {
@@ -51,6 +53,7 @@ export async function upsertDevice(deviceId: string, fields: UpsertFields): Prom
       mustDoRideIds: fields.mustDoRideIds ?? [],
       notificationsEnabled: fields.notificationsEnabled ?? false,
       armedDate: null,
+      tripEnd: fields.tripEnd ?? null,
       createdAt: now,
       updatedAt: now,
     });

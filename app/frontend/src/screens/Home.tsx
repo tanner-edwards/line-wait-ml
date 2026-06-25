@@ -224,7 +224,7 @@ function ListRow({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.bg },
   emptyListContent: { flexGrow: 1 },
   center: {
     flex: 1,

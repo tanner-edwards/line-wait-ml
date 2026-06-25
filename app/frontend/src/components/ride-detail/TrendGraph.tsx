@@ -8,6 +8,9 @@
 // When the next 30-min bucket is imminent (≤5 min away), shift the future
 // indices forward by one — the backend supplies a 6th t+150 bucket exactly
 // to keep a full 2-hour lookahead in that case.
+//
+// Optional baselineBuckets: when present, draws a second faint line over the
+// future portion showing pure historical averages alongside ML predictions.
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -18,6 +21,7 @@ import { formatBucketTimeSlot, formatHHMM } from '../../timestamp';
 const BRAND = colors.brand;
 const BRAND_DIM = '#a3a5e4'; // TODO: tokenize
 const MUTED = '#bbb'; // TODO: tokenize
+const BASELINE_COLOR = '#d0d0d0'; // historical average overlay
 const INK = '#222'; // TODO: tokenize
 const SUBINK = '#666'; // TODO: tokenize
 const RED = colors.skip;
@@ -25,11 +29,14 @@ const RED = colors.skip;
 const GRAPH_RENDER_H = 90;
 const COLUMN_COUNT = 7;
 
+type BucketList = { offsetMinutes: number; timeSlot: string; wait: number | null; sampleCount: number }[];
+
 interface Props {
   recentHistory: { timestamp: string; minutesAgo: number; wait: number | null; status: string }[];
   anchorWait: number | null;
   isDown: boolean;
-  buckets: { offsetMinutes: number; timeSlot: string; wait: number | null; sampleCount: number }[] | null;
+  buckets: BucketList | null;
+  baselineBuckets?: BucketList | null;
 }
 
 export function TrendGraph({
@@ -37,6 +44,7 @@ export function TrendGraph({
   anchorWait,
   isDown,
   buckets,
+  baselineBuckets,
 }: Props): React.ReactElement {
   // Pull the ~20-min-ago and ~40-min-ago observations from recentHistory.
   // The backend returns up to 4 entries most-recent-first at 10-min cron
@@ -67,6 +75,20 @@ export function TrendGraph({
     buckets?.[fi(2)]?.wait ?? null,
     buckets?.[fi(3)]?.wait ?? null,
   ];
+
+  // Baseline values — null for past columns, historical averages for future.
+  const baselineValues: (number | null)[] = baselineBuckets
+    ? [
+        null,
+        null,
+        null, // now column: no baseline dot at the anchor
+        baselineBuckets[fi(0)]?.wait ?? null,
+        baselineBuckets[fi(1)]?.wait ?? null,
+        baselineBuckets[fi(2)]?.wait ?? null,
+        baselineBuckets[fi(3)]?.wait ?? null,
+      ]
+    : [];
+
   const columnLabels: string[] = [
     formatHHMM(tMinus40?.timestamp ?? null),
     formatHHMM(tMinus20?.timestamp ?? null),
@@ -85,8 +107,10 @@ export function TrendGraph({
   const colWidth = renderW > 0 ? renderW / COLUMN_COUNT : 0;
   const xAt = (i: number) => (i + 0.5) * colWidth;
 
-  // Auto-scale Y based on actuals present.
-  const valid = values.filter((v): v is number => v != null);
+  // Auto-scale Y across both primary and baseline so both lines share the
+  // same axis — prevents one from being clipped off the chart.
+  const allValues = [...values, ...baselineValues];
+  const valid = allValues.filter((v): v is number => v != null);
   const minV = valid.length ? Math.min(...valid) : 0;
   const maxV = valid.length ? Math.max(...valid) : 1;
   const range = maxV - minV || 1;
@@ -115,6 +139,22 @@ export function TrendGraph({
   }
   if (cur.length >= 2) (segIsPast ? pastSegments : futureSegments).push(cur.join(' '));
 
+  // Baseline segments — future only (indices nowIdx onward).
+  const baselineSegments: string[] = [];
+  if (baselineValues.length) {
+    let bCur: string[] = [];
+    for (let i = nowIdx; i < baselineValues.length; i++) {
+      const v = baselineValues[i];
+      if (v == null) {
+        if (bCur.length >= 2) baselineSegments.push(bCur.join(' '));
+        bCur = [];
+        continue;
+      }
+      bCur.push(`${xAt(i)},${toY(v)}`);
+    }
+    if (bCur.length >= 2) baselineSegments.push(bCur.join(' '));
+  }
+
   return (
     <View onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}>
       {/* Column header: time labels + wait values */}
@@ -127,6 +167,10 @@ export function TrendGraph({
             <Text style={[styles.columnValue, i === nowIdx && styles.columnValueNow]}>
               {v == null ? '—' : v}
             </Text>
+            {/* Baseline value shown below primary in future columns */}
+            {i > nowIdx && baselineValues[i] != null ? (
+              <Text style={styles.columnBaseline}>{baselineValues[i]}</Text>
+            ) : null}
           </View>
         ))}
       </View>
@@ -135,6 +179,10 @@ export function TrendGraph({
       <View style={{ height: GRAPH_RENDER_H }}>
         {renderW > 0 && valid.length >= 2 ? (
           <Svg width={renderW} height={GRAPH_RENDER_H}>
+            {/* Historical baseline — drawn first so ML line sits on top */}
+            {baselineSegments.map((p, i) => (
+              <Polyline key={`baseline-${i}`} points={p} fill="none" stroke={BASELINE_COLOR} strokeWidth={1.5} strokeDasharray="3,5" strokeLinecap="round" strokeLinejoin="round" />
+            ))}
             {pastSegments.map((p, i) => (
               <Polyline key={`past-${i}`} points={p} fill="none" stroke={BRAND} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             ))}
@@ -172,4 +220,5 @@ const styles = StyleSheet.create({
   columnLabelNow: { color: BRAND, fontWeight: '700' },
   columnValue: { fontSize: 13, fontWeight: '600', color: INK, marginTop: 1 },
   columnValueNow: { color: BRAND, fontSize: 14 },
+  columnBaseline: { fontSize: 10, color: BASELINE_COLOR, marginTop: 1 },
 });

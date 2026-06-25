@@ -6,18 +6,21 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Platform,
   SafeAreaView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import {
   OAuthProvider,
+  signInAnonymously,
   signInWithCredential,
 } from 'firebase/auth';
 import { auth } from '../firebase';
-import { colors, spacing, typography } from '../theme/tokens';
+import { colors, radius, spacing, typography } from '../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 
 export function SignInScreen(): React.ReactElement {
@@ -76,6 +79,14 @@ export function SignInScreen(): React.ReactElement {
 
           {loading ? (
             <ActivityIndicator size="large" color={colors.textInverse} />
+          ) : Platform.OS === 'web' ? (
+            <TouchableOpacity
+              style={styles.continueBtn}
+              onPress={() => void signInAnonymously(auth)}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.continueBtnText}>Continue</Text>
+            </TouchableOpacity>
           ) : (
             <AppleAuthentication.AppleAuthenticationButton
               buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN}
@@ -130,6 +141,21 @@ const styles = StyleSheet.create({
   appleBtn: {
     width: '100%',
     height: 54,
+  },
+  continueBtn: {
+    width: '100%',
+    height: 54,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  continueBtnText: {
+    ...typography.label,
+    fontSize: 16,
+    color: colors.textInverse,
   },
   error: {
     ...typography.label,

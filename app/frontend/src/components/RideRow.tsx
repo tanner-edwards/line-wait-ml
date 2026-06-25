@@ -97,7 +97,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
       onPress={onPress}
       testID={`ride-${ride.id}`}
     >
-      <View style={[styles.row, isDown && styles.rowDown]}>
+      <View style={[styles.row, !isOperating && styles.rowDown]}>
         {/* Row 1 */}
         <View style={styles.row1}>
           {/* Badge — left of name (star/go/skip only; walkOn handled on right) */}
@@ -105,8 +105,8 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
 
           {/* Name + optional bell */}
           <View style={styles.nameRow}>
-            <Text style={[styles.rideName, isDown && styles.rideNameDown]}>{ride.name}</Text>
-            {isWatching && <Bell size={12} color={colors.star} />}
+            <Text style={[styles.rideName, !isOperating && styles.rideNameDown]}>{ride.name}</Text>
+            {isWatching && hasActiveTrip && <Bell size={12} color={colors.star} />}
           </View>
 
           {/* Right side: Walk On OR wait number */}
@@ -124,7 +124,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
                 <Text style={styles.waitMin}> min</Text>
               </>
             ) : isDown ? (
-              <Text style={styles.closedLabel}>Closed</Text>
+              <Text style={styles.downLabel}>Down</Text>
             ) : (
               <Text style={styles.waitStatus}>{rideWaitLabel(ride)}</Text>
             )}
@@ -174,10 +174,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     backgroundColor: colors.surface,
   },
-  rowDown: {
-    backgroundColor: colors.bg,
-    opacity: 0.75,
-  },
+  rowDown: {},
   row1: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -199,7 +196,7 @@ const styles = StyleSheet.create({
   },
   waitCluster: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    alignItems: 'center',
     gap: 2,
   },
   waitNumber: {
@@ -213,10 +210,17 @@ const styles = StyleSheet.create({
   },
   waitStatus: {
     ...typography.label,
+    fontSize: 14,
     color: colors.textSecondary,
+  },
+  downLabel: {
+    ...typography.label,
+    fontSize: 14,
+    color: colors.star,
   },
   closedLabel: {
     ...typography.label,
+    fontSize: 14,
     color: colors.textTertiary,
   },
   walkOnCluster: {

@@ -32,13 +32,14 @@ export function RootNavigator(): React.ReactElement {
     return <SignInScreen />;
   }
 
-  if (persona === null) {
+  // Anonymous users (web dev bypass) skip onboarding and the free trip gate.
+  if (!user?.isAnonymous && persona === null) {
     return <OnboardingNavigator />;
   }
 
   // Free trip gate: shown once after onboarding for users who haven't claimed
-  // their free trip yet. Bypass users skip this — they already have access.
-  if (userRecord && !userRecord.freeTripClaimed && !userRecord.bypass) {
+  // their free trip yet. Bypass users and anonymous users skip this.
+  if (!user?.isAnonymous && userRecord && !userRecord.freeTripClaimed && !userRecord.bypass) {
     return <ClaimFreeTripScreen />;
   }
 

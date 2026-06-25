@@ -16,11 +16,10 @@
 // deep-link via NotificationDetailContext.
 
 import React, { useMemo, useState } from 'react';
-import { Modal, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle } from 'lucide-react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { AlertTriangle, X } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Sheet } from './Sheet';
-import { DebugCard } from './DebugCard';
 import { PaywallTeaser } from './PaywallTeaser';
 import { PaywallScreen } from '../screens/PaywallScreen';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
@@ -35,9 +34,8 @@ import { haversineMeters } from '../grouping';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
 import { isParkError, Ride } from '../types';
-import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
-import { Tile } from './ride-detail/Tile';
+import { Tile, TileLabel } from './ride-detail/Tile';
 import { RideDetailHeader } from './ride-detail/RideDetailHeader';
 import { TodaysRange } from './ride-detail/TodaysRange';
 import { TrendGraph } from './ride-detail/TrendGraph';
@@ -79,8 +77,13 @@ export function RideDetailModal(): React.ReactElement {
     <Sheet
       isOpen={active !== null}
       onClose={closeDetail}
-      size="tall"
+      size="xtall"
       backdropColor={active?.source === 'history' ? 'transparent' : undefined}
+      headerRight={
+        <Pressable onPress={dismissAll} hitSlop={12} testID="ride-detail-dismiss" style={styles.closeBtn}>
+          <X size={18} color={colors.textSecondary} />
+        </Pressable>
+      }
       testID="ride-detail"
     >
       {ride ? (
@@ -92,7 +95,6 @@ export function RideDetailModal(): React.ReactElement {
           notifClosedAt={active?.closedAt ?? null}
           restrictionNote={active?.restrictionNote ?? null}
           oneLiner={active?.oneLiner ?? null}
-          onDismissAll={dismissAll}
         />
       ) : active ? (
         <View style={styles.fallbackBlock}>
@@ -113,7 +115,6 @@ function DetailBody({
   notifClosedAt,
   restrictionNote,
   oneLiner,
-  onDismissAll,
 }: {
   ride: Ride;
   parkName: string | null;
@@ -122,7 +123,6 @@ function DetailBody({
   notifClosedAt: string | null;
   restrictionNote: string | null;
   oneLiner: string | null;
-  onDismissAll: () => void;
 }): React.ReactElement {
   const { persona, setPersona } = usePersona();
   const { debugMode } = useDebugMode();
@@ -161,17 +161,6 @@ function DetailBody({
   const buckets = ride.historicalAverage?.buckets;
   const bucket0Wait = buckets?.[0]?.wait ?? null;
   const bucket4Wait = buckets?.[4]?.wait ?? null;
-  const bucket0SampleCount = buckets?.[0]?.sampleCount ?? 0;
-
-  const isBelowNormal =
-    isOperating && anchorWait !== null && bucket0Wait !== null &&
-    bucket0Wait > 0 && bucket0SampleCount >= MIN_BUCKET_SAMPLE_COUNT &&
-    anchorWait < bucket0Wait * 0.75;
-  const isAboveNormal =
-    isOperating && anchorWait !== null && bucket0Wait !== null &&
-    bucket0Wait > 0 && bucket0SampleCount >= MIN_BUCKET_SAMPLE_COUNT &&
-    anchorWait > bucket0Wait * 1.25;
-  const waitColor = isBelowNormal ? colors.go : isAboveNormal ? colors.skip : '#222';
 
   // Star always wins; walkOn beats go/skip otherwise.
   const showWalkOn = walkOn && badge !== 'star';
@@ -185,43 +174,37 @@ function DetailBody({
     bucket3Wait: buckets?.[3]?.wait ?? null,
     bucket4Wait,
   });
-  const trendLabel = trendDir === 'down' ? 'Dropping ↘'
-    : trendDir === 'up' ? 'Rising ↗'
-    : trendDir === 'stable' ? 'Steady →'
-    : null;
-  const trendColor = trendDir === 'down' ? colors.go
-    : trendDir === 'up' ? colors.skip
-    : colors.textTertiary;
-
   const rideNotifs = useRideNotificationHistory(deviceId ?? null, ride.id);
 
   return (
     <ScrollView contentContainerStyle={styles.body}>
-      <RideDetailHeader
-        rideName={ride.name}
-        parkName={parkName}
-        land={ride.land}
-        isDown={isDown}
-        anchorWait={anchorWait}
-        waitColor={waitColor}
-        showWalkOn={showWalkOn}
-        badge={badge}
-        trendLabel={trendLabel}
-        trendColor={trendColor}
-        walkMins={walkMins}
-        isWatching={isWatching}
-        rideId={ride.id}
-        oneLiner={oneLiner}
-        onToggleWatch={onToggleWatch}
-        onDismissAll={onDismissAll}
-      />
-
-      {restrictionNote ? (
-        <View style={styles.restrictionBanner}>
-          <AlertTriangle size={13} color={colors.star} style={styles.restrictionIcon} />
-          <Text style={styles.restrictionText}>{restrictionNote}</Text>
-        </View>
-      ) : null}
+      <Tile>
+        <RideDetailHeader
+          rideName={ride.name}
+          parkName={parkName}
+          land={ride.land}
+          isOperating={isOperating}
+          isDown={isDown}
+          anchorWait={anchorWait}
+          showWalkOn={showWalkOn}
+          badge={badge}
+          oneLiner={oneLiner}
+          walkMins={walkMins}
+          isWatching={isWatching}
+          rideId={ride.id}
+          trendDir={trendDir}
+          bucket0Wait={bucket0Wait}
+          bucket4Wait={bucket4Wait}
+          onToggleWatch={onToggleWatch}
+          hasActiveTrip={hasActiveTrip}
+        />
+        {restrictionNote ? (
+          <View style={styles.restrictionBanner}>
+            <AlertTriangle size={13} color={colors.star} style={styles.restrictionIcon} />
+            <Text style={styles.restrictionText}>{restrictionNote}</Text>
+          </View>
+        ) : null}
+      </Tile>
 
       {/* Closure tile surfaces first when ride is down — all other data is secondary. */}
       {isDown ? (
@@ -237,30 +220,12 @@ function DetailBody({
         <>
           {!isDown && ride.rideStats ? (
             <Tile>
+              <TileLabel>Today's Range</TileLabel>
               <TodaysRange
                 p10={ride.rideStats.p10}
                 p90={ride.rideStats.p90}
                 current={anchorWait}
                 typicalWait={bucket0Wait}
-              />
-            </Tile>
-          ) : null}
-
-          {!isDown && ((ride.recentHistory && ride.recentHistory.length > 0) || buckets) ? (
-            <Tile>
-              <TrendGraph
-                recentHistory={ride.recentHistory ?? []}
-                anchorWait={anchorWait}
-                isDown={isDown}
-                buckets={buckets ?? null}
-              />
-              <TrendCaption
-                anchorWait={anchorWait}
-                isDown={isDown}
-                recentWait={ride.recentHistory?.[0]?.wait ?? null}
-                bucket1Wait={buckets?.[1]?.wait ?? null}
-                bucket3Wait={buckets?.[3]?.wait ?? null}
-                bucket4Wait={bucket4Wait}
               />
             </Tile>
           ) : null}
@@ -283,11 +248,7 @@ function DetailBody({
         </>
       ) : (
         <>
-          <PaywallTeaser
-            rideName={ride.name}
-            fullDayForecast={ride.fullDayForecast}
-            onUnlock={() => setPaywallOpen(true)}
-          />
+          <PaywallTeaser onUnlock={() => setPaywallOpen(true)} />
           <Modal
             visible={paywallOpen}
             animationType="slide"
@@ -301,18 +262,32 @@ function DetailBody({
 
       <RideAlertHistory entries={rideNotifs} />
 
-      {debugMode && ride.score ? (
-        <View style={styles.debugSection}>
-          <Text style={styles.debugSectionLabel}>Scoring (debug)</Text>
-          <DebugCard ride={ride} result={ride.score} />
-        </View>
+      {debugMode && !isDown && ((ride.recentHistory && ride.recentHistory.length > 0) || buckets) ? (
+        <Tile>
+          <TileLabel>Trend (debug)</TileLabel>
+          <TrendGraph
+            recentHistory={ride.recentHistory ?? []}
+            anchorWait={anchorWait}
+            isDown={isDown}
+            buckets={buckets ?? null}
+            baselineBuckets={ride.historicalBaseline?.buckets ?? null}
+          />
+          <TrendCaption
+            anchorWait={anchorWait}
+            isDown={isDown}
+            recentWait={ride.recentHistory?.[0]?.wait ?? null}
+            bucket1Wait={buckets?.[1]?.wait ?? null}
+            bucket3Wait={buckets?.[3]?.wait ?? null}
+            bucket4Wait={bucket4Wait}
+          />
+        </Tile>
       ) : null}
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { paddingTop: 4, paddingBottom: 48 },
+  body: { paddingTop: 2, paddingBottom: 48 },
 
   restrictionBanner: {
     flexDirection: 'row',
@@ -321,22 +296,19 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    marginHorizontal: 16,
-    marginBottom: 8,
+    marginTop: 10,
     gap: 8,
   },
   restrictionIcon: { marginTop: 1 },
   restrictionText: { fontSize: 13, color: '#222', flex: 1 },
 
-  debugSection: { marginTop: 16 },
-  debugSectionLabel: {
-    fontSize: 11,
-    color: SUBINK,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 6,
-    fontWeight: '600',
-    paddingHorizontal: 4,
+  closeBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 
   fallbackBlock: { flex: 1, justifyContent: 'center', padding: 32 },

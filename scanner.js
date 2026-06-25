@@ -417,8 +417,18 @@ async function loadArmedDevices(db) {
   const snap = await db.collection('devices')
     .where('notificationsEnabled', '==', true)
     .get();
+  const todayPT = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Los_Angeles',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
   const list = [];
-  snap.forEach(doc => list.push(doc.data()));
+  snap.forEach(doc => {
+    const data = doc.data();
+    // Skip devices whose trip has ended. Devices without a tripEnd are legacy
+    // records — let them through so existing behavior is unchanged.
+    if (data.tripEnd && data.tripEnd < todayPT) return;
+    list.push(data);
+  });
   return list;
 }
 

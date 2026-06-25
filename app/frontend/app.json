@@ -41,7 +41,8 @@
     "plugins": [
       "expo-font",
       "expo-notifications",
-      "expo-apple-authentication"
+      "expo-apple-authentication",
+      "@react-native-community/datetimepicker"
     ]
   }
 }

@@ -7,11 +7,13 @@ import { Bell } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
+import { useTrip } from '../context/TripContext';
 
 export function NotificationBellButton(): React.ReactElement | null {
   const { notificationsEnabled } = useDevice();
   const { openHistorySheet } = useNotificationDetail();
-  if (!notificationsEnabled) return null;
+  const { hasActiveTrip } = useTrip();
+  if (!notificationsEnabled || !hasActiveTrip) return null;
   return (
     <Pressable
       onPress={openHistorySheet}

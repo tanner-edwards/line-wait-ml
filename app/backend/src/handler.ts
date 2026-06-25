@@ -65,18 +65,50 @@ const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
 const RECS_TTL_MS = 300_000;
 const recsCache = new TTLCache<string, RecommendationsResponse>(RECS_TTL_MS);
 
+interface HistoricalAverageResult {
+  primary: HistoricalAverage | null;
+  baseline: HistoricalAverage | null; // pure historical; non-null only when ML is also active
+}
+
 async function buildHistoricalAverage(
   parkSlug: ParkSlug,
   rideId: string,
   now: Date,
   currentWait: number | null,
   mlPred?: MLPredictionDoc,
-): Promise<HistoricalAverage | null> {
+): Promise<HistoricalAverageResult> {
   const dayType = classifyDayType(now);
   const [b0, b30, b60, b90, b120, b150] = bucketsAroundNow(now);
 
+  let averages;
+  try {
+    averages = await ensureLoaded();
+  } catch (err) {
+    console.warn('historical_averages load failed; serving without averages', err);
+    return { primary: null, baseline: null };
+  }
+
+  const v0   = lookupAverage(averages, parkSlug, rideId, b0,   dayType);
+  const v30  = lookupAverage(averages, parkSlug, rideId, b30,  dayType);
+  const v60  = lookupAverage(averages, parkSlug, rideId, b60,  dayType);
+  const v90  = lookupAverage(averages, parkSlug, rideId, b90,  dayType);
+  const v120 = lookupAverage(averages, parkSlug, rideId, b120, dayType);
+  const v150 = lookupAverage(averages, parkSlug, rideId, b150, dayType);
+
+  if (v0 === null) return { primary: null, baseline: null };
+
+  const historicalBuckets: HistoricalAverage['buckets'] = [
+    bucketEntry(0,   b0,   v0),
+    bucketEntry(30,  b30,  v30),
+    bucketEntry(60,  b60,  v60),
+    bucketEntry(90,  b90,  v90),
+    bucketEntry(120, b120, v120),
+    bucketEntry(150, b150, v150),
+  ];
+  const historicalOnly: HistoricalAverage = { dayType, buckets: historicalBuckets };
+
   if (mlPred !== undefined && currentWait !== null) {
-    return {
+    const primary: HistoricalAverage = {
       dayType,
       buckets: [
         { offsetMinutes: 0 as const,   timeSlot: b0,   wait: currentWait,  sampleCount: 1 },
@@ -87,35 +119,10 @@ async function buildHistoricalAverage(
         { offsetMinutes: 150 as const, timeSlot: b150, wait: mlPred.t150,  sampleCount: 1 },
       ],
     };
+    return { primary, baseline: historicalOnly };
   }
 
-  // Fall back to historical averages when no ML prediction is available.
-  let averages;
-  try {
-    averages = await ensureLoaded();
-  } catch (err) {
-    console.warn('historical_averages load failed; serving without averages', err);
-    return null;
-  }
-
-  const v0   = lookupAverage(averages, parkSlug, rideId, b0,   dayType);
-  const v30  = lookupAverage(averages, parkSlug, rideId, b30,  dayType);
-  const v60  = lookupAverage(averages, parkSlug, rideId, b60,  dayType);
-  const v90  = lookupAverage(averages, parkSlug, rideId, b90,  dayType);
-  const v120 = lookupAverage(averages, parkSlug, rideId, b120, dayType);
-  const v150 = lookupAverage(averages, parkSlug, rideId, b150, dayType);
-
-  if (v0 === null) return null;
-
-  const buckets: [HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket, HistoricalBucket] = [
-    bucketEntry(0,   b0,   v0),
-    bucketEntry(30,  b30,  v30),
-    bucketEntry(60,  b60,  v60),
-    bucketEntry(90,  b90,  v90),
-    bucketEntry(120, b120, v120),
-    bucketEntry(150, b150, v150),
-  ];
-  return { dayType, buckets };
+  return { primary: historicalOnly, baseline: null };
 }
 
 async function buildRideStats(
@@ -223,11 +230,13 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
       // rideStats is looked up for all rides (not just operating) so the
       // non-ride filter below can use it to drop chronic walk-ons /
       // walkthroughs / experiences regardless of current status.
-      const [historicalAverage, rideStats, fullDayForecast] = await Promise.all([
-        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now, currentWait, mlPred) : Promise.resolve(null),
+      const [haResult, rideStats, fullDayForecast] = await Promise.all([
+        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now, currentWait, mlPred) : Promise.resolve({ primary: null, baseline: null }),
         buildRideStats(parkSlug, entity.id, dayType),
         buildFullDayForecast(parkSlug, entity.id, now, mlPred),
       ]);
+      const historicalAverage = haResult.primary;
+      const historicalBaseline = haResult.baseline;
       const meta = lookupRideMetadata(metadataMap, entity.id);
       const status = entity.status ?? 'UNKNOWN';
       const ride: Ride = {
@@ -239,6 +248,7 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         historicalAverage,
         rideStats,
         prediction: mlPred ? buildPrediction(mlPred) : null,
+        historicalBaseline,
         recentHistory: recentHistoryMap.get(entity.id) ?? null,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
@@ -627,6 +637,7 @@ async function handleDeviceRegister(
     pushTokenType?: unknown;
     mustDoRideIds?: unknown;
     notificationsEnabled?: unknown;
+    tripEnd?: unknown;
   };
   try {
     body = JSON.parse(event.body ?? '{}');
@@ -665,11 +676,13 @@ async function handleDeviceRegister(
     typeof body.notificationsEnabled === 'boolean' ? body.notificationsEnabled : undefined;
 
   try {
+    const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
     await upsertDevice(deviceId, {
       pushToken,
       pushTokenType,
       mustDoRideIds,
       notificationsEnabled,
+      tripEnd,
     });
     return jsonResponse(200, { deviceId, ok: true });
   } catch (err) {

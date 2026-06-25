@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { colors } from '../theme/tokens';
 import { DailyParks, ParkSlug, Ride } from '../types';
+import { Card } from './Card';
 import { SearchField } from './SearchField';
 import { Sheet } from './Sheet';
 
@@ -95,6 +96,7 @@ export function PickerSheet({
       onClose={onClose}
       size="tall"
       title="Which ride are you at?"
+      sheetColor={colors.surface}
       testID="picker"
     >
       <Text style={styles.scopeLabel}>{scopeTitle}</Text>
@@ -111,24 +113,26 @@ export function PickerSheet({
           {query ? 'No rides match that search.' : 'No rides available yet.'}
         </Text>
       ) : (
-        <FlatList
-          data={filteredRides}
-          keyExtractor={r => r.id}
-          keyboardShouldPersistTaps="handled"
-          style={styles.rideList}
-          renderItem={({ item }) => (
-            <Pressable
-              style={styles.rideRow}
-              onPress={() => onSubmit(item.park, item.id)}
-              testID={`picker-ride-${item.id}`}
-            >
-              <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
-              <Text style={styles.rideLand}>
-                {showParkSubtitle ? `${item.land} · ${PARK_SHORT[item.park]}` : item.land}
-              </Text>
-            </Pressable>
-          )}
-        />
+        <Card flush style={styles.listCard}>
+          <FlatList
+            data={filteredRides}
+            keyExtractor={r => r.id}
+            keyboardShouldPersistTaps="handled"
+            style={styles.rideList}
+            renderItem={({ item }) => (
+              <Pressable
+                style={styles.rideRow}
+                onPress={() => onSubmit(item.park, item.id)}
+                testID={`picker-ride-${item.id}`}
+              >
+                <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
+                <Text style={styles.rideLand}>
+                  {showParkSubtitle ? `${item.land} · ${PARK_SHORT[item.park]}` : item.land}
+                </Text>
+              </Pressable>
+            )}
+          />
+        </Card>
       )}
     </Sheet>
   );
@@ -146,13 +150,19 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginBottom: 12,
   },
+  listCard: {
+    // Don't let the card grow to fill — let it size to its rows but allow
+    // its FlatList child to scroll if there are many.
+    flexShrink: 1,
+  },
   rideList: {
     flexGrow: 0,
   },
   rideRow: {
     paddingVertical: 12,
+    paddingHorizontal: 14,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
   },
   rideName: {
     fontSize: 15,

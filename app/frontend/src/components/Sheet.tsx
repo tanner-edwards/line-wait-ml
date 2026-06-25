@@ -27,12 +27,14 @@ export interface SheetProps {
   dismissable?: boolean;
   /** Override the backdrop colour. Pass 'transparent' to avoid stacking overlays. */
   backdropColor?: string;
+  /** Override the sheet surface colour. Defaults to colors.bg (cream). */
+  sheetColor?: string;
   /**
    * Fixed-height preset. Omit to size the sheet to its content (max 90%).
    * half ≈ 50%  |  tall ≈ 85%
    * No snap-between-sizes — each preset is a single fixed height.
    */
-  size?: 'half' | 'tall';
+  size?: 'half' | 'tall' | 'xtall';
   title?: string;
   /** Replaces the default close ✕ button when provided. */
   headerRight?: React.ReactNode;
@@ -45,6 +47,7 @@ export function Sheet({
   onClose,
   dismissable = true,
   backdropColor,
+  sheetColor,
   size,
   title,
   headerRight,
@@ -52,6 +55,12 @@ export function Sheet({
   testID,
 }: SheetProps): React.ReactElement {
   const translateY = useRef(new Animated.Value(0)).current;
+
+  // Refs so PanResponder (created once) always calls the latest callbacks.
+  const onCloseRef = useRef(onClose);
+  const dismissableRef = useRef(dismissable);
+  onCloseRef.current = onClose;
+  dismissableRef.current = dismissable;
 
   useEffect(() => {
     if (isOpen) translateY.setValue(0);
@@ -65,9 +74,9 @@ export function Sheet({
         if (gs.dy > 0) translateY.setValue(gs.dy);
       },
       onPanResponderRelease: (_, gs) => {
-        if (dismissable && (gs.dy > 80 || gs.vy > 0.8)) {
+        if (dismissableRef.current && (gs.dy > 80 || gs.vy > 0.8)) {
           translateY.setValue(0);
-          onClose();
+          onCloseRef.current();
         } else {
           Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
         }
@@ -75,8 +84,7 @@ export function Sheet({
     })
   ).current;
 
-  const showHeader = !!title || !!headerRight;
-  const closeButton = dismissable ? (
+  const rightSlot = headerRight ?? (dismissable ? (
     <Pressable
       onPress={onClose}
       hitSlop={12}
@@ -84,7 +92,7 @@ export function Sheet({
     >
       <X size={18} color={colors.textTertiary} />
     </Pressable>
-  ) : null;
+  ) : null);
 
   return (
     <Modal
@@ -94,37 +102,38 @@ export function Sheet({
       onRequestClose={dismissable ? onClose : () => {}}
     >
       <View style={[styles.backdrop, backdropColor ? { backgroundColor: backdropColor } : undefined]} testID={testID}>
+        {/* Absolute-fill Pressable sits behind the card. Taps on the empty
+            backdrop area reach it; taps on the card don't (card is on top). */}
         {dismissable ? (
           <Pressable
-            style={styles.dismissArea}
+            style={StyleSheet.absoluteFill}
             onPress={onClose}
             testID={testID ? `${testID}-backdrop` : undefined}
           />
-        ) : (
-          <View style={styles.dismissArea} />
-        )}
+        ) : null}
         <Animated.View
           style={[
             styles.card,
-            size === 'half' && styles.sizeHalf,
-            size === 'tall' && styles.sizeTall,
+            size === 'half'  && styles.sizeHalf,
+            size === 'tall'  && styles.sizeTall,
+            size === 'xtall' && styles.sizeXTall,
             !size && styles.sizeAuto,
             { transform: [{ translateY }] },
+            sheetColor ? { backgroundColor: sheetColor } : undefined,
           ]}
         >
-          {/* PanResponder lives here only — content area scrolls freely */}
+          {/* Grabber row doubles as the close-button row — pill stays centered
+              between two equal flex:1 sides; right side holds the dismiss button. */}
           <View style={styles.grabberRow} {...panResponder.panHandlers}>
+            <View style={styles.grabberSide} />
             <View style={styles.grabberPill} />
+            <View style={styles.grabberSide}>{rightSlot}</View>
           </View>
-          {showHeader && (
-            <View style={styles.header}>
-              {/* flex:1 spacer ensures headerRight stays right-aligned even with no title */}
-              <View style={styles.headerTitleSlot}>
-                {title ? <Text style={styles.title}>{title}</Text> : null}
-              </View>
-              {headerRight ?? closeButton}
+          {title ? (
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>{title}</Text>
             </View>
-          )}
+          ) : null}
           {children}
         </Animated.View>
       </View>
@@ -140,19 +149,29 @@ const styles = StyleSheet.create({
   },
   dismissArea: { flex: 1 },
   card: {
-    backgroundColor: colors.surface,
+    // Sheets use the cream page-bg so white card-tiles inside (RideDetail
+    // Tiles, DailyParkSheet rows, etc.) read as elevated surfaces, matching
+    // the rest of the app's "cream background, white cards" rhythm.
+    backgroundColor: colors.bg,
     borderTopLeftRadius: radius.sheet,
     borderTopRightRadius: radius.sheet,
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xxl,
     ...shadows.sheet,
   },
-  sizeHalf: { height: '50%' },
-  sizeTall: { height: '85%' },
-  sizeAuto: { maxHeight: '90%' },
+  sizeHalf:  { height: '50%' },
+  sizeTall:  { height: '85%' },
+  sizeXTall: { height: '86%' },
+  sizeAuto:  { maxHeight: '90%' },
   grabberRow: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: spacing.md,
+    paddingTop: spacing.md,
+    paddingBottom: 0,
+  },
+  grabberSide: {
+    flex: 1,
+    alignItems: 'flex-end',
   },
   grabberPill: {
     width: 36,
@@ -160,15 +179,8 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     backgroundColor: colors.borderStrong,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+  titleRow: {
     marginBottom: spacing.md,
-  },
-  headerTitleSlot: {
-    flex: 1,
-    marginRight: 8,
   },
   title: {
     fontSize: 18,

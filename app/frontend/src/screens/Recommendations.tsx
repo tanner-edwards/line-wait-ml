@@ -252,7 +252,7 @@ export function Recommendations(): React.ReactElement {
   return (
     <SafeAreaView style={styles.container} testID="recs-loaded">
       <GradientHeader
-        title={debugMode ? 'Recommendations  DEBUG' : 'Recommendations'}
+        title="Recommendations"
         subtitle={
           recs && !recsLoading
             ? `Near ${recs.currentRide.name} · ${parkDisplayName(recs.currentRide.park)}`
@@ -421,7 +421,7 @@ function RecsList({
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.surface },
+  container: { flex: 1, backgroundColor: colors.bg },
   listContent: { paddingTop: spacing.sm },
   changeButton: {
     paddingHorizontal: 12,

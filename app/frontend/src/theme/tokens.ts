@@ -1,41 +1,60 @@
 // Design tokens — single source of truth for Club 32.
 // Import from here in StyleSheet.create() calls, SVG fills, and gradients.
-// Phase 1: colors, typography, spacing, radius, shadows.
+//
+// Palette: warm forest green ("country club"). Migrated from blue/purple
+// June 2026. Header is now FLAT (gradientFrom === gradientTo), and bar
+// neutrals stay blue-gray lavender (still works across the warm palette).
 
 export const colors = {
-  // Brand
-  brand:             '#4F46E5',
-  brandPressed:      '#4338CA',
-  gradientFrom:      '#0369A1',
-  gradientTo:        '#7C3AED',
+  // Brand — deep forest teal for buttons, dots, watching state
+  brand:             '#0A6B5A',
+  brandPressed:      '#085647',
+  // Header gradient — flat solid (both stops same value)
+  gradientFrom:      '#3D7C65',
+  gradientTo:        '#3D7C65',
 
   // Surfaces
-  bg:                '#F4F6FF',
+  bg:                '#F2EDE0',  // cream, behind white cards
   surface:           '#FFFFFF',
 
-  // Text
-  textPrimary:       '#0F0E30',
-  textSecondary:     '#5A5880',
-  textTertiary:      '#9896C0',
+  // Text — forest-toned grays
+  textPrimary:       '#1A3530',
+  textSecondary:     '#5C6E68',
+  textTertiary:      '#8A9E98',
   textInverse:       '#FFFFFF',
   textInverseMuted:  'rgba(255,255,255,0.55)',
 
-  // Status
-  go:                '#059669',
-  goBg:              'rgba(5,150,105,0.09)',
-  skip:              '#DC2626',
-  skipBg:            'rgba(220,38,38,0.09)',
-  star:              '#F59E0B',
-  starBg:            'rgba(245,158,11,0.12)',
+  // Status — verdict colors (badges, alerts, range bar fills)
+  go:                '#3D7C65',  // unified with header — single green
+  goBg:              'rgba(61,124,101,0.10)',
+  goBorder:          'rgba(61,124,101,0.25)',
+  skip:              '#B83A2A',  // brick red, complements green + gold
+  skipBg:            'rgba(184,58,42,0.09)',
+  skipBorder:        'rgba(184,58,42,0.25)',
+  star:              '#C9941D',  // deeper amber gold, reserved for star
+  starBg:            'rgba(201,148,29,0.12)',
+  starBorder:        'rgba(201,148,29,0.25)',
 
-  // Trend
-  trendDown:         '#059669',
-  trendUp:           '#DC2626',
-  trendFlat:         '#9896C0',
+  // Trend direction — NEUTRAL gray everywhere. The arrow shape and label
+  // carry the meaning; color was creating contradictory signals (green
+  // wait paired with red "Rising" arrow). textTertiary for the active
+  // states, trendFlat (one step lighter) for the least-actionable Steady.
+  trendDown:         '#8A9E98',  // ≡ textTertiary
+  trendUp:           '#8A9E98',  // ≡ textTertiary
+  trendFlat:         '#C8CADD',  // one step lighter — Steady reads as quiet
 
-  // Borders
-  border:            'rgba(70,70,200,0.08)',
-  borderStrong:      'rgba(70,70,200,0.14)',
+  // Forecast bars (FullDayForecast). Neutral stays blue-gray lavender —
+  // works visually against both the old and new palette.
+  barNeutral:        '#8A8FA8',
+  barNeutralPast:    '#BDC0CE',
+  barPeak:           '#B83A2A',
+  barPeakPast:       'rgba(184,58,42,0.28)',
+  barTrough:         '#3D7C65',
+  barTroughPast:     'rgba(61,124,101,0.32)',
+
+  // Borders — teal-tinted at low opacity
+  border:            'rgba(10,107,90,0.09)',
+  borderStrong:      'rgba(10,107,90,0.20)',
 } as const;
 
 export const fonts = {
@@ -111,19 +130,21 @@ export const radius = {
   pill:  9999,
 } as const;
 
+// Shadow tint matches the new brand green. Distances and blur unchanged
+// per the migration spec — only the color shifts.
 export const shadows = {
   card: {
-    shadowColor:   '#1E1478',
+    shadowColor:   '#0A6B5A',
     shadowOffset:  { width: 0, height: 2 },
     shadowRadius:  10,
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.06,
     elevation:     2,
   },
   sheet: {
-    shadowColor:   '#140F50',
+    shadowColor:   '#0A6B5A',
     shadowOffset:  { width: 0, height: -4 },
     shadowRadius:  24,
-    shadowOpacity: 0.18,
+    shadowOpacity: 0.14,
     elevation:     12,
   },
 } as const;

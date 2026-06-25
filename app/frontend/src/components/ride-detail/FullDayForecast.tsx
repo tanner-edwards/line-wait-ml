@@ -18,24 +18,28 @@ import { FullDaySlot } from '../../types';
 import { scheduleRideReminder } from '../../utils/scheduleReminder';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
+//
+// Bar palette comes from tokens.ts so the forecast bars stay in sync with the
+// rest of the app's status colors. Detail card + badge tints derive from the
+// same trough/peak/brand bases at lower opacity.
 
-const BAR_TROUGH        = '#059669';
-const BAR_PEAK          = '#B91C3A';
-const BAR_NEUTRAL       = '#8A8FA8';
-const BAR_TROUGH_PAST   = 'rgba(5,150,105,0.32)';
-const BAR_PEAK_PAST     = 'rgba(185,28,58,0.28)';
-const BAR_NEUTRAL_PAST  = '#BDC0CE';
+const BAR_TROUGH        = colors.barTrough;
+const BAR_PEAK          = colors.barPeak;
+const BAR_NEUTRAL       = colors.barNeutral;
+const BAR_TROUGH_PAST   = colors.barTroughPast;
+const BAR_PEAK_PAST     = colors.barPeakPast;
+const BAR_NEUTRAL_PAST  = colors.barNeutralPast;
 
-const DETAIL_TROUGH_BG      = 'rgba(5,150,105,0.06)';
-const DETAIL_TROUGH_BORDER  = 'rgba(5,150,105,0.22)';
-const DETAIL_PEAK_BG        = 'rgba(185,28,58,0.05)';
-const DETAIL_PEAK_BORDER    = 'rgba(185,28,58,0.18)';
-const DETAIL_NEUTRAL_BG     = 'rgba(79,70,229,0.05)';
-const DETAIL_NEUTRAL_BORDER = 'rgba(79,70,229,0.14)';
+const DETAIL_TROUGH_BG      = 'rgba(61,124,101,0.06)';
+const DETAIL_TROUGH_BORDER  = 'rgba(61,124,101,0.22)';
+const DETAIL_PEAK_BG        = 'rgba(184,58,42,0.05)';
+const DETAIL_PEAK_BORDER    = 'rgba(184,58,42,0.18)';
+const DETAIL_NEUTRAL_BG     = 'rgba(10,107,90,0.05)';
+const DETAIL_NEUTRAL_BORDER = 'rgba(10,107,90,0.14)';
 
-const BADGE_TROUGH_BG  = 'rgba(5,150,105,0.10)';
-const BADGE_PEAK_BG    = 'rgba(185,28,58,0.08)';
-const BADGE_NEUTRAL_BG = 'rgba(79,70,229,0.08)';
+const BADGE_TROUGH_BG  = 'rgba(61,124,101,0.10)';
+const BADGE_PEAK_BG    = 'rgba(184,58,42,0.08)';
+const BADGE_NEUTRAL_BG = 'rgba(10,107,90,0.08)';
 
 // Chart layout.
 const CHART_H   = 72;
@@ -418,7 +422,7 @@ const styles = StyleSheet.create({
 
   detailDivider: {
     height: 1,
-    backgroundColor: 'rgba(70,70,200,0.07)',
+    backgroundColor: colors.border,
     marginTop: 12,
     marginBottom: 10,
   },

@@ -81,7 +81,8 @@ export function TripProvider({ children }: { children: React.ReactNode }): React
   }, [user, loadTrip]);
 
   const bypass = userRecord?.bypass ?? false;
-  const hasActiveTrip = bypass || isTripActive(trip);
+  const isAnonymous = user?.isAnonymous ?? false;
+  const hasActiveTrip = bypass || isAnonymous || isTripActive(trip);
 
   const refetchTrip = useCallback(async () => {
     setLoading(true);

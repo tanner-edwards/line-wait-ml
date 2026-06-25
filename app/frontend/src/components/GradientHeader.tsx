@@ -1,11 +1,13 @@
-// Park Horizon gradient header band. Used on Home, Recommendations, and Profile.
+// App header band. Used on Home, Recommendations, and Profile.
 //
-// Renders a blue → purple diagonal gradient with a title (Lora display font,
-// inverse white) and optional subtitle + right slot for buttons / actions.
+// Renders a flat solid green (colors.gradientFrom) with a title in Lora
+// inverse-white, plus an optional subtitle and a right-aligned slot for
+// buttons/actions. The name "Gradient" is historical — the header used to
+// be a blue→purple gradient before the June 2026 palette migration. Kept
+// the export name so callers don't churn.
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { colors, spacing, typography } from '../theme/tokens';
 
 interface GradientHeaderProps {
@@ -18,12 +20,7 @@ interface GradientHeaderProps {
 
 export function GradientHeader({ title, subtitle, right }: GradientHeaderProps): React.ReactElement {
   return (
-    <LinearGradient
-      colors={[colors.gradientFrom, colors.gradientTo]}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={styles.gradient}
-    >
+    <View style={styles.header}>
       <View style={styles.inner}>
         <View style={styles.left}>
           <Text style={styles.title}>{title}</Text>
@@ -37,7 +34,7 @@ export function GradientHeader({ title, subtitle, right }: GradientHeaderProps):
         </View>
         {right != null ? <View style={styles.right}>{right}</View> : null}
       </View>
-    </LinearGradient>
+    </View>
   );
 }
 
@@ -55,7 +52,8 @@ export const gradientHeaderTextStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
-  gradient: {
+  header: {
+    backgroundColor: colors.gradientFrom,
     paddingHorizontal: spacing.base,
     paddingVertical: spacing.base,
   },

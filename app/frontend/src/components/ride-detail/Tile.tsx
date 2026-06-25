@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { colors } from '../../theme/tokens';
+import { colors, radius } from '../../theme/tokens';
 
 export function Tile({ children }: { children: React.ReactNode }): React.ReactElement {
   return <View style={styles.tile}>{children}</View>;
@@ -16,11 +16,12 @@ export function TileLabel({ children }: { children: React.ReactNode }): React.Re
 
 const styles = StyleSheet.create({
   tile: {
-    backgroundColor: colors.bg,
-    borderRadius: 12,
-    padding: 10,
+    // White card on top of the cream sheet — inverse of the prior treatment.
+    backgroundColor: colors.surface,
+    borderRadius: radius.card,
+    padding: 14,
     marginTop: 10,
-    borderColor: '#eef', // TODO: tokenize
+    borderColor: colors.border,
     borderWidth: 1,
   },
   tileLabel: {

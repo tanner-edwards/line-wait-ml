@@ -40,6 +40,7 @@ import { logError, logInfo } from '../utils/logger';
 import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
 import { usePersona } from './PersonaContext';
 import { useDailyContext } from './DailyContextContext';
+import { useTrip } from './TripContext';
 
 interface DeviceContextValue {
   deviceId: string | null;
@@ -72,6 +73,7 @@ const DeviceContext = createContext<DeviceContextValue | null>(null);
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
+  const { trip } = useTrip();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
   const [armedDate, setArmedDate] = useState<string | null>(null);
@@ -194,6 +196,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         pushTokenType: (sub?.type ?? null) as PushTokenType | null,
         mustDoRideIds: persona?.mustDoRideIds ?? [],
         notificationsEnabled: true,
+        tripEnd: trip?.tripEnd ?? null,
       });
       logInfo('enableNotifications: device registered', 'notif');
       void writeNotificationsEnabled(true);
