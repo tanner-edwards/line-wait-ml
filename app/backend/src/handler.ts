@@ -111,7 +111,11 @@ async function buildHistoricalAverage(
     const primary: HistoricalAverage = {
       dayType,
       buckets: [
-        { offsetMinutes: 0 as const,   timeSlot: b0,   wait: currentWait,  sampleCount: 1 },
+        // bucket0 is always the live currentWait — use the real historical
+        // sampleCount so the scorer's MIN_BUCKET_SAMPLE_COUNT gate fires
+        // correctly. ML prediction buckets use sampleCount:1 (they're model
+        // outputs, not raw observations).
+        { offsetMinutes: 0 as const,   timeSlot: b0,   wait: currentWait,  sampleCount: v0?.sampleCount ?? 1 },
         { offsetMinutes: 30 as const,  timeSlot: b30,  wait: mlPred.t30,   sampleCount: 1 },
         { offsetMinutes: 60 as const,  timeSlot: b60,  wait: mlPred.t60,   sampleCount: 1 },
         { offsetMinutes: 90 as const,  timeSlot: b90,  wait: mlPred.t90,   sampleCount: 1 },
