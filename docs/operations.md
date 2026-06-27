@@ -42,6 +42,39 @@ Revoke by setting it back to `false`. Takes effect on the user's next app launch
 
 ---
 
+## Deploying changes
+
+### Backend (Lambda)
+```bash
+cd app/backend && ./deploy.sh
+```
+
+### Cloud Run Job (cron image)
+Used by: ML predictions (`predict.py`), closure profile rebuild (`build_closure_profiles.py`).
+
+Rebuild and push the image whenever any file in `cron/` changes (Dockerfile, predict.py, build_closure_profiles.py, etc.):
+```bash
+cd cron
+gcloud builds submit --tag gcr.io/llm-wait-times/club32-predict-cron .
+gcloud run jobs update club32-predict-cron \
+  --image gcr.io/llm-wait-times/club32-predict-cron \
+  --region us-west1 \
+  --project llm-wait-times
+```
+
+**How it works:** `gcloud builds submit` uploads the `cron/` directory to Cloud Build, which builds the Docker image remotely and pushes it to `gcr.io/llm-wait-times/club32-predict-cron`. The `run jobs update` command then points the job at the new image. Both steps are required — build alone doesn't update the running job.
+
+The job itself is triggered two ways:
+- Every 10 min by `collect.yml` (runs `predict.py`)
+- Every Sunday by `rebuild_profiles.yml` (runs `build_closure_profiles.py` via `--args`)
+
+### Frontend (Expo web)
+```bash
+cd app/frontend && ./deploy-web.sh
+```
+
+---
+
 ## Adding a new Disney ride
 
 When a new ride opens, it won't appear in the app until it's in the metadata allowlist:

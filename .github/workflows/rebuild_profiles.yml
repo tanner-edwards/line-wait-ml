@@ -1,0 +1,26 @@
+name: Rebuild closure profiles
+
+# Runs every Sunday at 10:00 UTC (3 AM PT) — low-traffic window.
+# Also triggerable manually from the Actions tab.
+on:
+  schedule:
+    - cron: '0 10 * * 0'
+  workflow_dispatch:
+
+jobs:
+  rebuild:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      - name: Rebuild closure profiles
+        run: |
+          gcloud run jobs execute club32-predict-cron \
+            --region us-west1 \
+            --project llm-wait-times \
+            --args=build_closure_profiles.py \
+            --wait \
+            --format none

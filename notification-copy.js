@@ -106,6 +106,17 @@ const REOPEN_NO_DOWNTIME_LINES = [
   'Back online.',
 ];
 
+// Opportunity reopens: extended closure + wait dropped significantly.
+// These replace the standard reopen body when isOpportunity=true.
+const REOPEN_OPPORTUNITY_TAGLINES = [
+  'Line cleared during the outage. Go now.',
+  'Queue drained. Rare window.',
+  'Line reset. Get there before the crowd.',
+  'Best time to ride — go now.',
+  'Short line won\'t last. Move.',
+  'Grab this before it fills back up.',
+];
+
 const PEAK_MILD = [
   "Now's not the time.",
   'Skip for now.',
@@ -163,11 +174,12 @@ function magnitudeFor(type, params) {
  *   rideStats?: { p50?: number, p90?: number }|null,
  *   durationMs?: number|null,
  *   waitAtClose?: number|null,
+ *   isOpportunity?: boolean,
  * }} params
  * @returns {string}
  */
 export function notificationBody(params) {
-  const { type, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, durationMs = null, waitAtClose = null } = params;
+  const { type, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, durationMs = null, waitAtClose = null, isOpportunity = false } = params;
   const magnitude = magnitudeFor(type, params);
 
   if (type === 'trough') {
@@ -189,6 +201,23 @@ export function notificationBody(params) {
     const downtime = formatDuration(durationMs);
     const nowText = currentWait != null ? `${currentWait} min` : null;
     const closedText = waitAtClose != null ? `${waitAtClose} min` : null;
+
+    // Opportunity reopen: extended closure + meaningful wait drop. Lead with
+    // the wait numbers — that's the signal — and add urgency tagline.
+    if (isOpportunity) {
+      const tagline = pickRandom(REOPEN_OPPORTUNITY_TAGLINES);
+      if (closedText && nowText && bucket0Wait != null) {
+        return `Back after ${downtime ?? 'a while'}. Wait dropped from ${closedText} to ${nowText} — typical is ${bucket0Wait} min. ${tagline}`;
+      }
+      if (closedText && nowText) {
+        return `Back after ${downtime ?? 'a while'}. Was ${closedText} — now ${nowText}. ${tagline}`;
+      }
+      if (nowText && bucket0Wait != null) {
+        return `Back after ${downtime ?? 'a while'}. Only ${nowText} — usually ${bucket0Wait} around now. ${tagline}`;
+      }
+      return `Back after ${downtime ?? 'a while'}. ${tagline}`;
+    }
+
     const preamblePool = magnitude === 'strong' ? REOPEN_PREAMBLES_STRONG : REOPEN_PREAMBLES_MILD;
     const base = downtime
       ? `${pickRandom(preamblePool)} ${downtime}.`

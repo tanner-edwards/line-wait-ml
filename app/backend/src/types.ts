@@ -158,6 +158,9 @@ export interface Ride {
   // Null for currently-operating rides and for closures that pre-date
   // the scanner (no historical backfill).
   closedAt: string | null;
+  // ML-predicted reopen time based on per-ride closure duration history.
+  // Set for DOWN rides where a profile exists and the prediction is in the future.
+  predictedReopenAt?: string | null;
   // Always present on the wire response; optional in the type to allow
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.

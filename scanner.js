@@ -404,6 +404,26 @@ async function recordClosureStart(db, current) {
   });
 }
 
+// Appends a compact closure summary to closure_events/{auto-id}.
+// This collection is what build_closure_profiles.py reads instead of a CSV.
+async function recordClosureEvent(db, { rideId, rideName, parkId, closedAt, durationMin, waitAtClose, waitAtReopen, dayType, hourAtReopen, dayOfWeek }) {
+  const delta = (waitAtClose != null && waitAtReopen != null) ? waitAtClose - waitAtReopen : null;
+  await db.collection('closure_events').add(stripUndefined({
+    rideId,
+    rideName,
+    parkId,
+    closedAt,
+    reopenedAt: new Date().toISOString(),
+    durationMin: Math.round(durationMin * 10) / 10,
+    waitAtClose: waitAtClose ?? null,
+    waitAtReopen: waitAtReopen ?? null,
+    delta,
+    dayType,
+    hourAtReopen,
+    dayOfWeek,
+  }));
+}
+
 async function readAndClearClosure(db, rideId) {
   const ref = db.collection('current_closures').doc(rideId);
   const doc = await ref.get();
@@ -411,6 +431,13 @@ async function readAndClearClosure(db, rideId) {
   const data = doc.data();
   await ref.delete();
   return data;
+}
+
+async function loadClosureProfiles(db) {
+  const snap = await db.collection('closure_profiles').get();
+  const map = new Map();
+  snap.forEach(doc => map.set(doc.id, doc.data()));
+  return map;
 }
 
 async function loadArmedDevices(db) {
@@ -473,10 +500,10 @@ function stripUndefined(value) {
 // matching closure event.
 
 // Build the user-facing notification payload. Copy lives in notification-copy.js.
-function buildPayload({ type, rideId, rideName, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, previousWait = null, durationMs = null, waitAtClose = null }) {
+function buildPayload({ type, rideId, rideName, badge = null, currentWait = null, bucket0Wait = null, rideStats = null, previousWait = null, durationMs = null, waitAtClose = null, isOpportunity = false }) {
   return {
     title: notificationTitle(type, rideName, badge),
-    body: notificationBody({ type, badge, currentWait, bucket0Wait, rideStats, durationMs, waitAtClose }),
+    body: notificationBody({ type, badge, currentWait, bucket0Wait, rideStats, durationMs, waitAtClose, isOpportunity }),
     rideId,
     type,
     badge,
@@ -630,9 +657,10 @@ async function run() {
   }
   log('snapshot_loaded', { rides: snapshot.size, openParks: openParkIds.length });
 
-  const [historical, stats] = await Promise.all([
+  const [historical, stats, closureProfiles] = await Promise.all([
     loadHistoricalAverages(db),
     loadRideStats(db),
+    loadClosureProfiles(db).catch(() => new Map()),
   ]);
   log('lookups_loaded', { historicalKeys: historical.size, statsKeys: stats.size });
 
@@ -659,6 +687,29 @@ async function run() {
       const closure = await readAndClearClosure(db, rideId);
       const closedAt = closure?.closedAt ?? null;
       const durationMs = closedAt ? Date.now() - new Date(closedAt).getTime() : null;
+      const durationMin = durationMs != null ? durationMs / 60_000 : null;
+
+      // Persist a closure summary so build_closure_profiles.py can read from
+      // Firestore instead of a CSV — no manual script re-runs needed.
+      if (closedAt && durationMin != null) {
+        const ptHour = Number(new Intl.DateTimeFormat('en-US', {
+          timeZone: PARK_TZ, hour: 'numeric', hourCycle: 'h23',
+        }).format(now));
+        const ptDow = new Date(calendarDayUTC(now)).getUTCDay();
+        await recordClosureEvent(db, {
+          rideId,
+          rideName: obs.current.name,
+          parkId: obs.current.parkId,
+          closedAt,
+          durationMin,
+          waitAtClose: closure?.waitAtClose ?? null,
+          waitAtReopen: obs.current.wait ?? null,
+          dayType,
+          hourAtReopen: ptHour,
+          dayOfWeek: ptDow,
+        });
+      }
+
       statusChanges.set(rideId, { kind: 'reopen', closedAt, durationMs, waitAtClose: closure?.waitAtClose ?? null });
     }
   }
@@ -704,13 +755,32 @@ async function run() {
         if (!wantsNotification(device, 'reopen')) {
           skippedTypeOptOut++;
         } else {
+          const rideStats = stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null;
+          const typicalWait = historical.get(`${current.parkId}__${rideId}__${buckets[0]}__${dayType}`)?.wait ?? null;
+
+          // An opportunity reopen: closure was extended AND the current wait
+          // is meaningfully below the typical wait for this hour. Uses the same
+          // absolute floor as the trough scorer so both signals agree.
+          const isOpportunity = (() => {
+            if (!change.durationMs || current.wait == null || typicalWait == null) return false;
+            const durationMin = change.durationMs / 60_000;
+            const profile = closureProfiles.get(rideId);
+            const threshold = profile?.shortResetThresholdMin ?? 30;
+            if (durationMin <= threshold) return false;
+            const drop = typicalWait - current.wait;
+            const dropPct = drop / typicalWait;
+            return drop >= absoluteFloorForTypical(typicalWait) && dropPct >= 0.30;
+          })();
+
           const r = await fireNotification({
             db, device, currentRide: current, type: 'reopen',
             extra: {
               closedAt: change.closedAt,
               durationMs: change.durationMs,
               waitAtClose: change.waitAtClose,
-              rideStats: stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null,
+              rideStats,
+              bucket0Wait: typicalWait,
+              isOpportunity,
             },
           });
           if (r.fired) { fired++; firedReopen++; }

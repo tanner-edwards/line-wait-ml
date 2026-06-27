@@ -12,3 +12,4 @@ CLAUDE.md
 .expo/
 samconfig.toml
 __pycache__/
+closure_events.csv

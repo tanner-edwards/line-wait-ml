@@ -27,6 +27,7 @@ import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
 import { loadPredictions, MLPredictionDoc } from './mlPredictions';
+import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
@@ -216,7 +217,7 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
 
   const now = referenceDate ?? new Date();
   const dayType = classifyDayType(now);
-  const [live, recentHistoryMap, metadataMap, closuresMap, predictionsMap] = await Promise.all([
+  const [live, recentHistoryMap, metadataMap, closuresMap, predictionsMap, closureProfilesMap] = await Promise.all([
     fetchLiveData(parkSlug),
     fetchRecentHistory(parkSlug, now),
     ensureRideMetadataLoaded().catch(() => new Map()),
@@ -225,6 +226,8 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
     loadCurrentClosures().catch(() => new Map()),
     // Best-effort: missing predictions degrade gracefully to historical averages.
     loadPredictions().catch(() => new Map<string, import('./mlPredictions').MLPredictionDoc>()),
+    // Best-effort: missing profiles just means no predictedReopenAt on DOWN rides.
+    loadClosureProfiles().catch(() => new Map<string, import('./closureProfiles').ClosureProfile>()),
   ]);
 
   const allRides: Ride[] = await Promise.all(
@@ -260,6 +263,21 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         // Only meaningful when status is DOWN — the scanner only records
         // OPERATING → DOWN transitions. For other states we leave null.
         closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
+        predictedReopenAt: (() => {
+          if (status !== 'DOWN') return null;
+          const closedAt = lookupClosedAt(closuresMap, entity.id);
+          if (!closedAt) return null;
+          const profile = closureProfilesMap.get(entity.id);
+          if (!profile) return null;
+          const closedAtMs = new Date(closedAt).getTime();
+          const durationSoFarMin = (now.getTime() - closedAtMs) / 60_000;
+          const totalMin = durationSoFarMin > profile.shortResetThresholdMin && profile.extendedP50Min != null
+            ? profile.extendedP50Min
+            : profile.p50Min;
+          const predicted = new Date(closedAtMs + totalMin * 60_000);
+          // Only surface a prediction that's still in the future.
+          return predicted.getTime() > now.getTime() ? predicted.toISOString() : null;
+        })(),
         fullDayForecast,
       };
       ride.score = scoreRide(ride);

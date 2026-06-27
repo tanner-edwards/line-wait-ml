@@ -85,6 +85,8 @@ export interface Ride {
   // Only meaningful while status === 'DOWN'; null otherwise (and null
   // for closures that pre-date the scanner — no backfill).
   closedAt?: string | null;
+  // ML-predicted reopen time based on per-ride closure duration history.
+  predictedReopenAt?: string | null;
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;
