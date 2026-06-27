@@ -1,12 +1,11 @@
 // PaywallScreen — full-screen modal presenting the trip-unlock offer.
-// Shown when user taps "Unlock" from a PaywallTeaser or Recommendations lock.
-//
-// Phase 4 (IAP) will wire the purchase button to StoreKit.
-// Phase 5 will add promo code redemption.
-// For now the screen is the UI shell — the CTA is stubbed.
+// Phase 4: StoreKit consumable purchase via expo-iap.
 
-import React, { useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -14,10 +13,18 @@ import {
   TextInput,
   TouchableOpacity,
   View,
-  Platform,
 } from 'react-native';
 import { ChevronLeft, Check } from 'lucide-react-native';
-import { validatePromoCode } from '../api';
+import {
+  endConnection,
+  fetchProducts,
+  finishTransaction,
+  initConnection,
+  purchaseErrorListener,
+  purchaseUpdatedListener,
+  requestPurchase,
+} from 'expo-iap';
+import { purchaseTrip, validatePromoCode } from '../api';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
@@ -26,6 +33,8 @@ import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 interface PaywallScreenProps {
   onClose: () => void;
 }
+
+const PRODUCT_ID = 'com.tannere.club32.trip';
 
 const BENEFITS = [
   'See how wait times are going to change throughout the day',
@@ -51,14 +60,90 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     tripEnd: toYMD(defaultEnd),
   });
 
+  const [localizedPrice, setLocalizedPrice] = useState<string | null>(null);
+  const [purchasing, setPurchasing] = useState(false);
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
-  const [promoSuccess, setPromoSuccess] = useState(false);
 
-  const handlePurchase = () => {
-    // TODO Phase 4: trigger StoreKit purchase via expo-in-app-purchases
-    console.log('[PaywallScreen] purchase tapped — IAP not yet wired');
+  // Store getIdToken in a ref so the purchase listener (set up on mount)
+  // always calls the latest version without needing to re-register.
+  const getIdTokenRef = useRef(getIdToken);
+  useEffect(() => { getIdTokenRef.current = getIdToken; }, [getIdToken]);
+
+  const handlePurchaseSuccess = useCallback(async (receiptData: string) => {
+    try {
+      const token = await getIdTokenRef.current();
+      if (!token) throw new Error('Not signed in');
+      await purchaseTrip(token, { receiptData, ...rangeRef.current });
+      await Promise.all([refetchUser(), refetchTrip()]);
+      onClose();
+    } catch (err) {
+      setPurchaseError(err instanceof Error ? err.message : 'Purchase could not be verified. Contact support.');
+      setPurchasing(false);
+    }
+  }, [refetchUser, refetchTrip, onClose]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'ios') return;
+
+    let mounted = true;
+
+    void (async () => {
+      try {
+        await initConnection();
+        const products = await fetchProducts({ skus: [PRODUCT_ID] });
+        if (mounted && products.length > 0) {
+          setLocalizedPrice((products[0] as { localizedPrice?: string }).localizedPrice ?? null);
+        }
+      } catch {
+        // Non-fatal — button still shows, falls back to '$10'
+      }
+    })();
+
+    const purchaseSub = purchaseUpdatedListener(async purchase => {
+      if (!mounted) return;
+      const receipt = (purchase as { transactionReceipt?: string }).transactionReceipt;
+      if (!receipt) return;
+      await handlePurchaseSuccess(receipt);
+      await finishTransaction({ purchase, isConsumable: true });
+    });
+
+    const errorSub = purchaseErrorListener(err => {
+      if (!mounted) return;
+      // User cancelled — don't show an error for that.
+      if ((err as { code?: string }).code !== 'E_USER_CANCELLED') {
+        setPurchaseError('Purchase failed. Please try again.');
+      }
+      setPurchasing(false);
+    });
+
+    return () => {
+      mounted = false;
+      purchaseSub.remove();
+      errorSub.remove();
+      void endConnection();
+    };
+  }, [handlePurchaseSuccess]);
+
+  const handlePurchase = async () => {
+    if (Platform.OS !== 'ios') {
+      Alert.alert('Not available', 'Purchases are only available on iOS.');
+      return;
+    }
+    setPurchasing(true);
+    setPurchaseError(null);
+    try {
+      await requestPurchase({ sku: PRODUCT_ID });
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if (code !== 'E_USER_CANCELLED') {
+        setPurchaseError('Could not start purchase. Please try again.');
+      }
+      setPurchasing(false);
+    }
   };
 
   const handlePromoRedeem = async () => {
@@ -66,12 +151,10 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     if (!code) return;
     setPromoLoading(true);
     setPromoError(null);
-    setPromoSuccess(false);
     try {
       const token = await getIdToken();
       if (!token) throw new Error('Not signed in');
       await validatePromoCode(token, { code, ...rangeRef.current });
-      setPromoSuccess(true);
       await Promise.all([refetchUser(), refetchTrip()]);
       onClose();
     } catch (err) {
@@ -80,6 +163,8 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
       setPromoLoading(false);
     }
   };
+
+  const priceLabel = localizedPrice ?? '$10';
 
   return (
     <SafeAreaView style={styles.container}>
@@ -110,19 +195,23 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </View>
 
         <View style={styles.priceCard}>
-          <Text style={styles.price}>$10</Text>
+          <Text style={styles.price}>{priceLabel}</Text>
           <Text style={styles.priceSub}>per trip · one-time</Text>
         </View>
 
         <TouchableOpacity
-          style={styles.purchaseBtn}
-          onPress={handlePurchase}
+          style={[styles.purchaseBtn, purchasing && styles.purchaseBtnDisabled]}
+          onPress={() => void handlePurchase()}
+          disabled={purchasing}
           activeOpacity={0.85}
         >
-          <Text style={styles.purchaseBtnText}>Activate trip access</Text>
+          {purchasing
+            ? <ActivityIndicator color={colors.textInverse} />
+            : <Text style={styles.purchaseBtnText}>Activate trip access</Text>}
         </TouchableOpacity>
 
-        {/* Promo code entry */}
+        {purchaseError ? <Text style={styles.purchaseError}>{purchaseError}</Text> : null}
+
         <View style={styles.promoSection}>
           <Text style={styles.promoLabel}>Have a promo code?</Text>
           <View style={styles.promoRow}>
@@ -145,7 +234,6 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
             </TouchableOpacity>
           </View>
           {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
-          {promoSuccess ? <Text style={styles.promoSuccess}>Code applied! Unlocking your trip…</Text> : null}
         </View>
 
         <Text style={styles.legal}>
@@ -229,11 +317,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     ...shadows.card,
   },
+  purchaseBtnDisabled: { opacity: 0.6 },
   purchaseBtnText: {
     ...typography.label,
     fontSize: 16,
     color: colors.textInverse,
     fontWeight: '700',
+  },
+  purchaseError: {
+    ...typography.caption,
+    color: colors.skip,
+    textAlign: 'center',
   },
   promoSection: {
     gap: spacing.sm,
@@ -281,10 +375,6 @@ const styles = StyleSheet.create({
   promoError: {
     ...typography.caption,
     color: colors.skip,
-  },
-  promoSuccess: {
-    ...typography.caption,
-    color: colors.go,
   },
   legal: {
     ...typography.caption,

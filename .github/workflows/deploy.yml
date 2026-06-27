@@ -59,6 +59,7 @@ jobs:
               "ApiKeyValue=${{ secrets.CLUB32_API_KEY }}" \
               "CorsOrigin=${{ steps.cors.outputs.origin }}" \
               "FirebaseServiceAccountJson=$FIREBASE_JSON_B64" \
+              "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}" \
             --no-confirm-changeset
 
   deploy-frontend:

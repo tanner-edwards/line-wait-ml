@@ -56,6 +56,15 @@ Parameters:
       Leave blank to skip the alarm + SNS topic entirely. Confirms via AWS
       verification email after first deploy.
 
+  AppleSharedSecret:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: >
+      App-specific shared secret from App Store Connect (Monetization →
+      In-App Purchases → App-Specific Shared Secret). Required for
+      server-side Apple receipt verification on IAP purchases.
+
 Conditions:
   HasBudgetEmail: !Not [!Equals [!Ref BedrockBudgetAlarmEmail, '']]
 
@@ -141,6 +150,7 @@ Resources:
           FIREBASE_SERVICE_ACCOUNT_JSON: !Ref FirebaseServiceAccountJson
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_REGION: !Ref BedrockRegion
+          APPLE_SHARED_SECRET: !Ref AppleSharedSecret
       Events:
         Combined:
           Type: Api

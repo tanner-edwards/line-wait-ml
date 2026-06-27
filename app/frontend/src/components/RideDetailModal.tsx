@@ -159,8 +159,13 @@ function DetailBody({
   const anchorWait = isOperating ? ride.currentWait : closedWait;
 
   const buckets = ride.historicalAverage?.buckets;
-  const bucket0Wait = buckets?.[0]?.wait ?? null;
   const bucket4Wait = buckets?.[4]?.wait ?? null;
+  // When ML predictions are present, bucket0.wait is currentWait (not the
+  // historical average). Use the baseline bucket0 for "typical" comparisons
+  // (TodaysRange marker, DirectionCurve, trend caption) so we're comparing
+  // current vs. history, not current vs. itself.
+  const baselineBuckets = ride.historicalBaseline?.buckets;
+  const bucket0Wait = (baselineBuckets?.[0]?.wait ?? buckets?.[0]?.wait) ?? null;
 
   // Star always wins; walkOn beats go/skip otherwise.
   const showWalkOn = walkOn && badge !== 'star';

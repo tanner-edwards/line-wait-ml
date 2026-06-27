@@ -41,6 +41,7 @@ import {
   UserResponse,
 } from './types';
 import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode } from './users';
+import { purchaseTrip } from './tripPurchase';
 import {
   DAILY_PARKS_VALUES,
   DailyParks,
@@ -343,6 +344,7 @@ type RouteKind =
   | { kind: 'user-delete' }
   | { kind: 'user-trip' }
   | { kind: 'user-trip-claim-free' }
+  | { kind: 'user-trip-purchase' }
   | { kind: 'promo-validate' }
   | { kind: 'unknown' };
 
@@ -360,6 +362,9 @@ function routeFromPath(
     }
     if (path.endsWith('/v1/users/trip/claim-free')) {
       return { kind: 'user-trip-claim-free' };
+    }
+    if (path.endsWith('/v1/users/trip/purchase')) {
+      return { kind: 'user-trip-purchase' };
     }
     if (path.endsWith('/v1/promo/validate')) {
       return { kind: 'promo-validate' };
@@ -436,6 +441,10 @@ export async function handler(
 
   if (route.kind === 'user-trip-claim-free') {
     return handleClaimFreeTrip(event);
+  }
+
+  if (route.kind === 'user-trip-purchase') {
+    return handleTripPurchase(event);
   }
 
   if (route.kind === 'promo-validate') {
@@ -964,6 +973,40 @@ async function handlePromoValidate(
     return jsonResponse(
       isValidationError ? 422 : 500,
       errorBody(isValidationError ? 'INVALID_PROMO' : 'INTERNAL_ERROR', message)
+    );
+  }
+}
+
+async function handleTripPurchase(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Invalid or missing token'));
+
+  let body: { receiptData?: unknown; tripStart?: unknown; tripEnd?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const receiptData = typeof body.receiptData === 'string' ? body.receiptData : null;
+  const tripStart   = typeof body.tripStart   === 'string' ? body.tripStart   : null;
+  const tripEnd     = typeof body.tripEnd     === 'string' ? body.tripEnd     : null;
+
+  if (!receiptData || !tripStart || !tripEnd) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'receiptData, tripStart, and tripEnd are required'));
+  }
+
+  try {
+    const trip = await purchaseTrip(uid, receiptData, tripStart, tripEnd);
+    return jsonResponse(200, { trip });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    const isVerifyError = message.startsWith('Apple receipt verification failed');
+    return jsonResponse(
+      isVerifyError ? 422 : 500,
+      errorBody(isVerifyError ? 'RECEIPT_INVALID' : 'INTERNAL_ERROR', message)
     );
   }
 }

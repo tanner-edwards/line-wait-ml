@@ -42,7 +42,8 @@
       "expo-font",
       "expo-notifications",
       "expo-apple-authentication",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      "expo-iap"
     ]
   }
 }

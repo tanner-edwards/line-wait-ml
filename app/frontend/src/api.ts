@@ -249,6 +249,14 @@ export async function validatePromoCode(
   return (body as { trip: TripRecord }).trip;
 }
 
+export async function purchaseTrip(
+  idToken: string,
+  input: { receiptData: string; tripStart: string; tripEnd: string }
+): Promise<TripRecord> {
+  const body = await authedPostJson('/v1/users/trip/purchase', idToken, input);
+  return (body as { trip: TripRecord }).trip;
+}
+
 export async function deleteAccount(idToken: string): Promise<void> {
   if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
   let res: Response;

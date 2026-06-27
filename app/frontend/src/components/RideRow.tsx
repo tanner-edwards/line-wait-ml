@@ -51,7 +51,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const ha = ride.historicalAverage;
-  const bucket0 = ha?.buckets[0] ?? null;
+  // When ML predictions are present, historicalBaseline holds the real
+  // historical averages; bucket0 from primary would be currentWait.
+  const bucket0 = (ride.historicalBaseline?.buckets[0] ?? ha?.buckets[0]) ?? null;
   const bucket1 = ha?.buckets[1] ?? null;
   const bucket3 = ha?.buckets[3] ?? null;
   const bucket4 = ha?.buckets[4] ?? null;

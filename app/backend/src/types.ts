@@ -297,6 +297,7 @@ export interface TripRecord {
   purchasedAt: string; // ISO
   source: 'iap' | 'promo' | 'free';
   promoCode?: string;
+  transactionId?: string; // Apple transaction ID (IAP only)
 }
 
 // Returned by POST /v1/users and GET /v1/users/me
