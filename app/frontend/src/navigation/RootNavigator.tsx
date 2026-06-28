@@ -6,6 +6,7 @@
 
 import React from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { colors } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
@@ -23,7 +24,7 @@ export function RootNavigator(): React.ReactElement {
   if (authLoading || personaLoading || dailyLoading) {
     return (
       <View style={styles.splash} testID="root-splash">
-        <ActivityIndicator size="large" color="#6b6bf5" />
+        <ActivityIndicator size="large" color={colors.brand} />
       </View>
     );
   }
@@ -56,6 +57,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff',
+    backgroundColor: colors.bg,
   },
 });

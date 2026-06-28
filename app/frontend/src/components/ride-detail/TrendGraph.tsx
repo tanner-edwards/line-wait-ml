@@ -19,7 +19,7 @@ import { colors } from '../../theme/tokens';
 import { formatBucketTimeSlot, formatHHMM } from '../../timestamp';
 
 const BRAND = colors.brand;
-const BRAND_DIM = '#a3a5e4'; // TODO: tokenize
+const BRAND_DIM = 'rgba(10,107,90,0.40)'; // dimmed brand green for future/uncertain data
 const MUTED = '#bbb'; // TODO: tokenize
 const BASELINE_COLOR = '#d0d0d0'; // historical average overlay
 const INK = '#222'; // TODO: tokenize

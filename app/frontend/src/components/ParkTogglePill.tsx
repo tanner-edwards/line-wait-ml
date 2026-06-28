@@ -64,6 +64,6 @@ const styles = StyleSheet.create({
     color: '#666',
   },
   textActive: {
-    color: '#6b6bf5',
+    color: colors.brand,
   },
 });

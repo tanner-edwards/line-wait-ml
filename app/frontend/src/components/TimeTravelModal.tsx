@@ -144,8 +144,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fafafa',
   },
   pillActive: {
-    backgroundColor: '#6b6bf5',
-    borderColor: '#6b6bf5',
+    backgroundColor: colors.brand,
+    borderColor: colors.brand,
   },
   pillText: {
     fontSize: 13,
@@ -172,7 +172,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   resumeButtonText: {
-    color: '#6b6bf5',
+    color: colors.brand,
     fontSize: 14,
     fontWeight: '600',
   },

@@ -54,7 +54,7 @@ const styles = StyleSheet.create({
   },
   rowSelected: {
     borderColor: colors.brand,
-    backgroundColor: '#f4f4ff', // TODO: tokenize
+    backgroundColor: colors.goBg,
   },
   rowPressed: {
     opacity: 0.7,

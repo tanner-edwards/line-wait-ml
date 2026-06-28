@@ -78,8 +78,8 @@ const styles = StyleSheet.create({
     minHeight: 64,
   },
   rowPressed: {
-    backgroundColor: '#f4f4ff', // TODO: tokenize
-    borderColor: '#6b6bf5', // TODO: tokenize
+    backgroundColor: colors.goBg,
+    borderColor: colors.brand,
   },
   rowText: { flex: 1 },
   rowTitle: { fontSize: 16, fontWeight: '600', color: '#222' }, // TODO: tokenize

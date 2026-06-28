@@ -310,13 +310,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   saveButton: {
-    backgroundColor: '#6b6bf5', // TODO: tokenize
+    backgroundColor: colors.brand,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 10,
   },
   saveText: {
-    color: '#fff', // TODO: tokenize
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: '600',
   },
