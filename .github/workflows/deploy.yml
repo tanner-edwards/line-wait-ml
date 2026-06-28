@@ -115,6 +115,7 @@ jobs:
           EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET: ${{ secrets.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET }}
           EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID }}
           EXPO_PUBLIC_FIREBASE_APP_ID: ${{ secrets.EXPO_PUBLIC_FIREBASE_APP_ID }}
+          EXPO_PUBLIC_VAPID_PUBLIC_KEY: ${{ secrets.EXPO_PUBLIC_VAPID_PUBLIC_KEY }}
         run: |
           rm -rf dist
           npx expo export --platform web
