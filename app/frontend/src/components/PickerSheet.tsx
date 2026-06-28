@@ -167,7 +167,7 @@ const styles = StyleSheet.create({
   rideName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#222', // TODO: tokenize
+    color: colors.textPrimary,
   },
   rideLand: {
     fontSize: 12,

@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   menu: {
     marginTop: 56,
     marginRight: 12,
-    backgroundColor: '#fff', // TODO: tokenize
+    backgroundColor: colors.surface,
     borderRadius: 10,
     shadowColor: '#000', // TODO: tokenize
     shadowOffset: { width: 0, height: 2 },
@@ -86,10 +86,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 13,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
   },
   optionPressed: {
-    backgroundColor: '#f5f5f5', // TODO: tokenize
+    backgroundColor: colors.bg,
   },
   optionRow: {
     flexDirection: 'row',
@@ -98,14 +98,14 @@ const styles = StyleSheet.create({
   },
   optionText: {
     fontSize: 15,
-    color: '#222', // TODO: tokenize
+    color: colors.textPrimary,
   },
   optionTextDisabled: {
-    color: '#bbb', // TODO: tokenize
+    color: colors.textTertiary,
   },
   hint: {
     fontSize: 11,
-    color: '#bbb', // TODO: tokenize
+    color: colors.textTertiary,
     marginTop: 2,
   },
 });

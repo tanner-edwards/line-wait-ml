@@ -1,6 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { X } from 'lucide-react-native';
+import { colors } from '../theme/tokens';
 
 interface Props {
   value: string;
@@ -23,7 +24,7 @@ export function SearchField({
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor="#999"
+        placeholderTextColor={colors.textTertiary}
         style={styles.input}
         autoCorrect={false}
         autoCapitalize="none"
@@ -36,7 +37,7 @@ export function SearchField({
           hitSlop={8}
           testID={testID ? `${testID}-clear` : undefined}
         >
-          <X size={13} color="#fff" strokeWidth={3} />
+          <X size={13} color={colors.textInverse} strokeWidth={3} />
         </Pressable>
       )}
     </View>
@@ -47,7 +48,7 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f4f4f7',
+    backgroundColor: colors.bg,
     borderRadius: 12,
     paddingHorizontal: 14,
   },
@@ -55,7 +56,7 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#222',
+    color: colors.textPrimary,
   },
   clearButton: {
     width: 28,
@@ -63,6 +64,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 14,
-    backgroundColor: '#d8d8de',
+    backgroundColor: colors.borderStrong,
   },
 });

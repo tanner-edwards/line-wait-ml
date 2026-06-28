@@ -26,7 +26,7 @@ const styles = StyleSheet.create({
   },
   tileLabel: {
     fontSize: 11,
-    color: '#666', // TODO: tokenize
+    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,

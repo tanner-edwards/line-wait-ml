@@ -44,8 +44,6 @@ import { ClosureTile } from './ride-detail/ClosureTile';
 import { RideAlertHistory } from './ride-detail/RideAlertHistory';
 import { FullDayForecast } from './ride-detail/FullDayForecast';
 
-const SUBINK = '#666'; // TODO: tokenize
-
 const WALK_SPEED_MPM = 83;
 function walkPathMultiplier(m: number) {
   return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3;
@@ -305,7 +303,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   restrictionIcon: { marginTop: 1 },
-  restrictionText: { fontSize: 13, color: '#222', flex: 1 },
+  restrictionText: { fontSize: 13, color: colors.textPrimary, flex: 1 },
 
   closeBtn: {
     width: 28,
@@ -317,5 +315,5 @@ const styles = StyleSheet.create({
   },
 
   fallbackBlock: { flex: 1, justifyContent: 'center', padding: 32 },
-  fallback: { fontSize: 14, color: SUBINK, textAlign: 'center' },
+  fallback: { fontSize: 14, color: colors.textSecondary, textAlign: 'center' },
 });

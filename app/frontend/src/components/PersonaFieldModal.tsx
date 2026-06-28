@@ -298,14 +298,14 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#eee', // TODO: tokenize
+    borderTopColor: colors.border,
   },
   cancelButton: {
     paddingHorizontal: 16,
     paddingVertical: 12,
   },
   cancelText: {
-    color: '#666', // TODO: tokenize
+    color: colors.textSecondary,
     fontSize: 15,
     fontWeight: '600',
   },
@@ -325,7 +325,7 @@ const styles = StyleSheet.create({
   },
   modalDivider: {
     height: 1,
-    backgroundColor: '#eee', // TODO: tokenize
+    backgroundColor: colors.border,
     marginVertical: 12,
   },
 });

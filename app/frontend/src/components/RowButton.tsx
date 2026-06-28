@@ -48,8 +48,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#e0e0e0', // TODO: tokenize
-    backgroundColor: '#fff', // TODO: tokenize
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     minHeight: 56,
   },
   rowSelected: {
@@ -65,14 +65,14 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#222', // TODO: tokenize
+    color: colors.textPrimary,
   },
   titleSelected: {
     color: colors.brand,
   },
   subtitle: {
     fontSize: 13,
-    color: '#777', // TODO: tokenize
+    color: colors.textTertiary,
     marginTop: 4,
     lineHeight: 18,
   },

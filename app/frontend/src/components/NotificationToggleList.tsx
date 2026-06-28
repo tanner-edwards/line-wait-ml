@@ -75,11 +75,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   rowText: { flex: 1, paddingRight: 12 },
   rowTitleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 2 },
-  rowTitle: { fontSize: 15, color: '#222', fontWeight: '600' }, // TODO: tokenize
-  rowSubtitle: { fontSize: 12, color: '#666', marginTop: 3 }, // TODO: tokenize
+  rowTitle: { fontSize: 15, color: colors.textPrimary, fontWeight: '600' },
+  rowSubtitle: { fontSize: 12, color: colors.textSecondary, marginTop: 3 },
 });

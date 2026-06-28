@@ -11,6 +11,7 @@ import {
   View,
 } from 'react-native';
 import { DailyParks } from '../types';
+import { colors } from '../theme/tokens';
 import { useDailyContext } from '../context/DailyContextContext';
 import { Sheet } from './Sheet';
 
@@ -61,7 +62,7 @@ export function DailyParkSheet({ visible, onSelect, onCancel }: Props): React.Re
 const styles = StyleSheet.create({
   subtitle: {
     fontSize: 14,
-    color: '#666', // TODO: tokenize
+    color: colors.textSecondary,
     marginBottom: 20,
     lineHeight: 20,
   },
@@ -73,8 +74,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     borderRadius: 12,
     borderWidth: 1.5,
-    borderColor: '#e0e0e0', // TODO: tokenize
-    backgroundColor: '#fff', // TODO: tokenize
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     minHeight: 64,
   },
   rowPressed: {
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
     borderColor: colors.brand,
   },
   rowText: { flex: 1 },
-  rowTitle: { fontSize: 16, fontWeight: '600', color: '#222' }, // TODO: tokenize
-  rowSubtitle: { fontSize: 13, color: '#777', marginTop: 4 }, // TODO: tokenize
-  rowChevron: { fontSize: 22, color: '#bbb' }, // TODO: tokenize
+  rowTitle: { fontSize: 16, fontWeight: '600', color: colors.textPrimary },
+  rowSubtitle: { fontSize: 13, color: colors.textSecondary, marginTop: 4 },
+  rowChevron: { fontSize: 22, color: colors.textTertiary },
 });

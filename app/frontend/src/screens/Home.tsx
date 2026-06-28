@@ -230,7 +230,7 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#fff', // TODO: tokenize
+    backgroundColor: colors.surface,
   },
   errorBanner: {
     backgroundColor: colors.skipBg,
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
   toggleRow: {
     paddingHorizontal: 16,
     paddingBottom: 12,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   sortButton: {
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
     marginRight: 4,
   },
   parkHeader: {
-    backgroundColor: '#f4f4f7', // TODO: tokenize
+    backgroundColor: colors.bg,
     paddingHorizontal: 16,
     paddingVertical: 10,
   },
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   landHeader: {
     paddingHorizontal: 24,
     paddingVertical: 6,
-    backgroundColor: '#fafafa', // TODO: tokenize
+    backgroundColor: colors.surface,
   },
-  landHeaderText: { fontSize: 14, fontWeight: '600', color: '#444' }, // TODO: tokenize
+  landHeaderText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
 });

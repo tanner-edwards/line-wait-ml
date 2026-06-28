@@ -128,7 +128,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     gap: 6,
   },
-  refreshText: { fontSize: 12, color: '#999' }, // TODO: tokenize
+  refreshText: { fontSize: 12, color: colors.textTertiary },
   loading: { paddingVertical: 24, alignItems: 'center' },
   error: { color: colors.skip, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
   empty: { color: colors.textTertiary, fontSize: 13, textAlign: 'center', paddingVertical: 16 },
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 12,
-    borderBottomColor: '#eee', // TODO: tokenize
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   rowPressed: { backgroundColor: colors.goBg },

@@ -6,6 +6,7 @@ import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { DailyParks } from '../types';
 import { useDailyContext } from '../context/DailyContextContext';
+import { colors } from '../theme/tokens';
 
 const SEGMENTS: { value: DailyParks; label: string }[] = [
   { value: 'disneyland', label: 'DLR' },
@@ -40,7 +41,7 @@ export function ParkTogglePill(): React.ReactElement | null {
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
-    backgroundColor: '#f1f1f4',
+    backgroundColor: colors.bg,
     borderRadius: 999,
     padding: 3,
     alignSelf: 'flex-start',
@@ -51,7 +52,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   segmentActive: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
@@ -61,7 +62,7 @@ const styles = StyleSheet.create({
   text: {
     fontSize: 13,
     fontWeight: '600',
-    color: '#666',
+    color: colors.textSecondary,
   },
   textActive: {
     color: colors.brand,

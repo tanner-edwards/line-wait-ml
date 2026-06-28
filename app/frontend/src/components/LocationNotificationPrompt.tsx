@@ -144,7 +144,7 @@ const styles = StyleSheet.create({
     padding: 32,
   },
   card: {
-    backgroundColor: '#fff', // TODO: tokenize
+    backgroundColor: colors.surface,
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -155,8 +155,8 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   titleRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 12 },
-  title: { fontSize: 20, fontWeight: '700', color: '#222' }, // TODO: tokenize
-  message: { fontSize: 15, color: '#444', lineHeight: 22, marginBottom: 10 }, // TODO: tokenize
+  title: { fontSize: 20, fontWeight: '700', color: colors.textPrimary },
+  message: { fontSize: 15, color: colors.textPrimary, lineHeight: 22, marginBottom: 10 },
   hint: { fontSize: 12, color: colors.textTertiary, marginBottom: 20 },
   actions: { flexDirection: 'row', gap: 12, marginTop: 8 },
   btn: {
@@ -166,8 +166,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   btnYes: { backgroundColor: colors.brand },
-  btnYesText: { color: '#fff', fontWeight: '700', fontSize: 16 }, // TODO: tokenize
-  btnNo: { backgroundColor: '#f0f0f0' }, // TODO: tokenize
-  btnNoText: { color: '#555', fontWeight: '600', fontSize: 16 }, // TODO: tokenize
+  btnYesText: { color: colors.textInverse, fontWeight: '700', fontSize: 16 },
+  btnNo: { backgroundColor: colors.bg },
+  btnNoText: { color: colors.textSecondary, fontWeight: '600', fontSize: 16 },
   pressed: { opacity: 0.7 },
 });

@@ -20,10 +20,7 @@ import { formatBucketTimeSlot, formatHHMM } from '../../timestamp';
 
 const BRAND = colors.brand;
 const BRAND_DIM = 'rgba(10,107,90,0.40)'; // dimmed brand green for future/uncertain data
-const MUTED = '#bbb'; // TODO: tokenize
 const BASELINE_COLOR = '#d0d0d0'; // historical average overlay
-const INK = '#222'; // TODO: tokenize
-const SUBINK = '#666'; // TODO: tokenize
 const RED = colors.skip;
 
 const GRAPH_RENDER_H = 90;
@@ -187,7 +184,7 @@ export function TrendGraph({
               <Polyline key={`past-${i}`} points={p} fill="none" stroke={BRAND} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
             ))}
             {futureSegments.map((p, i) => (
-              <Polyline key={`future-${i}`} points={p} fill="none" stroke={isDown ? MUTED : BRAND_DIM} strokeWidth={2} strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
+              <Polyline key={`future-${i}`} points={p} fill="none" stroke={isDown ? colors.textTertiary : BRAND_DIM} strokeWidth={2} strokeDasharray="4,4" strokeLinecap="round" strokeLinejoin="round" />
             ))}
             {values.map((v, i) =>
               v == null ? null : (
@@ -196,7 +193,7 @@ export function TrendGraph({
                   cx={xAt(i)}
                   cy={toY(v)}
                   r={i === nowIdx ? 5 : 3}
-                  fill={i === nowIdx ? '#fff' /* TODO: tokenize */ : (i < nowIdx ? BRAND : BRAND_DIM)}
+                  fill={i === nowIdx ? colors.textInverse : (i < nowIdx ? BRAND : BRAND_DIM)}
                   stroke={i === nowIdx ? (isDown ? RED : BRAND) : 'none'}
                   strokeWidth={i === nowIdx ? 2 : 0}
                 />
@@ -216,9 +213,9 @@ const styles = StyleSheet.create({
     paddingBottom: 6,
   },
   column: { flex: 1, alignItems: 'center' },
-  columnLabel: { fontSize: 10, color: SUBINK },
+  columnLabel: { fontSize: 10, color: colors.textSecondary },
   columnLabelNow: { color: BRAND, fontWeight: '700' },
-  columnValue: { fontSize: 13, fontWeight: '600', color: INK, marginTop: 1 },
+  columnValue: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginTop: 1 },
   columnValueNow: { color: BRAND, fontSize: 14 },
   columnBaseline: { fontSize: 10, color: BASELINE_COLOR, marginTop: 1 },
 });

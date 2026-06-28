@@ -19,8 +19,6 @@ import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 
-const MUTED = '#bbb'; // TODO: tokenize
-const SUBINK = '#666'; // TODO: tokenize
 
 // Geometry constants — all in the viewBox coordinate system.
 export const TR_W = 360;
@@ -188,7 +186,7 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               <Line
                 x1={typicalX} x2={typicalX}
                 y1={TRACK_TOP_Y - 4} y2={TRACK_BOTTOM_Y + 4}
-                stroke={MUTED} strokeWidth={2}
+                stroke={colors.textTertiary} strokeWidth={2}
               />
             ) : null}
 
@@ -197,15 +195,15 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               <SvgText
                 x={typicalLabelX} y={typicalLabelY}
                 fontSize="10.5" fontWeight="500"
-                fill={SUBINK} textAnchor="middle"
+                fill={colors.textSecondary} textAnchor="middle"
               >
                 {`usually ${typicalWait}m`}
               </SvgText>
             ) : null}
 
             {/* P10 / P90 endpoint labels */}
-            <SvgText x={innerLeft}  y={LABEL_Y} fontSize="10.5" fill={SUBINK} textAnchor="start">{p10}m</SvgText>
-            <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={SUBINK} textAnchor="end">{p90}m</SvgText>
+            <SvgText x={innerLeft}  y={LABEL_Y} fontSize="10.5" fill={colors.textSecondary} textAnchor="start">{p10}m</SvgText>
+            <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={colors.textSecondary} textAnchor="end">{p90}m</SvgText>
 
             {/* Current wait dot */}
             {dotX != null ? (

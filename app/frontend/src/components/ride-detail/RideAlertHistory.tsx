@@ -11,8 +11,6 @@ import { formatTimeAgo } from '../../timestamp';
 import { NotificationLogEntry } from '../../types';
 import { Tile, TileLabel } from './Tile';
 
-const INK = '#222'; // TODO: tokenize
-const MUTED = '#bbb'; // TODO: tokenize
 
 interface Props {
   entries: NotificationLogEntry[];
@@ -49,11 +47,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     paddingVertical: 8,
-    borderBottomColor: '#eef', // TODO: tokenize
+    borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
   iconCol: { width: 18, marginRight: 8, marginTop: 1, alignItems: 'center' },
   textCol: { flex: 1, paddingRight: 8 },
-  body: { fontSize: 13, color: INK },
-  when: { fontSize: 11, color: MUTED, marginTop: 2 },
+  body: { fontSize: 13, color: colors.textPrimary },
+  when: { fontSize: 11, color: colors.textTertiary, marginTop: 2 },
 });

@@ -4,6 +4,7 @@
 
 import React from 'react';
 import { StyleSheet, Text } from 'react-native';
+import { colors } from '../../theme/tokens';
 import { trendDirection } from '../../utils/trendDirection';
 
 interface Props {
@@ -46,7 +47,7 @@ export function TrendCaption({
 const styles = StyleSheet.create({
   tinyHint: {
     fontSize: 12,
-    color: '#666', // TODO: tokenize
+    color: colors.textSecondary,
     marginTop: 6,
     fontStyle: 'italic',
   },

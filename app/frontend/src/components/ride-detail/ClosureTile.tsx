@@ -6,10 +6,8 @@ import React from 'react';
 import { StyleSheet, Text } from 'react-native';
 import { formatDuration } from '../../../../../notification-copy';
 import { formatHHMM, formatTimeAgo } from '../../timestamp';
+import { colors } from '../../theme/tokens';
 import { Tile, TileLabel } from './Tile';
-
-const INK = '#222'; // TODO: tokenize
-const MUTED = '#bbb'; // TODO: tokenize
 
 export function reopenedWithinLastHour(closedAt: string | null, durationMs: number | null): boolean {
   if (!closedAt || durationMs == null) return false;
@@ -73,7 +71,7 @@ export function ClosureTile({
 }
 
 const styles = StyleSheet.create({
-  closureLine: { fontSize: 14, color: INK },
-  closureFutureHint: { fontSize: 12, color: MUTED, marginTop: 6, fontStyle: 'italic' },
+  closureLine: { fontSize: 14, color: colors.textPrimary },
+  closureFutureHint: { fontSize: 12, color: colors.textTertiary, marginTop: 6, fontStyle: 'italic' },
   bold: { fontWeight: '700' },
 });

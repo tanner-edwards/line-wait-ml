@@ -38,8 +38,6 @@ interface Props {
 }
 
 const BRAND = colors.brand;
-const INK   = '#222';
-const SUBINK = '#666';
 
 export function RideDetailHeader({
   rideName,
@@ -76,7 +74,7 @@ export function RideDetailHeader({
         <View style={styles.waitSide}>
           {showWalkOn ? (
             <View style={styles.walkOnBlock}>
-              <Footprints size={22} color={INK} />
+              <Footprints size={22} color={colors.textPrimary} />
               <Text style={styles.walkOnText}>Walk On</Text>
             </View>
           ) : isDown ? (
@@ -144,7 +142,7 @@ function BadgeRow({
   if (showWalkOn) {
     return (
       <View style={styles.row4}>
-        <Footprints size={13} color={SUBINK} />
+        <Footprints size={13} color={colors.textSecondary} />
         <Text style={styles.tagline}>Walk-on wait right now</Text>
       </View>
     );
@@ -203,7 +201,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Lora_600SemiBold',
     fontSize: 20,
     fontWeight: '600',
-    color: INK,
+    color: colors.textPrimary,
     lineHeight: 26,
     marginBottom: 4,
   },
@@ -238,7 +236,7 @@ const styles = StyleSheet.create({
   waitNumber: {
     fontSize: 64,
     fontWeight: '700',
-    color: INK,
+    color: colors.textPrimary,
     fontVariant: ['tabular-nums'],
     letterSpacing: -2.5,
     lineHeight: 64,
@@ -257,7 +255,7 @@ const styles = StyleSheet.create({
   walkOnText: {
     fontSize: 22,
     fontWeight: '600',
-    color: INK,
+    color: colors.textPrimary,
   },
   closedText: {
     fontSize: 22,

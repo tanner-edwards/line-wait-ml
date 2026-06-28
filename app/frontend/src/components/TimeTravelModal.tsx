@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { colors } from '../theme/tokens';
 
 type DayType = 'weekday' | 'weekend' | 'holiday';
 type TimeSlot = 'morning' | 'afternoon' | 'evening' | 'night';
@@ -108,7 +109,7 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   card: {
-    backgroundColor: '#fff',
+    backgroundColor: colors.surface,
     borderTopLeftRadius: 16,
     borderTopRightRadius: 16,
     paddingHorizontal: 24,
@@ -119,12 +120,12 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#222',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   sectionLabel: {
     fontSize: 11,
-    color: '#999',
+    color: colors.textTertiary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginTop: 8,
@@ -140,8 +141,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: '#ddd',
-    backgroundColor: '#fafafa',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
   pillActive: {
     backgroundColor: colors.brand,
@@ -149,21 +150,21 @@ const styles = StyleSheet.create({
   },
   pillText: {
     fontSize: 13,
-    color: '#444',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   pillTextActive: {
-    color: '#fff',
+    color: colors.textInverse,
   },
   setButton: {
     marginTop: 16,
-    backgroundColor: '#222',
+    backgroundColor: colors.textPrimary,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
   },
   setButtonText: {
-    color: '#fff',
+    color: colors.textInverse,
     fontSize: 15,
     fontWeight: '700',
   },
