@@ -12,6 +12,7 @@ export interface ClosureProfile {
   extendedP50Min: number | null;
   extendedP75Min: number | null;
   extendedMedianDelta: number | null;
+  breakMaeMin: number | null;
   updatedAt: string;
 }
 

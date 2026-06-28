@@ -271,8 +271,12 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
           if (!profile) return null;
           const closedAtMs = new Date(closedAt).getTime();
           const durationSoFarMin = (now.getTime() - closedAtMs) / 60_000;
-          const totalMin = durationSoFarMin > profile.shortResetThresholdMin && profile.extendedP50Min != null
-            ? profile.extendedP50Min
+          const isExtended = durationSoFarMin > profile.shortResetThresholdMin;
+          // Suppress break prediction if MAE is too high to be useful.
+          const breakReliable = profile.extendedP50Min != null &&
+            (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
+          const totalMin = isExtended && breakReliable
+            ? profile.extendedP50Min!
             : profile.p50Min;
           const predicted = new Date(closedAtMs + totalMin * 60_000);
           // Only surface a prediction that's still in the future.

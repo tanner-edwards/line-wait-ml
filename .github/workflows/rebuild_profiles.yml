@@ -12,15 +12,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: google-github-actions/auth@v2
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
-          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-
+          python-version: '3.12'
+      - run: pip install firebase-admin pandas numpy
       - name: Rebuild closure profiles
-        run: |
-          gcloud run jobs execute club32-predict-cron \
-            --region us-west1 \
-            --project llm-wait-times \
-            --args=build_closure_profiles.py \
-            --wait \
-            --format none
+        run: python cron/build_closure_profiles.py
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
