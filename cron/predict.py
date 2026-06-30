@@ -31,12 +31,20 @@ from google.cloud import storage
 
 sys.path.insert(0, str(Path(__file__).parent))
 from day_type import holiday_features  # noqa: E402
+from closure_features import CLOSURE_FEATURE_COLS, slot_closure_context, empty_closure_context  # noqa: E402
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 
 HORIZONS = [10, 20, 30, 40, 50, 60, 90, 120, 150]
 LOOKBACK_MINUTES = 120
 BATCH_SIZE = 400
+
+DAY_PROFILE_FEATURE_COLS = [
+    "ride_id_cat",
+    "hour_of_day", "day_of_week", "month",
+    "is_holiday", "is_holiday_weekend",
+    "days_until_next_holiday", "days_since_last_holiday",
+] + CLOSURE_FEATURE_COLS
 
 # 34 half-hour slots: 7:00 AM (420 min) to 11:30 PM (1410 min)
 FULL_DAY_SLOTS = [
@@ -244,32 +252,93 @@ def _derive_trend(
     return trend, delta30, confidence
 
 
+def _read_today_closures(
+    db: firestore.Client,
+    now_la: datetime,
+) -> dict[str, list[dict]]:
+    """Read completed closures from today from closure_events Firestore collection.
+
+    Returns dict of ride_id -> list of closure dicts:
+        { closed_at_min: int, reopened_at_min: int, duration_min: float }
+    where times are minutes since midnight PT.
+
+    Using closure_events (written by scanner.js) rather than expanding LOOKBACK_MINUTES
+    so we see closures from early in the day even when running at 8 PM.
+    """
+    today_start = now_la.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start_utc = today_start.astimezone(timezone.utc).isoformat()
+
+    result: dict[str, list[dict]] = {}
+    try:
+        query = db.collection("closure_events").where("reopenedAt", ">=", today_start_utc)
+        for doc in query.stream():
+            d = doc.to_dict()
+            if not d or not d.get("rideId") or not d.get("closedAt") or not d.get("reopenedAt"):
+                continue
+            try:
+                closed_la = datetime.fromisoformat(d["closedAt"]).astimezone(LA_TZ)
+                reopened_la = datetime.fromisoformat(d["reopenedAt"]).astimezone(LA_TZ)
+            except (ValueError, TypeError):
+                continue
+            duration = d.get("durationMin")
+            if not duration:
+                continue
+            # Match training-time closure detection exactly (add_closure_features):
+            #  - drop overnight spans (> 360 min)
+            #  - drop cross-midnight closures; training groups by PT calendar day,
+            #    so a closure that starts one day and reopens the next is never a
+            #    detected closure there. Keeping it here would be train/infer skew.
+            if float(duration) > 360 or float(duration) <= 0:
+                continue
+            if closed_la.date() != reopened_la.date():
+                continue
+            ride_id = d["rideId"]
+            if ride_id not in result:
+                result[ride_id] = []
+            result[ride_id].append({
+                "closed_at_min": closed_la.hour * 60 + closed_la.minute,
+                "reopened_at_min": reopened_la.hour * 60 + reopened_la.minute,
+                "duration_min": float(duration),
+            })
+    except Exception as e:
+        log.warning("_read_today_closures failed — proceeding without closure context: %s", e)
+    return result
+
+
 def _build_full_day(
     ride_id: str,
     now_la: datetime,
     day_profile_model: lgb.Booster,
     ride_id_cats: list[str],
     hol: dict,
+    closures_today: list[dict] | None = None,
 ) -> list[dict]:
-    """Run the day-profile model for all 34 half-hour slots."""
+    """Run the day-profile model for all 34 half-hour slots.
+
+    closures_today: completed closures for this ride today, from _read_today_closures.
+                    Each entry: { closed_at_min, reopened_at_min, duration_min }.
+                    When None or empty, closure features default to "no closure today."
+    """
     # collect.js stores day_of_week in JS convention (Sun=0); convert from Python (Mon=0)
     js_dow = (now_la.weekday() + 1) % 7
+    ride_closures = closures_today or []
 
-    rows = [
-        {
-            "ride_id_cat":              ride_id,  # string; converted to Categorical below
-            "hour_of_day":              start_min // 60,
-            "day_of_week":              js_dow,
-            "month":                    now_la.month,
-            "is_holiday":               hol["is_holiday"],
-            "is_holiday_weekend":       hol["is_holiday_weekend"],
-            "days_until_next_holiday":  hol["days_until_next_holiday"],
-            "days_since_last_holiday":  hol["days_since_last_holiday"],
-        }
-        for start_min, _ in FULL_DAY_SLOTS
-    ]
+    rows = []
+    for start_min, _ in FULL_DAY_SLOTS:
+        closure_ctx = slot_closure_context(ride_closures, start_min) if ride_closures else empty_closure_context()
+        rows.append({
+            "ride_id_cat":                      ride_id,
+            "hour_of_day":                      start_min // 60,
+            "day_of_week":                      js_dow,
+            "month":                            now_la.month,
+            "is_holiday":                       hol["is_holiday"],
+            "is_holiday_weekend":               hol["is_holiday_weekend"],
+            "days_until_next_holiday":          hol["days_until_next_holiday"],
+            "days_since_last_holiday":          hol["days_since_last_holiday"],
+            **closure_ctx,
+        })
 
-    X_profile = pd.DataFrame(rows)
+    X_profile = pd.DataFrame(rows)[DAY_PROFILE_FEATURE_COLS]
     X_profile["ride_id_cat"] = pd.Categorical(X_profile["ride_id_cat"], categories=ride_id_cats)
     preds = day_profile_model.predict(X_profile)
     return [
@@ -311,6 +380,11 @@ def main() -> int:
         now_la = now.astimezone(LA_TZ)
         hol = holiday_features(now)
 
+        # Read today's completed closures once — passed per-ride to _build_full_day
+        # so the day-profile model knows what kind of day it is for each ride.
+        today_closures = _read_today_closures(db, now_la)
+        log.info("Read today's closures for %d rides", len(today_closures))
+
         prediction_docs = []
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats)
@@ -329,7 +403,10 @@ def main() -> int:
                 feat_row["wait_minutes"], feat_row["wait_lag_1"], traj_preds
             )
 
-            full_day = _build_full_day(ride_id, now_la, day_profile_model, ride_id_cats, hol)
+            full_day = _build_full_day(
+                ride_id, now_la, day_profile_model, ride_id_cats, hol,
+                closures_today=today_closures.get(ride_id),
+            )
 
             prediction_docs.append({
                 "ride_id":        ride_id,
