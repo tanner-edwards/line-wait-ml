@@ -44,3 +44,32 @@ export async function scheduleRideReminder(
 
   return 'scheduled';
 }
+
+// Schedule a one-off local notification for when a closed ride is predicted
+// to reopen. predictedReopenAt is an ISO timestamp; the notification fires
+// at that moment. Returns the same result shape as scheduleRideReminder.
+export async function scheduleReopenReminder(
+  rideName: string,
+  predictedReopenAt: string,
+): Promise<ReminderResult> {
+  if (Platform.OS === 'web') return 'unsupported';
+
+  const secondsUntil = Math.round((new Date(predictedReopenAt).getTime() - Date.now()) / 1000);
+  if (secondsUntil <= 0) return 'past';
+
+  const { status } = await Notifications.requestPermissionsAsync();
+  if (status !== 'granted') return 'denied';
+
+  await Notifications.scheduleNotificationAsync({
+    content: {
+      title: rideName,
+      body: 'Should be back around now — head over for a shorter line.',
+    },
+    trigger: {
+      type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
+      seconds: secondsUntil,
+    },
+  });
+
+  return 'scheduled';
+}

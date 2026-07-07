@@ -282,6 +282,35 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
           // Only surface a prediction that's still in the future.
           return predicted.getTime() > now.getTime() ? predicted.toISOString() : null;
         })(),
+        // Structured closure breakdown for the Closure Intelligence UI.
+        // Only emitted while the ride is DOWN. Two fields require additional
+        // ML work and carry placeholder values until that lands:
+        //   predictedReopenWait  — expected wait (minutes) when the ride reopens
+        //   postReopenWaitDrop   — true briefly after reopen when wait is below typical
+        closureProfile: (() => {
+          if (status !== 'DOWN') return null;
+          const closedAt = lookupClosedAt(closuresMap, entity.id);
+          if (!closedAt) return null;
+          const profile = closureProfilesMap.get(entity.id);
+          if (!profile) return null;
+          const closedAtMs = new Date(closedAt).getTime();
+          const elapsedMinutes = Math.round((now.getTime() - closedAtMs) / 60_000);
+          const isExtended = elapsedMinutes > profile.shortResetThresholdMin;
+          const breakReliable = profile.extendedP50Min != null &&
+            (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
+          const confidenceLevel: 'high' | 'suppressed' = isExtended
+            ? (breakReliable && (profile.extendedSampleCount ?? 0) >= 3 ? 'high' : 'suppressed')
+            : ((profile.sampleCount ?? 0) >= 5 ? 'high' : 'suppressed');
+          return {
+            closureType: (isExtended ? 'break' : 'blip') as 'blip' | 'break',
+            elapsedMinutes,
+            blipEstimateMinutes: Math.round(profile.p50Min),
+            breakEstimateMinutes: Math.round(profile.extendedP50Min ?? profile.p50Min),
+            predictedReopenWait: null as number | null,
+            confidenceLevel,
+            postReopenWaitDrop: false,
+          };
+        })(),
         fullDayForecast,
       };
       ride.score = scoreRide(ride);

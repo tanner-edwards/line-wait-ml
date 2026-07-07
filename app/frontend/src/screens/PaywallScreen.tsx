@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import { ChevronLeft, Check } from 'lucide-react-native';
 import {
+  ErrorCode,
   endConnection,
   fetchProducts,
   finishTransaction,
@@ -23,6 +24,7 @@ import {
   purchaseErrorListener,
   purchaseUpdatedListener,
   requestPurchase,
+  requestReceiptRefreshIOS,
 } from 'expo-iap';
 import { purchaseTrip, validatePromoCode } from '../api';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
@@ -105,17 +107,24 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
 
     const purchaseSub = purchaseUpdatedListener(async purchase => {
       if (!mounted) return;
-      const receipt = (purchase as { transactionReceipt?: string }).transactionReceipt;
-      if (!receipt) return;
-      await handlePurchaseSuccess(receipt);
-      await finishTransaction({ purchase, isConsumable: true });
+      try {
+        // StoreKit 2 — receipt lives on-device, not on the purchase object.
+        const receipt = await requestReceiptRefreshIOS();
+        if (!receipt) throw new Error('Empty receipt');
+        await handlePurchaseSuccess(receipt);
+        await finishTransaction({ purchase, isConsumable: true });
+      } catch (err) {
+        if (mounted) {
+          Alert.alert('Purchase error', err instanceof Error ? err.message : 'Could not verify purchase.');
+          setPurchasing(false);
+        }
+      }
     });
 
     const errorSub = purchaseErrorListener(err => {
       if (!mounted) return;
-      // User cancelled — don't show an error for that.
-      if ((err as { code?: string }).code !== 'E_USER_CANCELLED') {
-        setPurchaseError('Purchase failed. Please try again.');
+      if (err.code !== ErrorCode.UserCancelled) {
+        Alert.alert('Purchase failed', err.message ?? 'Please try again.');
       }
       setPurchasing(false);
     });
@@ -136,11 +145,15 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     setPurchasing(true);
     setPurchaseError(null);
     try {
-      await requestPurchase({ sku: PRODUCT_ID });
+      await requestPurchase({
+        request: { apple: { sku: PRODUCT_ID } },
+        type: 'in-app',
+      });
     } catch (err) {
-      const code = (err as { code?: string }).code;
-      if (code !== 'E_USER_CANCELLED') {
-        setPurchaseError('Could not start purchase. Please try again.');
+      const code = (err as { code?: ErrorCode }).code;
+      if (code !== ErrorCode.UserCancelled) {
+        const detail = (err as { message?: string }).message ?? String(err);
+        Alert.alert('Purchase failed', `${code ?? 'unknown'}: ${detail}`);
       }
       setPurchasing(false);
     }

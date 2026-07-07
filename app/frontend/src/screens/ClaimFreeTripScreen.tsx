@@ -23,7 +23,11 @@ import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
 import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 
-export function ClaimFreeTripScreen(): React.ReactElement {
+interface ClaimFreeTripScreenProps {
+  onSkip: () => void;
+}
+
+export function ClaimFreeTripScreen({ onSkip }: ClaimFreeTripScreenProps): React.ReactElement {
   const { getIdToken, refetchUser } = useAuth();
   const { refetchTrip } = useTrip();
 
@@ -92,6 +96,9 @@ export function ClaimFreeTripScreen(): React.ReactElement {
             : <Text style={styles.claimBtnText}>Claim free trip</Text>}
         </TouchableOpacity>
         <Text style={styles.legal}>One free trip per account. No payment required.</Text>
+        <TouchableOpacity onPress={onSkip} hitSlop={12}>
+          <Text style={styles.skipLink}>Maybe later</Text>
+        </TouchableOpacity>
       </View>
     </SafeAreaView>
   );
@@ -168,5 +175,10 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textTertiary,
     textAlign: 'center',
+  },
+  skipLink: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    textDecorationLine: 'underline',
   },
 });

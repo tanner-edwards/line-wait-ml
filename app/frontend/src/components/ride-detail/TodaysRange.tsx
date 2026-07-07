@@ -194,16 +194,17 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
             {typicalX != null && typicalLabelX != null && typicalWait != null ? (
               <SvgText
                 x={typicalLabelX} y={typicalLabelY}
-                fontSize="10.5" fontWeight="500"
+                fontSize="12" fontWeight="500"
                 fill={colors.textSecondary} textAnchor="middle"
               >
                 {`usually ${typicalWait}m`}
               </SvgText>
             ) : null}
 
-            {/* P10 / P90 endpoint labels */}
-            <SvgText x={innerLeft}  y={LABEL_Y} fontSize="10.5" fill={colors.textSecondary} textAnchor="start">{p10}m</SvgText>
-            <SvgText x={innerRight} y={LABEL_Y} fontSize="10.5" fill={colors.textSecondary} textAnchor="end">{p90}m</SvgText>
+            {/* P10 / P90 endpoint labels — pinned to the outer SVG edges so
+                they stay flush regardless of whether the dot is floating. */}
+            <SvgText x={PAD_NORMAL}          y={LABEL_Y} fontSize="12" fill={colors.textSecondary} textAnchor="start">{p10}m</SvgText>
+            <SvgText x={TR_W - PAD_NORMAL}   y={LABEL_Y} fontSize="12" fill={colors.textSecondary} textAnchor="end">{p90}m</SvgText>
 
             {/* Current wait dot */}
             {dotX != null ? (

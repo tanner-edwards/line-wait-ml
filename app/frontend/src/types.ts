@@ -68,6 +68,26 @@ export interface FullDaySlot {
   sampleCount: number;
 }
 
+// Closure intelligence — emitted by the backend when status === 'DOWN',
+// and briefly after a reopen (postReopenWaitDrop may be true for ~30 min
+// after a break closure resolves to a short line).
+export interface ClosureProfile {
+  closureType: 'blip' | 'break';
+  elapsedMinutes: number;
+  blipEstimateMinutes: number;
+  breakEstimateMinutes: number;
+  // Expected wait when the ride reopens (break closures only); null when
+  // not enough data or ride hasn't been modeled yet.
+  predictedReopenWait: number | null;
+  // 'suppressed' when the backend lacks sufficient closure history to
+  // produce a reliable estimate (new rides, noisy history). UI falls back
+  // to timer-only display.
+  confidenceLevel: 'high' | 'suppressed';
+  // True briefly after a break closure resolves to a meaningfully below-
+  // typical wait — signals the post-reopen opportunity window.
+  postReopenWaitDrop: boolean;
+}
+
 export interface Ride {
   id: string;
   name: string;
@@ -91,6 +111,7 @@ export interface Ride {
   // the live backend always emits it on every ride.
   score?: ScoreResult;
   fullDayForecast?: FullDaySlot[] | null;
+  closureProfile?: ClosureProfile | null;
 }
 
 export interface ParkData {
@@ -220,6 +241,10 @@ export interface NotificationLogEntry {
   closedAt?: string | null;
   durationMs?: number | null;
   waitAtClose?: number | null;
+  // True when this reopen notification represents a post-break opportunity
+  // window (wait dropped meaningfully below typical). Drives distinct icon
+  // and context line in the notification history sheet.
+  isOpportunity?: boolean;
 }
 
 // --- Accounts + paywall (mirrors backend src/types.ts) ---

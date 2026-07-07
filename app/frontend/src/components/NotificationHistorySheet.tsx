@@ -14,7 +14,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { CircleCheck, OctagonX, Star, TrendingUp } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Star, TrendingUp, Zap } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useDeviceNotifications } from '../hooks/useDeviceNotifications';
@@ -61,7 +61,7 @@ export function NotificationHistorySheet(): React.ReactElement {
           ListHeaderComponent={
             refreshing ? (
               <View style={styles.refreshRow} testID="notif-history-refreshing">
-                <ActivityIndicator size="small" color="#999" />
+                <ActivityIndicator size="small" color={colors.textTertiary} />
                 <Text style={styles.refreshText}>Updating…</Text>
               </View>
             ) : null
@@ -92,13 +92,18 @@ function Row({
   entry: NotificationLogEntry;
   onPress: () => void;
 }): React.ReactElement {
+  const isOpportunity = entry.type === 'reopen' && !!entry.isOpportunity;
   const icon = iconFor(entry);
   const body = entry.body ?? notificationBody(entry);
   const when = formatTimeAgo(entry.firedAt);
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+      style={({ pressed }) => [
+        styles.row,
+        isOpportunity && styles.rowOpportunity,
+        pressed && styles.rowPressed,
+      ]}
       testID={`notif-history-row-${entry.rideId}-${entry.type}`}
     >
       <View style={styles.iconCell}>{icon}</View>
@@ -114,6 +119,7 @@ function Row({
 function iconFor(entry: NotificationLogEntry): React.ReactElement {
   if (entry.type === 'closure') return <OctagonX size={18} color={colors.skip} />;
   if (entry.type === 'peak')    return <TrendingUp size={18} color={colors.skip} />;
+  if (entry.type === 'reopen' && entry.isOpportunity) return <Zap size={18} color={colors.go} />;
   if (entry.type === 'reopen')  return <CircleCheck size={18} color={colors.go} />;
   if (entry.badge === 'star')   return <Star size={18} color={colors.star} fill={colors.star} />;
   return <CircleCheck size={18} color={colors.go} />;
@@ -139,6 +145,7 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
   },
+  rowOpportunity: { backgroundColor: colors.opportunityCardBg },
   rowPressed: { backgroundColor: colors.goBg },
   iconCell: { marginRight: 10, marginTop: 1, width: 20, alignItems: 'center' },
   rowText: { flex: 1, paddingRight: 8 },

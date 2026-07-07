@@ -9,7 +9,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, Footprints, Star } from 'lucide-react-native';
+import { Bell, Footprints, Star, Zap } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
 import { WalkPill } from '../WalkPill';
 import { DirectionCurve } from './DirectionCurve';
@@ -35,6 +35,11 @@ interface Props {
   bucket4Wait: number | null;
   onToggleWatch: () => void;
   hasActiveTrip: boolean;
+  // State 7 — post-reopen opportunity card. Only true briefly after a break
+  // closure resolves to a below-typical wait. Stubbed false until ML ships.
+  postReopenWaitDrop: boolean;
+  downDurationMs: number | null;
+  waitAtClose: number | null;
 }
 
 const BRAND = colors.brand;
@@ -57,6 +62,9 @@ export function RideDetailHeader({
   bucket4Wait,
   onToggleWatch,
   hasActiveTrip,
+  postReopenWaitDrop,
+  downDurationMs,
+  waitAtClose,
 }: Props): React.ReactElement {
   const subtitle = [land, parkName].filter(Boolean).join(' · ');
 
@@ -78,7 +86,7 @@ export function RideDetailHeader({
               <Text style={styles.walkOnText}>Walk On</Text>
             </View>
           ) : isDown ? (
-            <Text style={styles.closedText}>Closed</Text>
+            <Text style={styles.closedText}>Down</Text>
           ) : anchorWait !== null ? (
             <View style={styles.waitNumberRow}>
               <Text style={styles.waitNumber}>{anchorWait}</Text>
@@ -101,6 +109,16 @@ export function RideDetailHeader({
 
       {/* Row 4 — Badge pill + tagline */}
       <BadgeRow badge={badge} showWalkOn={showWalkOn} oneLiner={oneLiner} />
+
+      {/* State 7 — Post-reopen opportunity card: short line after a break closure.
+          Dormant (never renders) until ML populates postReopenWaitDrop. */}
+      {!isDown && postReopenWaitDrop ? (
+        <OpportunityCard
+          anchorWait={anchorWait}
+          waitAtClose={waitAtClose}
+          downDurationMs={downDurationMs}
+        />
+      ) : null}
 
       {/* Row 5 — Walk pill + Watch button */}
       <View style={styles.row5}>
@@ -185,6 +203,48 @@ function badgePill(badge: Badge): React.ReactElement | null {
     );
   }
   return null;
+}
+
+// ── Opportunity card (State 7) ────────────────────────────────────────────────
+
+function formatDuration(ms: number): string {
+  const min = Math.round(ms / 60_000);
+  if (min < 60) return `${min}m`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
+function OpportunityCard({
+  anchorWait,
+  waitAtClose,
+  downDurationMs,
+}: {
+  anchorWait: number | null;
+  waitAtClose: number | null;
+  downDurationMs: number | null;
+}): React.ReactElement {
+  const durationText = downDurationMs != null ? formatDuration(downDurationMs) : null;
+  const dropText =
+    waitAtClose != null && anchorWait != null
+      ? `Wait dropped from ${waitAtClose} → ${anchorWait} min.`
+      : anchorWait != null
+      ? `Now at ${anchorWait} min.`
+      : null;
+
+  return (
+    <View style={styles.opportunityCard}>
+      <Zap size={14} color={colors.opportunityCardText} style={styles.opportunityIcon} />
+      <View style={styles.opportunityBody}>
+        <Text style={styles.opportunityTitle}>Short line right now</Text>
+        <Text style={styles.opportunityDesc}>
+          {durationText ? `Was down ${durationText} — just reopened. ` : 'Just reopened. '}
+          {dropText ? `${dropText} ` : ''}
+          Window won't last long.
+        </Text>
+      </View>
+    </View>
+  );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -311,4 +371,30 @@ const styles = StyleSheet.create({
   },
   watchBtnText: { fontSize: 13, fontWeight: '600', color: colors.textInverse },
   watchBtnWatchingText: { color: colors.brand, fontWeight: '600' },
+
+  // State 7 — opportunity card
+  opportunityCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    marginBottom: 12,
+    padding: 10,
+    backgroundColor: colors.opportunityCardBg,
+    borderRadius: 11,
+    borderWidth: 1.5,
+    borderColor: colors.opportunityCardBorder,
+  },
+  opportunityIcon: { marginTop: 1 },
+  opportunityBody: { flex: 1 },
+  opportunityTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.opportunityCardText,
+    marginBottom: 2,
+  },
+  opportunityDesc: {
+    fontSize: 11,
+    color: colors.textSecondary,
+    lineHeight: 16,
+  },
 });

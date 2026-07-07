@@ -16,7 +16,7 @@
 // deep-link via NotificationDetailContext.
 
 import React, { useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { AlertTriangle, X } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Sheet } from './Sheet';
@@ -34,6 +34,7 @@ import { haversineMeters } from '../grouping';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
 import { isParkError, Ride } from '../types';
+import { scheduleReopenReminder } from '../utils/scheduleReminder';
 
 import { Tile, TileLabel } from './ride-detail/Tile';
 import { RideDetailHeader } from './ride-detail/RideDetailHeader';
@@ -144,6 +145,23 @@ function DetailBody({
     void setPersona({ ...persona, mustDoRideIds: next });
   };
 
+  const handleNotifyReopen = async () => {
+    if (!ride.predictedReopenAt) return;
+    const result = await scheduleReopenReminder(ride.name, ride.predictedReopenAt);
+    switch (result) {
+      case 'scheduled':
+        Alert.alert('Reminder set', `We'll notify you when ${ride.name} is about to reopen.`, [{ text: 'OK' }]);
+        break;
+      case 'denied':
+        Alert.alert('Notifications off', 'Enable notifications for Club 32 in Settings to use reminders.', [{ text: 'OK' }]);
+        break;
+      case 'past':
+        Alert.alert('Window may have passed', `The predicted reopen window for ${ride.name} may have already come and gone. Keep an eye on it.`, [{ text: 'OK' }]);
+        break;
+      // 'unsupported' (web) — no-op, button shouldn't appear on web
+    }
+  };
+
   // Wait at time of close — most recent OPERATING observation in recentHistory.
   const closedWait = useMemo(() => {
     if (!isDown || !ride.recentHistory) return null;
@@ -200,6 +218,9 @@ function DetailBody({
           bucket4Wait={bucket4Wait}
           onToggleWatch={onToggleWatch}
           hasActiveTrip={hasActiveTrip}
+          postReopenWaitDrop={ride.closureProfile?.postReopenWaitDrop ?? false}
+          downDurationMs={notifDurationMs}
+          waitAtClose={null}
         />
         {restrictionNote ? (
           <View style={styles.restrictionBanner}>
@@ -209,13 +230,17 @@ function DetailBody({
         ) : null}
       </Tile>
 
-      {/* Closure tile surfaces first when ride is down — all other data is secondary. */}
+      {/* Closure tile — shown for DOWN rides only, outside the paywall gate
+          so free users still see "Down since X". */}
       {isDown ? (
         <ClosureTile
           isDown={isDown}
+          isPaid={hasActiveTrip}
           rideClosedAt={ride.closedAt ?? null}
-          notifClosedAt={notifClosedAt}
-          notifDurationMs={notifDurationMs}
+          closureProfile={ride.closureProfile ?? null}
+          predictedReopenAt={ride.predictedReopenAt ?? null}
+          onNotifyReopen={handleNotifyReopen}
+          onUnlock={() => setPaywallOpen(true)}
         />
       ) : null}
 
@@ -233,17 +258,7 @@ function DetailBody({
             </Tile>
           ) : null}
 
-          {/* Reopen case: ride is back up but recently reopened — show closure context near bottom. */}
-          {!isDown ? (
-            <ClosureTile
-              isDown={isDown}
-              rideClosedAt={ride.closedAt ?? null}
-              notifClosedAt={notifClosedAt}
-              notifDurationMs={notifDurationMs}
-            />
-          ) : null}
-
-          {ride.fullDayForecast ? (
+          {!isDown && ride.fullDayForecast ? (
             <Tile>
               <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} />
             </Tile>

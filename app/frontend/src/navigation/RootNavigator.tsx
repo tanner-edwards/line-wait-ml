@@ -4,7 +4,7 @@
 //   • User authenticated + persona null → onboarding
 //   • User authenticated + persona set → main 3-tab app
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { colors } from '../theme/tokens';
 import { useAuth } from '../context/AuthContext';
@@ -17,6 +17,7 @@ import { DailyParkSheet } from '../components/DailyParkSheet';
 import { AppNavigator } from './AppNavigator';
 
 export function RootNavigator(): React.ReactElement {
+  const [skippedFreeTrip, setSkippedFreeTrip] = useState(false);
   const { user, userRecord, loading: authLoading } = useAuth();
   const { persona, loading: personaLoading } = usePersona();
   const { isStale: dailyIsStale, loading: dailyLoading } = useDailyContext();
@@ -40,8 +41,8 @@ export function RootNavigator(): React.ReactElement {
 
   // Free trip gate: shown once after onboarding for users who haven't claimed
   // their free trip yet. Bypass users and anonymous users skip this.
-  if (!user?.isAnonymous && userRecord && !userRecord.freeTripClaimed && !userRecord.bypass) {
-    return <ClaimFreeTripScreen />;
+  if (!user?.isAnonymous && userRecord && !userRecord.freeTripClaimed && !userRecord.bypass && !skippedFreeTrip) {
+    return <ClaimFreeTripScreen onSkip={() => setSkippedFreeTrip(true)} />;
   }
 
   return (

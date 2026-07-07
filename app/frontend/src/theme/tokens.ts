@@ -28,6 +28,13 @@ export const colors = {
   go:                '#3D7C65',  // unified with header — single green
   goBg:              'rgba(61,124,101,0.10)',
   goBorder:          'rgba(61,124,101,0.25)',
+
+  // Opportunity card (State 7 hero sub-card) — same RGB family as go,
+  // but distinct opacity steps so it reads as "quieter than a badge".
+  opportunityCardBg:     'rgba(61,124,101,0.07)',
+  opportunityCardBorder: 'rgba(61,124,101,0.22)',
+  opportunityCardText:   '#2D6B54',
+
   skip:              '#B83A2A',  // brick red, complements green + gold
   skipBg:            'rgba(184,58,42,0.09)',
   skipBorder:        'rgba(184,58,42,0.25)',

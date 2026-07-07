@@ -232,6 +232,62 @@ Resources:
             Method: get
             Auth:
               ApiKeyRequired: true
+        UserTripPurchase:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/trip/purchase
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+        UserCreate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+        UserMe:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/me
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+        UserDelete:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/me
+            Method: delete
+            Auth:
+              ApiKeyRequired: true
+        UserTrip:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/trip
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+        UserTripClaimFree:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/trip/claim-free
+            Method: post
+            Auth:
+              ApiKeyRequired: true
+        PromoValidate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/promo/validate
+            Method: post
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
