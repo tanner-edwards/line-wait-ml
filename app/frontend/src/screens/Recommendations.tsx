@@ -69,6 +69,7 @@ export function Recommendations(): React.ReactElement {
   const [loadingMore, setLoadingMore] = useState(false);
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [debugPickerOpen, setDebugPickerOpen] = useState(false);
+  const [debugPickerDismissed, setDebugPickerDismissed] = useState(false);
 
   const inFlightAbort = useRef<AbortController | null>(null);
   const loadMoreAbort = useRef<AbortController | null>(null);
@@ -246,7 +247,7 @@ export function Recommendations(): React.ReactElement {
   }
 
   // Debug mode: no coords yet → force picker open.
-  const needsDebugPick = debugMode && !coords;
+  const needsDebugPick = debugMode && !coords && !debugPickerDismissed;
   const derivedPark = coords ? derivePark(coords.lat, coords.lng, dailyContext?.parks) : null;
 
   return (
@@ -333,7 +334,8 @@ export function Recommendations(): React.ReactElement {
           restrictToParks={dailyContext?.parks ?? 'both'}
           onSubmit={handleDebugPickerSubmit}
           onClose={() => {
-            if (coords) setDebugPickerOpen(false);
+            setDebugPickerOpen(false);
+            setDebugPickerDismissed(true);
           }}
         />
       )}

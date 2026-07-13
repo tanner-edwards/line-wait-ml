@@ -128,10 +128,11 @@ function buildDisplaySlots(
 }
 
 function findDefaultSelection(slots: DisplaySlot[], currentHourStart: number): number | null {
-  // Prefer the current hour if it's a trough; otherwise find the next upcoming trough.
-  const currentTrough = slots.find(s => s.hourStart === currentHourStart && s.classification === 'trough');
-  const nextTrough    = slots.find(s => s.hourStart >  currentHourStart && s.classification === 'trough');
-  return (currentTrough ?? nextTrough)?.hourStart ?? null;
+  // Always open on the current hour so the dot and the detail card are in sync.
+  // Fall back to the next trough if there's no current-hour slot (e.g. park is closed).
+  const currentSlot = slots.find(s => s.hourStart === currentHourStart);
+  const nextTrough  = slots.find(s => s.hourStart >  currentHourStart && s.classification === 'trough');
+  return currentSlot?.hourStart ?? nextTrough?.hourStart ?? null;
 }
 
 function barColor(cls: Classification, isPast: boolean): string {
@@ -225,6 +226,10 @@ export function FullDayForecast({ fullDayForecast, rideName }: Props): React.Rea
           const color    = barColor(slot.classification, slot.isPast);
           const isSelected = slot.hourStart === selectedHour;
 
+          const selectionColor = slot.classification === 'trough' ? BAR_TROUGH
+            : slot.classification === 'peak' ? BAR_PEAK
+            : colors.brand;
+
           return (
             <Pressable
               key={slot.hourStart}
@@ -245,13 +250,7 @@ export function FullDayForecast({ fullDayForecast, rideName }: Props): React.Rea
                     styles.bar,
                     { height: barH, backgroundColor: color },
                     isSelected && ({
-                      borderWidth: 1.5,
-                      borderColor: 'white',
-                      outline: `1.5px solid ${
-                        slot.classification === 'trough' ? BAR_TROUGH
-                        : slot.classification === 'peak'  ? BAR_PEAK
-                        : colors.brand
-                      }`,
+                      boxShadow: `0 0 0 1.5px white, 0 0 0 3px ${selectionColor}`,
                     } as any),
                   ]}
                 />
@@ -380,6 +379,7 @@ const styles = StyleSheet.create({
   barsRow: {
     flexDirection: 'row',
     height: CHART_H,
+    columnGap: .5,
   },
   barColumn: {
     flex: 1,
@@ -397,7 +397,7 @@ const styles = StyleSheet.create({
     width: '100%',
     justifyContent: 'flex-end',
     alignItems: 'center',
-    paddingHorizontal: 1.5,
+    paddingHorizontal: 3,
   },
   bar: {
     width: '100%',
@@ -406,6 +406,7 @@ const styles = StyleSheet.create({
   labelsRow: {
     flexDirection: 'row',
     marginTop: 4,
+    columnGap: .5,
   },
   labelCell: {
     flex: 1,

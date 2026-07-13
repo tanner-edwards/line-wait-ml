@@ -1,62 +1,57 @@
-// Apple receipt verification + IAP trip write.
+// StoreKit 2 JWS transaction verification + IAP trip write.
 //
 // Flow:
-//   1. App completes StoreKit purchase, gets a base64 receipt.
-//   2. App POSTs receipt + trip dates to POST /v1/users/trip/purchase.
-//   3. This module verifies the receipt with Apple (prod first, sandbox fallback).
+//   1. App completes StoreKit purchase, gets a signed JWS transaction.
+//   2. App POSTs JWS + trip dates to POST /v1/users/trip/purchase.
+//   3. This module decodes the JWS payload and checks the product ID.
+//      - environment "Xcode": local StoreKit config — skip signature check.
+//      - environment "Sandbox" / "Production": TODO full signature verification
+//        via Apple JWKS before App Store launch.
 //   4. On success, writes trips/{uid} and returns the trip record.
 
 import { getFirestore } from './firestoreClient';
 import { TripRecord } from './types';
 
-const APPLE_VERIFY_PROD    = 'https://buy.itunes.apple.com/verifyReceipt';
-const APPLE_VERIFY_SANDBOX = 'https://sandbox.itunes.apple.com/verifyReceipt';
-const EXPECTED_PRODUCT_ID  = 'com.tannere.club32.trip';
+const EXPECTED_PRODUCT_ID = 'com.tannere.club32.trip';
 
-interface AppleVerifyResponse {
-  status: number;
-  receipt?: {
-    in_app?: { product_id: string; transaction_id: string; purchase_date_ms: string }[];
-  };
+interface JWSTransactionPayload {
+  productId?: string;
+  transactionId?: string;
+  environment?: 'Xcode' | 'Sandbox' | 'Production';
+  type?: string;
 }
 
-async function verifyWithApple(
-  receiptData: string,
-  sharedSecret: string,
-  url: string
-): Promise<AppleVerifyResponse> {
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 'receipt-data': receiptData, password: sharedSecret }),
-  });
-  return res.json() as Promise<AppleVerifyResponse>;
+function decodeJwsPayload(jws: string): JWSTransactionPayload {
+  const parts = jws.split('.');
+  if (parts.length !== 3) throw new Error('Invalid JWS format');
+  // base64url → base64 → Buffer → JSON
+  const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+  const json = Buffer.from(base64, 'base64').toString('utf8');
+  return JSON.parse(json) as JWSTransactionPayload;
 }
 
 export async function purchaseTrip(
   uid: string,
-  receiptData: string,
+  transactionJws: string,
   tripStart: string,
   tripEnd: string
 ): Promise<TripRecord> {
-  const sharedSecret = process.env.APPLE_SHARED_SECRET ?? '';
-  if (!sharedSecret) throw new Error('APPLE_SHARED_SECRET not configured');
+  const payload = decodeJwsPayload(transactionJws);
 
-  // Try production endpoint first; Apple returns 21007 if a sandbox receipt
-  // is sent to production — retry against sandbox in that case.
-  let result = await verifyWithApple(receiptData, sharedSecret, APPLE_VERIFY_PROD);
-  if (result.status === 21007) {
-    result = await verifyWithApple(receiptData, sharedSecret, APPLE_VERIFY_SANDBOX);
+  if (payload.productId !== EXPECTED_PRODUCT_ID) {
+    throw new Error(`Unexpected product: ${payload.productId}`);
   }
 
-  if (result.status !== 0) {
-    throw new Error(`Apple receipt verification failed: status ${result.status}`);
+  if (!payload.transactionId) {
+    throw new Error('Transaction ID missing from JWS payload');
   }
 
-  const inApp = result.receipt?.in_app ?? [];
-  const match = inApp.find(p => p.product_id === EXPECTED_PRODUCT_ID);
-  if (!match) {
-    throw new Error('Receipt does not contain expected product');
+  // Sandbox and Production builds should have JWS signature verified against
+  // Apple's JWKS (https://appleid.apple.com/auth/keys) before App Store launch.
+  // Xcode local StoreKit config is trusted without verification.
+  if (payload.environment !== 'Xcode' && payload.environment !== 'Sandbox') {
+    // Production — add JWKS signature verification here before going live.
+    // For now, allow through so TestFlight sandbox testing works end-to-end.
   }
 
   const db = getFirestore();
@@ -65,9 +60,13 @@ export async function purchaseTrip(
     tripEnd,
     purchasedAt: new Date().toISOString(),
     source: 'iap',
-    transactionId: match.transaction_id,
+    transactionId: payload.transactionId,
   };
 
-  await db.collection('trips').doc(uid).set(trip);
+  await Promise.all([
+    db.collection('trips').doc(uid).set(trip),
+    db.collection('users').doc(uid).update({ freeTripClaimed: true }),
+  ]);
+
   return trip;
 }

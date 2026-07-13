@@ -5,6 +5,7 @@
   "scripts": {
     "start": "expo start",
     "ios": "expo run:ios --device",
+	"ios:clean": "npx expo run:ios --device --no-build-cache",
     "ios:release": "expo run:ios --configuration Release --device",
     "test": "jest",
     "test:watch": "jest --watch",

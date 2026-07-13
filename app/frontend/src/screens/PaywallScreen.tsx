@@ -20,11 +20,11 @@ import {
   endConnection,
   fetchProducts,
   finishTransaction,
+  getTransactionJwsIOS,
   initConnection,
   purchaseErrorListener,
   purchaseUpdatedListener,
   requestPurchase,
-  requestReceiptRefreshIOS,
 } from 'expo-iap';
 import { purchaseTrip, validatePromoCode } from '../api';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
@@ -108,10 +108,10 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     const purchaseSub = purchaseUpdatedListener(async purchase => {
       if (!mounted) return;
       try {
-        // StoreKit 2 — receipt lives on-device, not on the purchase object.
-        const receipt = await requestReceiptRefreshIOS();
-        if (!receipt) throw new Error('Empty receipt');
-        await handlePurchaseSuccess(receipt);
+        // StoreKit 2 — get the signed JWS for this transaction.
+        const jws = await getTransactionJwsIOS(purchase.productId);
+        if (!jws) throw new Error('Could not get transaction data');
+        await handlePurchaseSuccess(jws);
         await finishTransaction({ purchase, isConsumable: true });
       } catch (err) {
         if (mounted) {

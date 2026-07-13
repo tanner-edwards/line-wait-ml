@@ -136,6 +136,7 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
     <View>
       <View onLayout={e => setRenderW(Math.round(e.nativeEvent.layout.width))}>
         {renderW > 0 ? (
+          <>
           <Svg
             width={renderW}
             height={svgH}
@@ -201,11 +202,6 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               </SvgText>
             ) : null}
 
-            {/* P10 / P90 endpoint labels — pinned to the outer SVG edges so
-                they stay flush regardless of whether the dot is floating. */}
-            <SvgText x={PAD_NORMAL}          y={LABEL_Y} fontSize="12" fill={colors.textSecondary} textAnchor="start">{p10}m</SvgText>
-            <SvgText x={TR_W - PAD_NORMAL}   y={LABEL_Y} fontSize="12" fill={colors.textSecondary} textAnchor="end">{p90}m</SvgText>
-
             {/* Current wait dot */}
             {dotX != null ? (
               <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
@@ -234,6 +230,13 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               </>
             ) : null}
           </Svg>
+          {/* p10/p90 endpoint labels as native Text so they can't be SVG-clipped.
+              Positioned to match LABEL_Y in the SVG coordinate space (y-scale is 1:1). */}
+          <View style={styles.rangeLabelsRow}>
+            <Text style={styles.rangeLabel}>{p10}m</Text>
+            <Text style={styles.rangeLabel}>{p90}m</Text>
+          </View>
+          </>
         ) : null}
       </View>
 
@@ -241,4 +244,19 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
   );
 }
 
-const styles = StyleSheet.create({});
+const styles = StyleSheet.create({
+  rangeLabelsRow: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    // LABEL_Y is the SVG baseline. y-scale is 1:1, so subtract cap-height (~11px)
+    // to align the native text cap with the SVG label row.
+    top: LABEL_Y - 11,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  rangeLabel: {
+    fontSize: 12,
+    color: colors.textSecondary,
+  },
+});
