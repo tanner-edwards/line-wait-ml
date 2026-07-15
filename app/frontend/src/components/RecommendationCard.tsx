@@ -115,8 +115,8 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
           <View style={styles.waitCluster}>
             {showWalkOn ? (
               <View style={styles.walkOnCluster}>
-                <Footprints size={14} color={colors.textPrimary} />
-                <Text style={styles.walkOnLabel}>Walk On</Text>
+                <Footprints size={14} color={colors.go} />
+                <Text style={[styles.walkOnLabel, { color: colors.go }]}>Walk On</Text>
               </View>
             ) : waitDisplay !== null ? (
               <>

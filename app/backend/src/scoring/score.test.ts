@@ -311,14 +311,25 @@ describe('Factor 3 — projected change (anchored early vs late window)', () => 
 // --- "Go" badge suppression when future dip > 30% ---
 
 describe('"go" suppression — future dip', () => {
-  it('suppresses go badge when delta < -30%', () => {
-    // currentWait=15, b1=15: earlyAvg=15, lateAvg=10: delta=-33%, |diff|=5<10 → F3 pts=0 but delta stored
-    // F1=+2 (|15-30|=15), F2=+1 (bottom quartile of p10=10..p90=80), F3=0 pts (noise filtered), F4=0 (b1=currentWait)
-    // score=3 → go → projectedChange.delta=-33% < -30% → badge suppressed to null
-    // p10=10 so currentWait=15 > p10*1.15=11.5 → gold star floor condition fails → not a star
+  it('does NOT suppress go badge when |diff| < 10 min, even if delta < -30%', () => {
+    // currentWait=15, b1=15: earlyAvg=15, lateAvg=10: delta=-33%, |diff|=5 < 10-min floor
+    // F1=+2 (|15-30|=15), F2=+1 (bottom quartile), F3=0 pts (noise filtered), F4=0 → score=3
+    // Suppression blocked: |diff|=5 < 10 (same noise floor F3 uses for points) → badge='go'
     const r = scoreRide(makeRide({
       currentWait: 15,
       historicalAverage: makeHA(30, 15, 30, 10, 10),
+      rideStats: makeStats(10, 80),
+    }));
+    expect(r.badge).toBe('go');
+  });
+
+  it('suppresses go badge when delta < -30% AND |diff| >= 10 min', () => {
+    // currentWait=15, b1=15: earlyAvg=15, lateAvg=4: delta=-73%, |diff|=11 >= 10
+    // F1=+2, F2=+1, F3=0 pts (b1=currentWait → no near-term change), F4=0 → score=3
+    // Both conditions met → badge suppressed
+    const r = scoreRide(makeRide({
+      currentWait: 15,
+      historicalAverage: makeHA(30, 15, 30, 4, 4),
       rideStats: makeStats(10, 80),
     }));
     expect(r.badge).toBeNull();

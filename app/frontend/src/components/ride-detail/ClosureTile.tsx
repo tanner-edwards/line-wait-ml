@@ -210,8 +210,12 @@ function PaidContent({
         hasPredictedWait={predictedReopenWait != null}
       />
 
-      {/* Notify me CTA — break states only */}
-      {isBreakState && predictedReopenAt ? (
+      {/* Notify me CTA — break states only, and only when the prediction is still
+          valid (not past-break). In past-break the estimate is blown and
+          predictedReopenAt is stale, so there's nothing reliable to schedule
+          a timer against. A proper server-side "watch for actual reopen" is a
+          future feature (requires a dedicated watchReopenRideIds field). */}
+      {isBreakState && barState !== 'past-break' && predictedReopenAt ? (
         <Pressable
           onPress={() => { void onNotifyReopen(); }}
           style={styles.notifyBtn}

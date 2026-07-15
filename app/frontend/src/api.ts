@@ -241,6 +241,30 @@ export async function claimFreeTrip(
   return (body as { trip: TripRecord }).trip;
 }
 
+// Read-only check — validates the code server-side without claiming it.
+// Throws ApiError with the rejection reason if invalid.
+export async function checkPromoCode(idToken: string, code: string): Promise<void> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/promo/check?code=${encodeURIComponent(code)}`, {
+      method: 'GET',
+      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const errBody = (await res.json()) as ErrorResponse;
+      detail = errBody.message || errBody.error || detail;
+    } catch { /* not JSON */ }
+    throw new ApiError(res.status, detail);
+  }
+}
+
 export async function validatePromoCode(
   idToken: string,
   input: { code: string; tripStart: string; tripEnd: string }

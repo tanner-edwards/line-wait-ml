@@ -115,8 +115,8 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
           <View style={styles.waitCluster}>
             {showWalkOn ? (
               <View style={styles.walkOnCluster} testID="badge-walk-on">
-                <Footprints size={14} color={colors.textPrimary} />
-                <Text style={styles.walkOnLabel}>Walk On</Text>
+                <Footprints size={14} color={colors.go} />
+                <Text style={[styles.walkOnLabel, { color: colors.go }]}>Walk On</Text>
               </View>
             ) : isOperating && ride.currentWait !== null ? (
               <>

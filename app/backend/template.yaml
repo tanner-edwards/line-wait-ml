@@ -288,6 +288,14 @@ Resources:
             Method: post
             Auth:
               ApiKeyRequired: true
+        PromoCheck:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/promo/check
+            Method: get
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:

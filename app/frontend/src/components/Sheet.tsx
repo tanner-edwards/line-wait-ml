@@ -68,13 +68,35 @@ export function Sheet({
 
   const panResponder = useRef(
     PanResponder.create({
+      // Bubble phase — only wins on non-scrolling card areas (title, padding).
+      // The body ScrollView keeps its own touches; body-drag dismissal is
+      // handled via overscroll (see requestOverscrollClose below).
       onMoveShouldSetPanResponder: (_, gs) =>
         gs.dy > 5 && gs.dy > Math.abs(gs.dx),
       onPanResponderMove: (_, gs) => {
         if (gs.dy > 0) translateY.setValue(gs.dy);
       },
       onPanResponderRelease: (_, gs) => {
-        if (dismissableRef.current && (gs.dy > 80 || gs.vy > 0.8)) {
+        if (dismissableRef.current && (gs.dy > 40 || gs.vy > 0.4)) {
+          translateY.setValue(0);
+          onCloseRef.current();
+        } else {
+          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
+        }
+      },
+    })
+  ).current;
+
+  // Separate PanResponder for the grabber row — same dismiss logic but
+  // always active there regardless of what the body ScrollView is doing.
+  const grabberPan = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onPanResponderMove: (_, gs) => {
+        if (gs.dy > 0) translateY.setValue(gs.dy);
+      },
+      onPanResponderRelease: (_, gs) => {
+        if (dismissableRef.current && (gs.dy > 40 || gs.vy > 0.4)) {
           translateY.setValue(0);
           onCloseRef.current();
         } else {
@@ -121,10 +143,11 @@ export function Sheet({
             { transform: [{ translateY }] },
             sheetColor ? { backgroundColor: sheetColor } : undefined,
           ]}
+          {...panResponder.panHandlers}
         >
           {/* Grabber row doubles as the close-button row — pill stays centered
               between two equal flex:1 sides; right side holds the dismiss button. */}
-          <View style={styles.grabberRow} {...panResponder.panHandlers}>
+          <View style={styles.grabberRow} {...grabberPan.panHandlers}>
             <View style={styles.grabberSide} />
             <View style={styles.grabberPill} />
             <View style={styles.grabberSide}>{rightSlot}</View>

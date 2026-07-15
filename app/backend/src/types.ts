@@ -295,6 +295,7 @@ export interface UserRecord {
 }
 
 export interface TripRecord {
+  uid: string;
   tripStart: string;   // YYYY-MM-DD
   tripEnd: string;     // YYYY-MM-DD
   purchasedAt: string; // ISO

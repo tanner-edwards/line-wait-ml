@@ -45,6 +45,10 @@ import { ClosureTile } from './ride-detail/ClosureTile';
 import { RideAlertHistory } from './ride-detail/RideAlertHistory';
 import { FullDayForecast } from './ride-detail/FullDayForecast';
 
+// How far the user must pull the sheet content past its top edge before a
+// release dismisses the sheet. Tuned to feel deliberate but not stiff.
+const OVERSCROLL_DISMISS_PX = 90;
+
 const WALK_SPEED_MPM = 83;
 function walkPathMultiplier(m: number) {
   return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3;
@@ -94,6 +98,7 @@ export function RideDetailModal(): React.ReactElement {
           notifClosedAt={active?.closedAt ?? null}
           restrictionNote={active?.restrictionNote ?? null}
           oneLiner={active?.oneLiner ?? null}
+          onRequestClose={closeDetail}
         />
       ) : active ? (
         <View style={styles.fallbackBlock}>
@@ -114,6 +119,7 @@ function DetailBody({
   notifClosedAt,
   restrictionNote,
   oneLiner,
+  onRequestClose,
 }: {
   ride: Ride;
   parkName: string | null;
@@ -122,6 +128,7 @@ function DetailBody({
   notifClosedAt: string | null;
   restrictionNote: string | null;
   oneLiner: string | null;
+  onRequestClose: () => void;
 }): React.ReactElement {
   const { persona, setPersona } = usePersona();
   const { debugMode } = useDebugMode();
@@ -162,6 +169,7 @@ function DetailBody({
     }
   };
 
+
   // Wait at time of close — most recent OPERATING observation in recentHistory.
   const closedWait = useMemo(() => {
     if (!isDown || !ride.recentHistory) return null;
@@ -198,7 +206,18 @@ function DetailBody({
   const rideNotifs = useRideNotificationHistory(deviceId ?? null, ride.id);
 
   return (
-    <ScrollView contentContainerStyle={styles.body}>
+    <ScrollView
+      contentContainerStyle={styles.body}
+      // Pull-down-to-dismiss: when the user drags the content down past the
+      // top edge (overscroll → negative contentOffset.y) and releases beyond
+      // the threshold, close the sheet. This is the reliable pure-RN path —
+      // a JS PanResponder can't win a drag away from a native ScrollView.
+      onScrollEndDrag={e => {
+        if (e.nativeEvent.contentOffset.y <= -OVERSCROLL_DISMISS_PX) {
+          onRequestClose();
+        }
+      }}
+    >
       <Tile>
         <RideDetailHeader
           rideName={ride.name}

@@ -7,12 +7,15 @@ import React, { useState } from 'react';
 import {
   Alert,
   LayoutAnimation,
+  Modal,
   Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
+  View,
 } from 'react-native';
+import { PaywallScreen } from './PaywallScreen';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useDebugMode } from '../context/DebugModeContext';
@@ -70,6 +73,24 @@ const ACCESSIBILITY_LABELS: Record<AccessibilityNeed, string> = {
   none: 'None',
 };
 
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatTripDate(ymd: string): string {
+  const [, m, d] = ymd.split('-').map(Number);
+  return `${MONTHS[m - 1]} ${d}`;
+}
+
+function daysLeftText(tripEndYmd: string): string {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(tripEndYmd + 'T00:00:00');
+  const days = Math.round((end.getTime() - today.getTime()) / 86400000);
+  if (days < 0) return 'ended';
+  if (days === 0) return 'ends today';
+  if (days === 1) return '1 day left';
+  return `${days} days left`;
+}
+
 export function Profile(): React.ReactElement {
   const { persona, clearPersona } = usePersona();
   const { context: dailyCtx, clearDailyContext } = useDailyContext();
@@ -83,10 +104,11 @@ export function Profile(): React.ReactElement {
   } = useDevice();
   const { data } = useRides();
   const { user, userRecord, getIdToken, signOut } = useAuth();
-  const { trip } = useTrip();
+  const { trip, hasActiveTrip } = useTrip();
   const [editing, setEditing] = useState<PersonaField | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [parkPickerOpen, setParkPickerOpen] = useState(false);
+  const [paywallOpen, setPaywallOpen] = useState(false);
 
   if (!persona) {
     return (
@@ -206,6 +228,11 @@ export function Profile(): React.ReactElement {
             </>
           ) : null}
         </Card>
+        {notificationsEnabled && !hasActiveTrip ? (
+          <Text style={styles.notifCaveat}>
+            Notifications only fire during an active trip.
+          </Text>
+        ) : null}
 
         {/* ── Account ────────────────────────────────── */}
         <SectionHeader title="Account" />
@@ -215,13 +242,34 @@ export function Profile(): React.ReactElement {
             value={user?.email ?? userRecord?.userId?.slice(0, 12) ?? 'Apple account'}
             onPress={() => undefined}
           />
-          {trip ? (
-            <TapEditRow
-              label="Active trip"
-              value={`${trip.tripStart} – ${trip.tripEnd}`}
-              onPress={() => undefined}
-            />
-          ) : null}
+          {(() => {
+            if (userRecord?.bypass || user?.isAnonymous) return null;
+            if (!trip) {
+              return (
+                <TapEditRow
+                  label="Trip access"
+                  value="No active trip · Unlock access"
+                  onPress={() => setPaywallOpen(true)}
+                />
+              );
+            }
+            if (!hasActiveTrip) {
+              return (
+                <TapEditRow
+                  label="Trip expired"
+                  value={`${formatTripDate(trip.tripStart)} – ${formatTripDate(trip.tripEnd)} · Get new trip`}
+                  onPress={() => setPaywallOpen(true)}
+                />
+              );
+            }
+            return (
+              <TapEditRow
+                label="Active trip"
+                value={`${formatTripDate(trip.tripStart)} – ${formatTripDate(trip.tripEnd)} · ${daysLeftText(trip.tripEnd)}`}
+                onPress={() => undefined}
+              />
+            );
+          })()}
           <Pressable
             onPress={() => void signOut()}
             style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
@@ -294,6 +342,14 @@ export function Profile(): React.ReactElement {
         onCancel={() => setParkPickerOpen(false)}
       />
       <DebugLogModal visible={logsOpen} onClose={() => setLogsOpen(false)} />
+      <Modal
+        visible={paywallOpen}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setPaywallOpen(false)}
+      >
+        <PaywallScreen onClose={() => setPaywallOpen(false)} />
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -314,4 +370,11 @@ const styles = StyleSheet.create({
   signOutText: { fontSize: 16, color: colors.brand },
   deleteText: { fontSize: 16, color: colors.skip },
   placeholder: { padding: 32, fontSize: 14, color: colors.textTertiary, textAlign: 'center' },
+  notifCaveat: {
+    fontSize: 12,
+    color: colors.textTertiary,
+    marginTop: -spacing.lg,
+    marginBottom: spacing.xl,
+    paddingHorizontal: spacing.sm,
+  },
 });

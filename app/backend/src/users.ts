@@ -38,8 +38,12 @@ export async function getUser(uid: string): Promise<UserRecord | null> {
 
 export async function getTrip(uid: string): Promise<TripRecord | null> {
   const db = getFirestore();
-  const snap = await db.collection('trips').doc(uid).get();
-  return snap.exists ? (snap.data() as TripRecord) : null;
+  const snap = await db.collection('trips')
+    .where('uid', '==', uid)
+    .orderBy('purchasedAt', 'desc')
+    .limit(1)
+    .get();
+  return snap.empty ? null : (snap.docs[0].data() as TripRecord);
 }
 
 export async function deleteUserData(uid: string): Promise<void> {
@@ -47,7 +51,10 @@ export async function deleteUserData(uid: string): Promise<void> {
   const batch = db.batch();
 
   batch.delete(db.collection('users').doc(uid));
-  batch.delete(db.collection('trips').doc(uid));
+
+  // Delete all trip records for this user.
+  const tripsSnap = await db.collection('trips').where('uid', '==', uid).get();
+  tripsSnap.docs.forEach(doc => batch.delete(doc.ref));
 
   // Remove device records linked to this user. Devices that were registered
   // anonymously (no userId field) are left alone — they won't receive auth-
@@ -79,6 +86,7 @@ export async function claimFreeTrip(
   if (user.freeTripClaimed) throw new Error('Free trip already claimed');
 
   const trip: TripRecord = {
+    uid,
     tripStart,
     tripEnd,
     purchasedAt: new Date().toISOString(),
@@ -86,13 +94,28 @@ export async function claimFreeTrip(
   };
 
   const batch = db.batch();
-  batch.set(db.collection('trips').doc(uid), trip);
+  batch.set(db.collection('trips').doc(), trip);
   batch.update(userRef, { freeTripClaimed: true });
   // Write the durable ledger entry — survives account deletion.
   batch.set(claimedRef, { uid, claimedAt: new Date().toISOString() });
   await batch.commit();
 
   return trip;
+}
+
+// Read-only validation — checks the code is valid without claiming it or
+// incrementing timesUsed. Used by the "Apply" step in the paywall UI.
+export async function checkPromoCode(code: string): Promise<void> {
+  const db = getFirestore();
+  const normalizedCode = code.trim().toUpperCase();
+  const codeSnap = await db.collection('promoCodes').doc(normalizedCode).get();
+
+  if (!codeSnap.exists) throw new Error('Invalid promo code');
+  const promo = codeSnap.data() as PromoCode;
+
+  if (!promo.active) throw new Error('This code is no longer active');
+  if (new Date(promo.expiresAt) < new Date()) throw new Error('This code has expired');
+  if (promo.timesUsed >= promo.maxUses) throw new Error('This code has been fully redeemed');
 }
 
 export async function validatePromoCode(
@@ -113,7 +136,16 @@ export async function validatePromoCode(
   if (new Date(promo.expiresAt) < new Date()) throw new Error('This code has expired');
   if (promo.timesUsed >= promo.maxUses) throw new Error('This code has been fully redeemed');
 
+  // Per-user guard — prevent the same user from redeeming the same code twice.
+  const existingSnap = await db.collection('trips')
+    .where('uid', '==', uid)
+    .where('promoCode', '==', normalizedCode)
+    .limit(1)
+    .get();
+  if (!existingSnap.empty) throw new Error('You have already used this promo code');
+
   const trip: TripRecord = {
+    uid,
     tripStart,
     tripEnd,
     purchasedAt: new Date().toISOString(),
@@ -122,7 +154,7 @@ export async function validatePromoCode(
   };
 
   const batch = db.batch();
-  batch.set(db.collection('trips').doc(uid), trip);
+  batch.set(db.collection('trips').doc(), trip);
   batch.update(codeRef, { timesUsed: promo.timesUsed + 1 });
   await batch.commit();
 

@@ -5,6 +5,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -26,7 +27,7 @@ import {
   purchaseUpdatedListener,
   requestPurchase,
 } from 'expo-iap';
-import { purchaseTrip, validatePromoCode } from '../api';
+import { checkPromoCode, purchaseTrip, validatePromoCode } from '../api';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
@@ -57,6 +58,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
   const defaultEnd = new Date(today);
   defaultEnd.setDate(today.getDate() + 2);
 
+  const scrollRef = useRef<ScrollView>(null);
   const rangeRef = useRef<TripDateRange>({
     tripStart: toYMD(today),
     tripEnd: toYMD(defaultEnd),
@@ -69,6 +71,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
   const [promoCode, setPromoCode] = useState('');
   const [promoLoading, setPromoLoading] = useState(false);
   const [promoError, setPromoError] = useState<string | null>(null);
+  const [validatedPromo, setValidatedPromo] = useState<string | null>(null);
 
   // Store getIdToken in a ref so the purchase listener (set up on mount)
   // always calls the latest version without needing to re-register.
@@ -137,7 +140,25 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     };
   }, [handlePurchaseSuccess]);
 
-  const handlePurchase = async () => {
+  const handleActivate = async () => {
+    if (validatedPromo) {
+      // Promo path: claim the validated code.
+      setPurchasing(true);
+      setPurchaseError(null);
+      try {
+        const token = await getIdToken();
+        if (!token) throw new Error('Not signed in');
+        await validatePromoCode(token, { code: validatedPromo, ...rangeRef.current });
+        await Promise.all([refetchUser(), refetchTrip()]);
+        onClose();
+      } catch (err) {
+        Alert.alert('Could not apply code', err instanceof Error ? err.message : 'Please try again.');
+        setPurchasing(false);
+      }
+      return;
+    }
+
+    // IAP path.
     if (Platform.OS !== 'ios') {
       Alert.alert('Not available', 'Purchases are only available on iOS.');
       return;
@@ -159,17 +180,17 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     }
   };
 
-  const handlePromoRedeem = async () => {
+  const handlePromoApply = async () => {
     const code = promoCode.trim();
     if (!code) return;
     setPromoLoading(true);
     setPromoError(null);
+    setValidatedPromo(null);
     try {
       const token = await getIdToken();
       if (!token) throw new Error('Not signed in');
-      await validatePromoCode(token, { code, ...rangeRef.current });
-      await Promise.all([refetchUser(), refetchTrip()]);
-      onClose();
+      await checkPromoCode(token, code);
+      setValidatedPromo(code);
     } catch (err) {
       setPromoError(err instanceof Error ? err.message : 'Invalid or expired code.');
     } finally {
@@ -180,6 +201,10 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
   const priceLabel = localizedPrice ?? '$10';
 
   return (
+    <KeyboardAvoidingView
+      style={styles.keyboardAvoid}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeBtn} hitSlop={12}>
@@ -187,7 +212,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.eyebrow}>Club 32 Access</Text>
         <Text style={styles.headline}>Unlock your trip</Text>
         <Text style={styles.sub}>
@@ -208,44 +233,63 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </View>
 
         <View style={styles.priceCard}>
-          <Text style={styles.price}>{priceLabel}</Text>
+          <Text style={[styles.price, validatedPromo ? styles.priceFree : null]}>
+            {validatedPromo ? 'Free' : priceLabel}
+          </Text>
           <Text style={styles.priceSub}>per trip · one-time</Text>
         </View>
 
         <TouchableOpacity
           style={[styles.purchaseBtn, purchasing && styles.purchaseBtnDisabled]}
-          onPress={() => void handlePurchase()}
+          onPress={() => void handleActivate()}
           disabled={purchasing}
           activeOpacity={0.85}
         >
           {purchasing
             ? <ActivityIndicator color={colors.textInverse} />
-            : <Text style={styles.purchaseBtnText}>Activate trip access</Text>}
+            : <Text style={styles.purchaseBtnText}>
+                {validatedPromo ? 'Activate free trip' : 'Activate trip access'}
+              </Text>}
         </TouchableOpacity>
 
         {purchaseError ? <Text style={styles.purchaseError}>{purchaseError}</Text> : null}
 
         <View style={styles.promoSection}>
           <Text style={styles.promoLabel}>Have a promo code?</Text>
-          <View style={styles.promoRow}>
-            <TextInput
-              style={styles.promoInput}
-              value={promoCode}
-              onChangeText={setPromoCode}
-              placeholder="Enter code"
-              placeholderTextColor={colors.textTertiary}
-              autoCapitalize="characters"
-              returnKeyType="done"
-              onSubmitEditing={() => void handlePromoRedeem()}
-            />
-            <TouchableOpacity
-              style={[styles.promoBtn, promoLoading && styles.promoBtnDisabled]}
-              onPress={() => void handlePromoRedeem()}
-              disabled={promoLoading}
-            >
-              <Text style={styles.promoBtnText}>Apply</Text>
-            </TouchableOpacity>
-          </View>
+          {validatedPromo ? (
+            <View style={styles.promoApplied}>
+              <Check size={14} color={colors.go} />
+              <Text style={styles.promoAppliedText}>Code applied — trip is free</Text>
+              <TouchableOpacity onPress={() => { setValidatedPromo(null); setPromoCode(''); }}>
+                <Text style={styles.promoRemove}>Remove</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <View style={styles.promoRow}>
+              <TextInput
+                style={styles.promoInput}
+                value={promoCode}
+                onChangeText={text => { setPromoCode(text); setPromoError(null); }}
+                placeholder="Enter code"
+                placeholderTextColor={colors.textTertiary}
+                autoCapitalize="characters"
+                returnKeyType="done"
+                onSubmitEditing={() => void handlePromoApply()}
+                onFocus={() => {
+                  setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 300);
+                }}
+              />
+              <TouchableOpacity
+                style={[styles.promoBtn, promoLoading && styles.promoBtnDisabled]}
+                onPress={() => void handlePromoApply()}
+                disabled={promoLoading}
+              >
+                {promoLoading
+                  ? <ActivityIndicator size="small" color={colors.textInverse} />
+                  : <Text style={styles.promoBtnText}>Apply</Text>}
+              </TouchableOpacity>
+            </View>
+          )}
           {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
         </View>
 
@@ -255,11 +299,13 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </Text>
       </ScrollView>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.bg },
+  keyboardAvoid: { flex: 1, backgroundColor: colors.bg },
+  container: { flex: 1 },
   header: {
     paddingHorizontal: spacing.base,
     paddingTop: spacing.sm,
@@ -388,6 +434,30 @@ const styles = StyleSheet.create({
   promoError: {
     ...typography.caption,
     color: colors.skip,
+  },
+  priceFree: {
+    color: colors.go,
+  },
+  promoApplied: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.go,
+    paddingHorizontal: spacing.base,
+    paddingVertical: 10,
+  },
+  promoAppliedText: {
+    ...typography.body,
+    color: colors.go,
+    flex: 1,
+  },
+  promoRemove: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    textDecorationLine: 'underline',
   },
   legal: {
     ...typography.caption,

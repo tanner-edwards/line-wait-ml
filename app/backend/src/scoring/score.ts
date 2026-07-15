@@ -163,7 +163,14 @@ export function scoreRide(ride: Ride): ScoreResult {
   } else if (isRapidDrop) {
     badge = 'go';
   } else if (score >= 2) {
-    badge = (projectedChange !== null && projectedChange.delta < -0.30) ? null : 'go';
+    // Suppress 'go' only when the projected future improvement is substantial in
+    // BOTH percentage (>30%) and absolute minutes (>=10 — same floor F3 uses for
+    // points). Pure-percentage dips on already-low waits don't justify suppression.
+    const projectedAbsDiff = lateAvg !== null ? Math.abs(lateAvg - earlyAvg) : 0;
+    const futureDipSuppressed = projectedChange !== null
+      && projectedChange.delta < -0.30
+      && projectedAbsDiff >= 10;
+    badge = futureDipSuppressed ? null : 'go';
   } else if (isRapidSpike || score <= -2) {
     badge = 'skip';
   } else {

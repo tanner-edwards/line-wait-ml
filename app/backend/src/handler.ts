@@ -41,7 +41,7 @@ import {
   TripDuration,
   UserResponse,
 } from './types';
-import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode } from './users';
+import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode } from './users';
 import { purchaseTrip } from './tripPurchase';
 import {
   DAILY_PARKS_VALUES,
@@ -397,6 +397,7 @@ type RouteKind =
   | { kind: 'user-trip-claim-free' }
   | { kind: 'user-trip-purchase' }
   | { kind: 'promo-validate' }
+  | { kind: 'promo-check' }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -435,6 +436,7 @@ function routeFromPath(
   if (method === 'GET') {
     if (path.endsWith('/v1/users/me')) return { kind: 'user-me' };
     if (path.endsWith('/v1/users/trip')) return { kind: 'user-trip' };
+    if (path.endsWith('/v1/promo/check')) return { kind: 'promo-check' };
     const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
     if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
   }
@@ -500,6 +502,10 @@ export async function handler(
 
   if (route.kind === 'promo-validate') {
     return handlePromoValidate(event);
+  }
+
+  if (route.kind === 'promo-check') {
+    return handlePromoCheck(event);
   }
 
   if (route.kind === 'device-register') {
@@ -1025,6 +1031,26 @@ async function handlePromoValidate(
       isValidationError ? 422 : 500,
       errorBody(isValidationError ? 'INVALID_PROMO' : 'INTERNAL_ERROR', message)
     );
+  }
+}
+
+async function handlePromoCheck(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  const code = event.queryStringParameters?.code;
+  if (!code || code.trim().length === 0) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'code query param is required'));
+  }
+
+  try {
+    await checkPromoCode(code);
+    return jsonResponse(200, { valid: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(422, errorBody('INVALID_PROMO', message));
   }
 }
 
