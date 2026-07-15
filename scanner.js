@@ -510,11 +510,72 @@ function buildPayload({ type, rideId, rideName, badge = null, currentWait = null
   };
 }
 
-// Sends a Web Push to the device's stored subscription. Returns
-// { sent, reason, expired? }. Failures don't throw — the caller still
-// writes the notification_log entry so cooldown applies (we don't want
-// to retry the same alert every tick when delivery is broken).
+// Expo push tokens look like ExponentPushToken[...] or ExpoPushToken[...].
+// Raw APNs device tokens (hex strings from getDevicePushTokenAsync) are NOT
+// supported — they require direct APNs delivery. Configure EAS (eas init)
+// to ensure the app always registers Expo-format tokens.
+function isExpoToken(token) {
+  return typeof token === 'string' &&
+    (token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken['));
+}
+
+// Sends via the Expo Push API (https://exp.host/--/api/v2/push/send).
+// No auth required for basic delivery. Returns { sent, reason, expired? }.
+async function sendExpoPush(device, payload) {
+  const { pushToken } = device;
+  if (!pushToken) return { sent: false, reason: 'no_expo_token' };
+  if (!isExpoToken(pushToken)) {
+    // Raw APNs token — can't deliver via Expo Push API. App needs EAS
+    // configured so getExpoPushTokenAsync() succeeds and returns an Expo token.
+    return { sent: false, reason: 'raw_apns_token_requires_eas' };
+  }
+  let res;
+  try {
+    res = await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: pushToken,
+        title: payload.title,
+        body: payload.body,
+        data: { rideId: payload.rideId, type: payload.type, badge: payload.badge },
+        sound: 'default',
+        ttl: 1800,
+      }),
+    });
+  } catch (err) {
+    return { sent: false, reason: err?.message ?? String(err) };
+  }
+  if (!res.ok) {
+    return { sent: false, reason: `expo_http_${res.status}` };
+  }
+  let json;
+  try { json = await res.json(); } catch { return { sent: false, reason: 'bad_response_json' }; }
+  const result = json?.data;
+  if (result?.status === 'error') {
+    const error = result?.details?.error;
+    if (error === 'DeviceNotRegistered') {
+      return { sent: false, reason: 'device_not_registered', expired: true };
+    }
+    return { sent: false, reason: error ?? 'expo_error' };
+  }
+  return { sent: true };
+}
+
+// Sends a push to the device. Routes on pushTokenType:
+//   'expo' → Expo Push API (APNs via Expo's service)
+//   'web'  → VAPID Web Push
+// Returns { sent, reason, expired? }. Failures don't throw — the caller
+// still writes notification_log so cooldown applies.
 async function sendPush(device, payload) {
+  if (device.pushTokenType === 'expo') {
+    return sendExpoPush(device, payload);
+  }
+  // Web Push path.
   if (!pushReady) return { sent: false, reason: 'vapid_not_configured' };
   if (!device.pushToken || device.pushTokenType !== 'web') {
     return { sent: false, reason: 'no_web_push_token' };

@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Club 32",
-    "slug": "club32",
+    "slug": "club-32",
     "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#3D7C65"
     },
     "ios": {
       "supportsTablet": true,
@@ -35,7 +35,7 @@
       "name": "Club 32",
       "shortName": "Club32",
       "themeColor": "#222222",
-      "backgroundColor": "#ffffff",
+      "backgroundColor": "#3D7C65",
       "display": "standalone",
       "orientation": "portrait"
     },
@@ -45,6 +45,12 @@
       "expo-apple-authentication",
       "@react-native-community/datetimepicker",
       "expo-iap"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "829fc8c6-6932-4edb-890d-39c2f8c693d5"
+      }
+    },
+    "owner": "club-32"
   }
 }
