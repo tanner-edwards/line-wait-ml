@@ -1,4 +1,6 @@
 import * as Notifications from 'expo-notifications';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import { NavigationContainer } from '@react-navigation/native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
@@ -49,33 +51,42 @@ export default function App() {
   if (!fontsLoaded) return null;
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer>
-        <AuthProvider>
-          <TripProvider>
-            <PersonaProvider>
-              <DailyContextProvider>
-                <DeviceProvider>
-                  <DebugModeProvider>
-                    <LocationProvider>
-                      <RideProvider>
-                        <NotificationDetailProvider>
-                          <RootNavigator />
-                          <NotificationHistorySheet />
-                          <RideDetailModal />
-                          <NotificationDeepLinkHandler />
-                          <FirstLaunchNotifPrompt />
-                          <LocationNotificationPrompt />
-                        </NotificationDetailProvider>
-                      </RideProvider>
-                    </LocationProvider>
-                  </DebugModeProvider>
-                </DeviceProvider>
-              </DailyContextProvider>
-            </PersonaProvider>
-          </TripProvider>
-        </AuthProvider>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <AuthProvider>
+            <TripProvider>
+              <PersonaProvider>
+                <DailyContextProvider>
+                  <DeviceProvider>
+                    <DebugModeProvider>
+                      <LocationProvider>
+                        <RideProvider>
+                          <NotificationDetailProvider>
+                            {/* BottomSheetModalProvider must live INSIDE all the
+                                app context providers: gorhom portals sheet content
+                                to this provider's host, so anything the sheets
+                                render (DetailBody → usePersona, etc.) needs the
+                                providers to be above this point in the tree. */}
+                            <BottomSheetModalProvider>
+                              <RootNavigator />
+                              <NotificationHistorySheet />
+                              <RideDetailModal />
+                              <NotificationDeepLinkHandler />
+                              <FirstLaunchNotifPrompt />
+                              <LocationNotificationPrompt />
+                            </BottomSheetModalProvider>
+                          </NotificationDetailProvider>
+                        </RideProvider>
+                      </LocationProvider>
+                    </DebugModeProvider>
+                  </DeviceProvider>
+                </DailyContextProvider>
+              </PersonaProvider>
+            </TripProvider>
+          </AuthProvider>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

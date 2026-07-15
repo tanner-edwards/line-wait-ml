@@ -8,15 +8,14 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { colors } from '../theme/tokens';
 import { DailyParks, ParkSlug, Ride } from '../types';
-import { Card } from './Card';
 import { SearchField } from './SearchField';
 import { Sheet } from './Sheet';
 
@@ -99,41 +98,42 @@ export function PickerSheet({
       sheetColor={colors.surface}
       testID="picker"
     >
-      <Text style={styles.scopeLabel}>{scopeTitle}</Text>
-      <View style={styles.searchWrap}>
-        <SearchField
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search rides…"
-          testID="picker-search"
-        />
-      </View>
-      {filteredRides.length === 0 ? (
-        <Text style={styles.emptyText}>
-          {query ? 'No rides match that search.' : 'No rides available yet.'}
-        </Text>
-      ) : (
-        <Card flush style={styles.listCard}>
-          <FlatList
-            data={filteredRides}
-            keyExtractor={r => r.id}
-            keyboardShouldPersistTaps="handled"
-            style={styles.rideList}
-            renderItem={({ item }) => (
-              <Pressable
-                style={styles.rideRow}
-                onPress={() => onSubmit(item.park, item.id)}
-                testID={`picker-ride-${item.id}`}
-              >
-                <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
-                <Text style={styles.rideLand}>
-                  {showParkSubtitle ? `${item.land} · ${PARK_SHORT[item.park]}` : item.land}
-                </Text>
-              </Pressable>
-            )}
-          />
-        </Card>
-      )}
+      <BottomSheetFlatList
+        data={filteredRides}
+        keyExtractor={r => r.id}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <>
+            <Text style={styles.scopeLabel}>{scopeTitle}</Text>
+            <View style={styles.searchWrap}>
+              <SearchField
+                value={query}
+                onChangeText={setQuery}
+                placeholder="Search rides…"
+                testID="picker-search"
+              />
+            </View>
+          </>
+        }
+        ListEmptyComponent={
+          <Text style={styles.emptyText}>
+            {query ? 'No rides match that search.' : 'No rides available yet.'}
+          </Text>
+        }
+        renderItem={({ item }) => (
+          <Pressable
+            style={styles.rideRow}
+            onPress={() => onSubmit(item.park, item.id)}
+            testID={`picker-ride-${item.id}`}
+          >
+            <Text style={styles.rideName} numberOfLines={1}>{item.name}</Text>
+            <Text style={styles.rideLand}>
+              {showParkSubtitle ? `${item.land} · ${PARK_SHORT[item.park]}` : item.land}
+            </Text>
+          </Pressable>
+        )}
+      />
     </Sheet>
   );
 }
@@ -150,13 +150,9 @@ const styles = StyleSheet.create({
   searchWrap: {
     marginBottom: 12,
   },
-  listCard: {
-    // Don't let the card grow to fill — let it size to its rows but allow
-    // its FlatList child to scroll if there are many.
-    flexShrink: 1,
-  },
-  rideList: {
-    flexGrow: 0,
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
   rideRow: {
     paddingVertical: 12,

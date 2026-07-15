@@ -13,3 +13,5 @@ CLAUDE.md
 samconfig.toml
 __pycache__/
 closure_events.csv
+models/*.txt
+models/*.json

@@ -8,12 +8,12 @@ import React from 'react';
 import { colors, typography } from '../theme/tokens';
 import {
   ActivityIndicator,
-  FlatList,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
 import { CircleCheck, OctagonX, Star, TrendingUp, Zap } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
@@ -38,49 +38,47 @@ export function NotificationHistorySheet(): React.ReactElement {
       title="Recent notifications"
       testID="notif-history"
     >
-      {error ? (
-        <Text style={styles.error}>{error}</Text>
-      ) : entries && entries.length > 0 ? (
-        <FlatList
-          data={entries}
-          keyExtractor={e => `${e.rideId}-${e.type}-${e.firedAt}`}
-          renderItem={({ item }) => (
-            <Row
-              entry={item}
-              onPress={() => {
-                openDetail({
-                  rideId: item.rideId,
-                  type: item.type,
-                  source: 'history',
-                  durationMs: item.durationMs ?? null,
-                  closedAt: item.closedAt ?? null,
-                });
-              }}
-            />
-          )}
-          ListHeaderComponent={
-            refreshing ? (
-              <View style={styles.refreshRow} testID="notif-history-refreshing">
-                <ActivityIndicator size="small" color={colors.textTertiary} />
-                <Text style={styles.refreshText}>Updating…</Text>
-              </View>
-            ) : null
-          }
-          ListFooterComponent={
-            <Text style={styles.footer}>Shows the last 2 hours of activity.</Text>
-          }
-          style={styles.list}
-        />
-      ) : refreshing ? (
-        <View style={styles.loading}>
-          <ActivityIndicator size="small" />
-        </View>
-      ) : (
-        <>
-          <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
+      <BottomSheetFlatList
+        data={entries ?? []}
+        keyExtractor={e => `${e.rideId}-${e.type}-${e.firedAt}`}
+        contentContainerStyle={styles.listContent}
+        renderItem={({ item }) => (
+          <Row
+            entry={item}
+            onPress={() => {
+              openDetail({
+                rideId: item.rideId,
+                type: item.type,
+                source: 'history',
+                durationMs: item.durationMs ?? null,
+                closedAt: item.closedAt ?? null,
+              });
+            }}
+          />
+        )}
+        ListHeaderComponent={
+          refreshing && entries && entries.length > 0 ? (
+            <View style={styles.refreshRow} testID="notif-history-refreshing">
+              <ActivityIndicator size="small" color={colors.textTertiary} />
+              <Text style={styles.refreshText}>Updating…</Text>
+            </View>
+          ) : null
+        }
+        ListEmptyComponent={
+          error ? (
+            <Text style={styles.error}>{error}</Text>
+          ) : refreshing ? (
+            <View style={styles.loading}>
+              <ActivityIndicator size="small" />
+            </View>
+          ) : (
+            <Text style={styles.empty}>No notifications in the last 2 hours.</Text>
+          )
+        }
+        ListFooterComponent={
           <Text style={styles.footer}>Shows the last 2 hours of activity.</Text>
-        </>
-      )}
+        }
+      />
     </Sheet>
   );
 }
@@ -126,7 +124,7 @@ function iconFor(entry: NotificationLogEntry): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
-  list: { flexGrow: 0 },
+  listContent: { paddingHorizontal: 16, flexGrow: 1 },
   refreshRow: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -5,11 +5,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import {
   AccessibilityNeed,
   Persona,
@@ -66,57 +66,45 @@ export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement
   const { persona, setPersona } = usePersona();
   const visible = field !== null && persona !== null;
 
+  // Draft lives at the top level so the pinned footer's Save button can commit
+  // it (the fields render inside a scroll view; the footer is a Sheet slot).
+  const [draft, setDraft] = useState<Persona | null>(persona);
+  useEffect(() => { setDraft(persona); }, [field, persona]);
+
+  const handleSave = async () => {
+    if (!draft) return;
+    await setPersona(draft);
+    onClose();
+  };
+
   return (
     <Sheet
       isOpen={visible}
       onClose={onClose}
+      size="tall"
       title={field ? TITLES[field] : ''}
       testID="persona-modal"
+      footer={
+        <View style={styles.footer}>
+          <Pressable onPress={onClose} style={styles.cancelButton} testID="persona-modal-cancel">
+            <Text style={styles.cancelText}>Cancel</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void handleSave()}
+            style={styles.saveButton}
+            testID="persona-modal-save"
+          >
+            <Text style={styles.saveText}>Save</Text>
+          </Pressable>
+        </View>
+      }
     >
-      {field && persona && (
-        <FieldEditor
-          field={field}
-          persona={persona}
-          onSave={async next => {
-            await setPersona(next);
-            onClose();
-          }}
-          onCancel={onClose}
-        />
-      )}
+      <BottomSheetScrollView contentContainerStyle={styles.bodyContent}>
+        {field && draft
+          ? renderField(field, draft, setDraft as React.Dispatch<React.SetStateAction<Persona>>)
+          : null}
+      </BottomSheetScrollView>
     </Sheet>
-  );
-}
-
-interface EditorProps {
-  field: PersonaField;
-  persona: Persona;
-  onSave: (next: Persona) => Promise<void>;
-  onCancel: () => void;
-}
-
-function FieldEditor({ field, persona, onSave, onCancel }: EditorProps) {
-  const [draft, setDraft] = useState<Persona>(persona);
-  useEffect(() => { setDraft(persona); }, [field, persona]);
-
-  return (
-    <>
-      <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-        {renderField(field, draft, setDraft)}
-      </ScrollView>
-      <View style={styles.footer}>
-        <Pressable onPress={onCancel} style={styles.cancelButton} testID="persona-modal-cancel">
-          <Text style={styles.cancelText}>Cancel</Text>
-        </Pressable>
-        <Pressable
-          onPress={() => void onSave(draft)}
-          style={styles.saveButton}
-          testID="persona-modal-save"
-        >
-          <Text style={styles.saveText}>Save</Text>
-        </Pressable>
-      </View>
-    </>
   );
 }
 
@@ -286,19 +274,20 @@ function MustDoField({
 }
 
 const styles = StyleSheet.create({
-  body: {
-    maxHeight: '70%',
-  },
   bodyContent: {
-    paddingBottom: 12,
+    paddingHorizontal: 16,
+    paddingBottom: 24,
   },
   footer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     gap: 12,
     paddingTop: 12,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    backgroundColor: colors.bg,
   },
   cancelButton: {
     paddingHorizontal: 16,

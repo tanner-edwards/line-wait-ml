@@ -16,7 +16,8 @@
 // deep-link via NotificationDetailContext.
 
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { AlertTriangle, X } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Sheet } from './Sheet';
@@ -44,10 +45,6 @@ import { TrendCaption } from './ride-detail/TrendCaption';
 import { ClosureTile } from './ride-detail/ClosureTile';
 import { RideAlertHistory } from './ride-detail/RideAlertHistory';
 import { FullDayForecast } from './ride-detail/FullDayForecast';
-
-// How far the user must pull the sheet content past its top edge before a
-// release dismisses the sheet. Tuned to feel deliberate but not stiff.
-const OVERSCROLL_DISMISS_PX = 90;
 
 const WALK_SPEED_MPM = 83;
 function walkPathMultiplier(m: number) {
@@ -98,7 +95,6 @@ export function RideDetailModal(): React.ReactElement {
           notifClosedAt={active?.closedAt ?? null}
           restrictionNote={active?.restrictionNote ?? null}
           oneLiner={active?.oneLiner ?? null}
-          onRequestClose={closeDetail}
         />
       ) : active ? (
         <View style={styles.fallbackBlock}>
@@ -119,7 +115,6 @@ function DetailBody({
   notifClosedAt,
   restrictionNote,
   oneLiner,
-  onRequestClose,
 }: {
   ride: Ride;
   parkName: string | null;
@@ -128,7 +123,6 @@ function DetailBody({
   notifClosedAt: string | null;
   restrictionNote: string | null;
   oneLiner: string | null;
-  onRequestClose: () => void;
 }): React.ReactElement {
   const { persona, setPersona } = usePersona();
   const { debugMode } = useDebugMode();
@@ -206,18 +200,7 @@ function DetailBody({
   const rideNotifs = useRideNotificationHistory(deviceId ?? null, ride.id);
 
   return (
-    <ScrollView
-      contentContainerStyle={styles.body}
-      // Pull-down-to-dismiss: when the user drags the content down past the
-      // top edge (overscroll → negative contentOffset.y) and releases beyond
-      // the threshold, close the sheet. This is the reliable pure-RN path —
-      // a JS PanResponder can't win a drag away from a native ScrollView.
-      onScrollEndDrag={e => {
-        if (e.nativeEvent.contentOffset.y <= -OVERSCROLL_DISMISS_PX) {
-          onRequestClose();
-        }
-      }}
-    >
+    <BottomSheetScrollView contentContainerStyle={styles.body}>
       <Tile>
         <RideDetailHeader
           rideName={ride.name}
@@ -319,12 +302,12 @@ function DetailBody({
           />
         </Tile>
       ) : null}
-    </ScrollView>
+    </BottomSheetScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  body: { paddingTop: 2, paddingBottom: 48 },
+  body: { paddingTop: 2, paddingBottom: 48, paddingHorizontal: 16 },
 
   restrictionBanner: {
     flexDirection: 'row',

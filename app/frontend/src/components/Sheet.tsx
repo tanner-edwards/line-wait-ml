@@ -1,24 +1,32 @@
-// Shared bottom-sheet primitive. PanResponder is wired to the grabber row only
-// so FlatList / ScrollView children scroll without gesture conflict on web.
-// Size presets map to fixed heights — no drag-between-snap-points.
+// Shared bottom-sheet primitive, backed by @gorhom/bottom-sheet v5
+// (react-native-reanimated + react-native-gesture-handler). The drag runs on
+// the native/UI thread, so the whole sheet body follows the finger and
+// dismisses with real velocity physics — a plain PanResponder can't wrestle a
+// drag away from a native ScrollView, which is why the old implementation
+// could only dismiss from the grab handle.
 //
-// TODO (native): when moving to a native build, swap this implementation for
-// @gorhom/bottom-sheet v5. The API here is intentionally stable — call sites
-// won't need to change (just update internals + wire GestureHandlerRootView
-// and BottomSheetModalProvider at the app root).
+// The public API (SheetProps) is intentionally unchanged from the old
+// PanResponder version so call sites don't move. Requires
+// <GestureHandlerRootView> + <BottomSheetModalProvider> at the app root
+// (wired in App.tsx).
+//
+// Scrollable children MUST use the gorhom scroll primitives
+// (BottomSheetScrollView / BottomSheetFlatList) for drag-to-dismiss to
+// coordinate with scrolling. A plain RN ScrollView/FlatList still renders and
+// scrolls, but body-drag-to-dismiss won't work until it's swapped.
 
-import React, { useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import {
-  Animated,
-  Modal,
-  PanResponder,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+  BottomSheetModal,
+  BottomSheetView,
+  BottomSheetBackdrop,
+  BottomSheetBackdropProps,
+  BottomSheetFooter,
+  BottomSheetFooterProps,
+} from '@gorhom/bottom-sheet';
 import { X } from 'lucide-react-native';
-import { colors, radius, shadows, spacing } from '../theme/tokens';
+import { colors, spacing } from '../theme/tokens';
 
 export interface SheetProps {
   isOpen: boolean;
@@ -30,17 +38,30 @@ export interface SheetProps {
   /** Override the sheet surface colour. Defaults to colors.bg (cream). */
   sheetColor?: string;
   /**
-   * Fixed-height preset. Omit to size the sheet to its content (max 90%).
-   * half ≈ 50%  |  tall ≈ 85%
-   * No snap-between-sizes — each preset is a single fixed height.
+   * Fixed-height preset. Omit to size the sheet to its content (dynamic).
+   * half ≈ 50%  |  tall ≈ 85%  |  xtall ≈ 86%
    */
   size?: 'half' | 'tall' | 'xtall';
   title?: string;
   /** Replaces the default close ✕ button when provided. */
   headerRight?: React.ReactNode;
+  /**
+   * Pinned footer rendered below the content (stays put while the body
+   * scrolls, and rides above the keyboard). Use for action rows like
+   * Cancel/Save.
+   */
+  footer?: React.ReactNode;
   children: React.ReactNode;
   testID?: string;
 }
+
+const SNAP_FOR_SIZE: Record<NonNullable<SheetProps['size']>, string> = {
+  half: '50%',
+  tall: '85%',
+  xtall: '86%',
+};
+
+
 
 export function Sheet({
   isOpen,
@@ -51,60 +72,67 @@ export function Sheet({
   size,
   title,
   headerRight,
+  footer,
   children,
   testID,
 }: SheetProps): React.ReactElement {
-  const translateY = useRef(new Animated.Value(0)).current;
+  const ref = useRef<BottomSheetModal>(null);
 
-  // Refs so PanResponder (created once) always calls the latest callbacks.
-  const onCloseRef = useRef(onClose);
-  const dismissableRef = useRef(dismissable);
-  onCloseRef.current = onClose;
-  dismissableRef.current = dismissable;
+  // Bridge the declarative `isOpen` prop to gorhom's imperative
+  // present()/dismiss(). `presented` tracks whether the sheet is currently
+  // shown so we only act on real transitions (never dismiss a sheet that was
+  // never presented — doing so poisons gorhom's internal state). `isOpenRef`
+  // lets onDismiss tell a user-initiated close (parent still thinks it's open
+  // → propagate via onClose) from a programmatic one (parent already closed
+  // it → don't double-fire).
+  const presented = useRef(false);
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
 
   useEffect(() => {
-    if (isOpen) translateY.setValue(0);
-  }, [isOpen, translateY]);
+    if (isOpen && !presented.current) {
+      presented.current = true;
+      ref.current?.present();
+    } else if (!isOpen && presented.current) {
+      presented.current = false;
+      ref.current?.dismiss();
+    }
+  }, [isOpen]);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      // Bubble phase — only wins on non-scrolling card areas (title, padding).
-      // The body ScrollView keeps its own touches; body-drag dismissal is
-      // handled via overscroll (see requestOverscrollClose below).
-      onMoveShouldSetPanResponder: (_, gs) =>
-        gs.dy > 5 && gs.dy > Math.abs(gs.dx),
-      onPanResponderMove: (_, gs) => {
-        if (gs.dy > 0) translateY.setValue(gs.dy);
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (dismissableRef.current && (gs.dy > 40 || gs.vy > 0.4)) {
-          translateY.setValue(0);
-          onCloseRef.current();
-        } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
+  const handleDismiss = useCallback(() => {
+    presented.current = false;
+    // Only propagate when the parent still believes it's open — that's a
+    // user swipe/backdrop dismiss. Programmatic closes already set isOpen=false.
+    if (isOpenRef.current) onClose();
+  }, [onClose]);
 
-  // Separate PanResponder for the grabber row — same dismiss logic but
-  // always active there regardless of what the body ScrollView is doing.
-  const grabberPan = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => true,
-      onPanResponderMove: (_, gs) => {
-        if (gs.dy > 0) translateY.setValue(gs.dy);
-      },
-      onPanResponderRelease: (_, gs) => {
-        if (dismissableRef.current && (gs.dy > 40 || gs.vy > 0.4)) {
-          translateY.setValue(0);
-          onCloseRef.current();
-        } else {
-          Animated.spring(translateY, { toValue: 0, useNativeDriver: true }).start();
-        }
-      },
-    })
-  ).current;
+  const snapPoints = useMemo(
+    () => (size ? [SNAP_FOR_SIZE[size]] : undefined),
+    [size],
+  );
+
+  const renderFooter = useCallback(
+    (props: BottomSheetFooterProps) => (
+      <BottomSheetFooter {...props}>{footer}</BottomSheetFooter>
+    ),
+    [footer],
+  );
+
+  const renderBackdrop = useCallback(
+    (props: BottomSheetBackdropProps) => (
+      <BottomSheetBackdrop
+        {...props}
+        appearsOnIndex={0}
+        disappearsOnIndex={-1}
+        pressBehavior={dismissable ? 'close' : 'none'}
+        opacity={backdropColor === 'transparent' ? 0 : 0.4}
+        style={[props.style, backdropColor && backdropColor !== 'transparent'
+          ? { backgroundColor: backdropColor }
+          : undefined]}
+      />
+    ),
+    [dismissable, backdropColor],
+  );
 
   const rightSlot = headerRight ?? (dismissable ? (
     <Pressable
@@ -116,81 +144,65 @@ export function Sheet({
     </Pressable>
   ) : null);
 
-  return (
-    <Modal
-      visible={isOpen}
-      transparent
-      animationType="slide"
-      onRequestClose={dismissable ? onClose : () => {}}
-    >
-      <View style={[styles.backdrop, backdropColor ? { backgroundColor: backdropColor } : undefined]} testID={testID}>
-        {/* Absolute-fill Pressable sits behind the card. Taps on the empty
-            backdrop area reach it; taps on the card don't (card is on top). */}
-        {dismissable ? (
-          <Pressable
-            style={StyleSheet.absoluteFill}
-            onPress={onClose}
-            testID={testID ? `${testID}-backdrop` : undefined}
-          />
-        ) : null}
-        <Animated.View
-          style={[
-            styles.card,
-            size === 'half'  && styles.sizeHalf,
-            size === 'tall'  && styles.sizeTall,
-            size === 'xtall' && styles.sizeXTall,
-            !size && styles.sizeAuto,
-            { transform: [{ translateY }] },
-            sheetColor ? { backgroundColor: sheetColor } : undefined,
-          ]}
-          {...panResponder.panHandlers}
-        >
-          {/* Grabber row doubles as the close-button row — pill stays centered
-              between two equal flex:1 sides; right side holds the dismiss button. */}
-          <View style={styles.grabberRow} {...grabberPan.panHandlers}>
-            <View style={styles.grabberSide} />
-            <View style={styles.grabberPill} />
-            <View style={styles.grabberSide}>{rightSlot}</View>
+  // Grabber + optional title live in the (draggable) handle, so the title
+  // stays pinned above scrolling content.
+  const renderHandle = useCallback(
+    () => (
+      <View>
+        <View style={styles.grabberRow}>
+          <View style={styles.grabberSide} />
+          <View style={styles.grabberPill} />
+          <View style={styles.grabberSide}>{rightSlot}</View>
+        </View>
+        {title ? (
+          <View style={styles.titleRow}>
+            <Text style={styles.title}>{title}</Text>
           </View>
-          {title ? (
-            <View style={styles.titleRow}>
-              <Text style={styles.title}>{title}</Text>
-            </View>
-          ) : null}
-          {children}
-        </Animated.View>
+        ) : null}
       </View>
-    </Modal>
+    ),
+    [rightSlot, title],
+  );
+
+  return (
+    <BottomSheetModal
+      ref={ref}
+      snapPoints={snapPoints}
+      enableDynamicSizing={!size}
+      enablePanDownToClose={dismissable}
+      keyboardBehavior="interactive"
+      keyboardBlurBehavior="restore"
+      onDismiss={handleDismiss}
+      handleComponent={renderHandle}
+      backdropComponent={renderBackdrop}
+      footerComponent={footer ? renderFooter : undefined}
+      backgroundStyle={{ backgroundColor: sheetColor ?? colors.bg }}
+    >
+      {/* Fixed-height sheets: render the child scroll container
+          (BottomSheetScrollView / BottomSheetFlatList) directly so gorhom can
+          coordinate its scrolling with the drag gesture — wrapping it in a
+          BottomSheetView breaks scroll. Those call sites own their horizontal
+          padding. Dynamic (content-height) sheets wrap in a padded
+          BottomSheetView so gorhom can measure them. */}
+      {size ? (
+        children
+      ) : (
+        <BottomSheetView style={styles.contentAuto}>{children}</BottomSheetView>
+      )}
+    </BottomSheetModal>
   );
 }
 
 const styles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.4)',
-    justifyContent: 'flex-end',
-  },
-  dismissArea: { flex: 1 },
-  card: {
-    // Sheets use the cream page-bg so white card-tiles inside (RideDetail
-    // Tiles, DailyParkSheet rows, etc.) read as elevated surfaces, matching
-    // the rest of the app's "cream background, white cards" rhythm.
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: radius.sheet,
-    borderTopRightRadius: radius.sheet,
+  contentAuto: {
     paddingHorizontal: spacing.base,
     paddingBottom: spacing.xxl,
-    ...shadows.sheet,
   },
-  sizeHalf:  { height: '50%' },
-  sizeTall:  { height: '85%' },
-  sizeXTall: { height: '86%' },
-  sizeAuto:  { maxHeight: '90%' },
   grabberRow: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingTop: spacing.md,
-    paddingBottom: 0,
+    paddingHorizontal: spacing.base,
   },
   grabberSide: {
     flex: 1,
@@ -204,6 +216,8 @@ const styles = StyleSheet.create({
   },
   titleRow: {
     marginBottom: spacing.md,
+    paddingHorizontal: spacing.base,
+    marginTop: spacing.md,
   },
   title: {
     fontSize: 18,
