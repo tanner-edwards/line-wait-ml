@@ -128,11 +128,7 @@ function buildDisplaySlots(
 }
 
 function findDefaultSelection(slots: DisplaySlot[], currentHourStart: number): number | null {
-  // Always open on the current hour so the dot and the detail card are in sync.
-  // Fall back to the next trough if there's no current-hour slot (e.g. park is closed).
-  const currentSlot = slots.find(s => s.hourStart === currentHourStart);
-  const nextTrough  = slots.find(s => s.hourStart >  currentHourStart && s.classification === 'trough');
-  return currentSlot?.hourStart ?? nextTrough?.hourStart ?? null;
+  return slots.find(s => s.hourStart > currentHourStart && s.classification === 'trough')?.hourStart ?? null;
 }
 
 function barColor(cls: Classification, isPast: boolean): string {
@@ -223,7 +219,7 @@ export function FullDayForecast({ fullDayForecast, rideName }: Props): React.Rea
       <View style={styles.barsRow}>
         {displaySlots.map(slot => {
           const barH     = Math.max(MIN_BAR_H, Math.round((slot.wait / dayMax) * CHART_H));
-          const color    = barColor(slot.classification, slot.isPast);
+          const color    = barColor(slot.classification, slot.isPast || slot.isCurrent);
           const isSelected = slot.hourStart === selectedHour;
 
           const selectionColor = slot.classification === 'trough' ? BAR_TROUGH
@@ -235,6 +231,7 @@ export function FullDayForecast({ fullDayForecast, rideName }: Props): React.Rea
               key={slot.hourStart}
               style={styles.barColumn}
               onPress={() => handleBarPress(slot)}
+              disabled={slot.isPast || slot.isCurrent}
               accessibilityRole="button"
               accessibilityLabel={`${formatBestWindowLabel(slot.bestSlotStart)}: ~${slot.wait} min predicted`}
             >
