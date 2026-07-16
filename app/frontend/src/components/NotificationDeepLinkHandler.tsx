@@ -1,4 +1,4 @@
-// Non-rendering component that listens for two notification-tap signals:
+// Non-rendering component that listens for three notification-tap signals:
 //
 //   1. On launch: `?notif=<rideId>__<type>` in the URL (the service worker
 //      opens the app with this query string when the user taps an OS
@@ -7,11 +7,16 @@
 //      same rideId/type pair (the user tapped an OS notification while
 //      the app tab was already open — the SW focuses the tab and posts
 //      the message instead of reopening).
+//   3. Native iOS/Android: Expo's addNotificationResponseReceivedListener
+//      fires when the user taps an OS notification while the app is in the
+//      background. Payload data comes from scanner.js sendExpoPush.
 //
-// Both pathways resolve to the same NotificationDetailContext.openDetail
+// All three pathways resolve to the same NotificationDetailContext.openDetail
 // call, which lifts the modal at the root.
 
 import { useEffect } from 'react';
+import { Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { NotificationKind } from '../types';
 import { logInfo, logWarn } from '../utils/logger';
@@ -75,6 +80,29 @@ export function NotificationDeepLinkHandler(): null {
     navigator.serviceWorker.addEventListener('message', handler);
     return () => navigator.serviceWorker.removeEventListener('message', handler);
   }, [openDetail, openHistorySheet]);
+
+  // 3. Native push tap (iOS/Android only) — Expo notification response listener.
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+      const data = response.notification.request.content.data as {
+        rideId?: string;
+        type?: string;
+      } | null;
+      logInfo(`deeplink/native: tap received rideId="${data?.rideId ?? ''}" type="${data?.type ?? ''}"`, 'deeplink');
+      if (!data?.rideId) {
+        logWarn('deeplink/native: notification tap missing rideId', 'deeplink');
+        return;
+      }
+      const type = (VALID_KINDS as readonly string[]).includes(data.type ?? '')
+        ? (data.type as NotificationKind)
+        : null;
+      openDetail({ rideId: data.rideId, type, source: 'deeplink' });
+    });
+
+    return () => subscription.remove();
+  }, [openDetail]);
 
   return null;
 }
