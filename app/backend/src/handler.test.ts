@@ -7,6 +7,7 @@ import type {
   ErrorResponse,
   ParkData,
   ParkError,
+  RideMetadata,
   ThemeparksLiveResponse,
 } from './types';
 
@@ -26,10 +27,10 @@ jest.mock('./recentHistory', () => ({
 // ride_metadata is now an allowlist — rides absent from it are filtered
 // out of /v0/waits. Tests need a populated map for the fixture ride IDs.
 jest.mock('./recommendations/rideMetadata', () => {
-  const map = new Map<string, { rideId: string; parkId: string; name: string; lat: number | null; lng: number | null; source: 'manual'; tracksWaitTime?: boolean }>([
-    ['9167db1d-e5e7-46da-a07f-ae30a87bc4c4', { rideId: '9167db1d-e5e7-46da-a07f-ae30a87bc4c4', parkId: 'dlr', name: 'Hyperspace Mountain', lat: null, lng: null, source: 'manual' }],
-    ['c23af6ba-8515-406a-8a48-d0818ba0bfc9', { rideId: 'c23af6ba-8515-406a-8a48-d0818ba0bfc9', parkId: 'dlr', name: "Peter Pan's Flight", lat: null, lng: null, source: 'manual' }],
-    ['c60c768b-3461-465c-8f4f-b44b087506fc', { rideId: 'c60c768b-3461-465c-8f4f-b44b087506fc', parkId: 'dca', name: 'Radiator Springs Racers', lat: null, lng: null, source: 'manual' }],
+  const map = new Map<string, RideMetadata>([
+    ['9167db1d-e5e7-46da-a07f-ae30a87bc4c4', { rideId: '9167db1d-e5e7-46da-a07f-ae30a87bc4c4', parkId: 'dlr', name: 'Hyperspace Mountain', lat: null, lng: null, source: 'manual', thrillLevel: 4, heightMinIn: 40, categories: ['iconic', 'classic'] }],
+    ['c23af6ba-8515-406a-8a48-d0818ba0bfc9', { rideId: 'c23af6ba-8515-406a-8a48-d0818ba0bfc9', parkId: 'dlr', name: "Peter Pan's Flight", lat: null, lng: null, source: 'manual', thrillLevel: 1, heightMinIn: null, categories: ['iconic', 'classic'] }],
+    ['c60c768b-3461-465c-8f4f-b44b087506fc', { rideId: 'c60c768b-3461-465c-8f4f-b44b087506fc', parkId: 'dca', name: 'Radiator Springs Racers', lat: null, lng: null, source: 'manual', thrillLevel: 3, heightMinIn: 40, pregnancyAdvisory: true, transferRequired: true, categories: ['iconic', 'immersive'] }],
   ]);
   return {
     ensureRideMetadataLoaded: jest.fn().mockResolvedValue(map),
@@ -122,8 +123,8 @@ describe('handler — CORS headers', () => {
     const result = await handler(buildEvent('/v0/waits/disneyland'));
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
-    expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type');
-    expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, POST, OPTIONS');
+    expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type, authorization');
+    expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, POST, DELETE, OPTIONS');
   });
 
   it('includes CORS headers on a 401 response', async () => {
@@ -216,6 +217,28 @@ describe('handler — per-park endpoint', () => {
       status: 'CLOSED',
       currentWait: null,
     });
+  });
+
+  it('resolves persona categories from metadata heuristics + hand-tags and emits raw scoring fields', async () => {
+    const dl = JSON.parse((await handler(buildEvent('/v0/waits/disneyland'))).body) as ParkData;
+    const dca = JSON.parse((await handler(buildEvent('/v0/waits/california-adventure'))).body) as ParkData;
+
+    // thrillLevel 4 → 'thrills'; hand-tags iconic→'first-time', classic→'classics'.
+    const space = dl.rides.find(r => r.name === 'Hyperspace Mountain')!;
+    expect(space.categories).toEqual(expect.arrayContaining(['thrills', 'classics', 'first-time']));
+    expect(space.categories).not.toContain('kid-favorites');
+    expect(space).toMatchObject({ thrillLevel: 4, heightMinIn: 40 });
+
+    // thrillLevel 1 + no height min → 'kid-favorites'; no 'thrills'.
+    const peterPan = dl.rides.find(r => r.name === "Peter Pan's Flight")!;
+    expect(peterPan.categories).toEqual(expect.arrayContaining(['kid-favorites', 'classics', 'first-time']));
+    expect(peterPan.categories).not.toContain('thrills');
+
+    // thrillLevel 3 (not thrills) + immersive/iconic hand-tags; raw flags passthrough.
+    const radiator = dca.rides.find(r => r.name === 'Radiator Springs Racers')!;
+    expect(radiator.categories).toEqual(expect.arrayContaining(['immersive', 'first-time']));
+    expect(radiator.categories).not.toContain('thrills');
+    expect(radiator).toMatchObject({ pregnancyAdvisory: true, transferRequired: true });
   });
 
   it('attaches a well-formed score object to every ride (Slice A — scoring moved to backend)', async () => {

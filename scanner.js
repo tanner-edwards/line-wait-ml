@@ -454,7 +454,9 @@ async function loadArmedDevices(db) {
     // Skip devices whose trip has ended. Devices without a tripEnd are legacy
     // records — let them through so existing behavior is unchanged.
     if (data.tripEnd && data.tripEnd < todayPT) return;
-    list.push(data);
+    // Guarantee deviceId is always present — some older docs were written
+    // before the field was added to upsertDevice's create block.
+    list.push({ ...data, deviceId: data.deviceId ?? doc.id });
   });
   return list;
 }

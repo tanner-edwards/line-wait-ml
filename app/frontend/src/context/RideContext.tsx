@@ -25,6 +25,10 @@ interface RideContextValue {
   error: string | null;
   loading: boolean;
   refreshing: boolean;
+  /** True while a silent auto-refresh (10-min interval / foreground) is in
+   *  flight. Distinct from `refreshing`, which is the user's pull-to-refresh.
+   *  Drives the "updating" spinner on the ride detail sheet. */
+  backgroundRefreshing: boolean;
   lastRefreshedAt: string | null;
   refresh: (mode: 'user' | 'auto' | 'initial', at?: string) => Promise<void>;
   /** rideId → Ride lookup; used by the Recommendations screen to render rec cards
@@ -40,6 +44,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const lastFetchedAtMs = useRef<number>(0);
 
@@ -47,6 +52,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     async (mode: 'user' | 'auto' | 'initial', at?: string) => {
       if (mode === 'initial') setLoading(true);
       if (mode === 'user') setRefreshing(true);
+      if (mode === 'auto') setBackgroundRefreshing(true);
       const fetchedAt = new Date().toISOString();
       try {
         const fresh = await fetchWaits(at);
@@ -67,6 +73,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       } finally {
         setLoading(false);
         setRefreshing(false);
+        setBackgroundRefreshing(false);
       }
     },
     []
@@ -112,6 +119,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     error,
     loading,
     refreshing,
+    backgroundRefreshing,
     lastRefreshedAt,
     refresh,
     ridesById,

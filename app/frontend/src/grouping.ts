@@ -1,4 +1,5 @@
-import { CombinedResponse, ParkData, ParkError, Ride, isParkError } from './types';
+import { CombinedResponse, ParkData, ParkError, Persona, Ride, isParkError } from './types';
+import { personaScore } from './personaSort';
 
 export type ListItem =
   | { kind: 'park-header'; key: string; park: string; errored: boolean }
@@ -119,7 +120,8 @@ export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: 
 export function flattenSorted(
   response: CombinedResponse,
   sortBy: SortBy,
-  origin: { lat: number; lng: number } | null
+  origin: { lat: number; lng: number } | null,
+  persona: Persona | null = null
 ): ListItem[] {
   const items: ListItem[] = [];
 
@@ -142,6 +144,10 @@ export function flattenSorted(
         // Primary: badge rank.
         const diff = badgeRank(a.score?.badge) - badgeRank(b.score?.badge);
         if (diff !== 0) return diff;
+        // Persona: personalize within the opportunity tier (higher score first).
+        // No-op for a null/empty persona, preserving the non-personalized order.
+        const ps = personaScore(b, persona) - personaScore(a, persona);
+        if (ps !== 0) return ps;
         // Secondary: distance (if we have a fix) or land name.
         if (origin) {
           const aDist = a.lat != null && a.lng != null ? haversineMeters(origin.lat, origin.lng, a.lat, a.lng) : Infinity;

@@ -16,7 +16,7 @@
 // deep-link via NotificationDetailContext.
 
 import React, { useMemo, useState } from 'react';
-import { Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { AlertTriangle, X } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
@@ -61,7 +61,7 @@ function walkMinsBetween(
 
 export function RideDetailModal(): React.ReactElement {
   const { active, closeDetail, dismissAll } = useNotificationDetail();
-  const { ridesById, data } = useRides();
+  const { ridesById, data, backgroundRefreshing } = useRides();
   const { coords } = useLocation();
 
   const ride = active ? ridesById.get(active.rideId) ?? null : null;
@@ -79,6 +79,11 @@ export function RideDetailModal(): React.ReactElement {
       onClose={closeDetail}
       size="xtall"
       backdropColor={active?.source === 'history' ? 'transparent' : undefined}
+      headerLeft={
+        backgroundRefreshing ? (
+          <ActivityIndicator size="small" color={colors.textSecondary} testID="ride-detail-refreshing" />
+        ) : null
+      }
       headerRight={
         <Pressable onPress={dismissAll} hitSlop={12} testID="ride-detail-dismiss" style={styles.closeBtn}>
           <X size={18} color={colors.textSecondary} />
@@ -129,6 +134,7 @@ function DetailBody({
   const { deviceId } = useDevice();
   const { hasActiveTrip } = useTrip();
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [reminderSet, setReminderSet] = useState(false);
 
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
@@ -146,18 +152,33 @@ function DetailBody({
     void setPersona({ ...persona, mustDoRideIds: next });
   };
 
+  // Best-guess reopen timestamp: ML prediction wins; fall back to
+  // now + remaining break estimate when the ML hasn't produced one.
+  const reopenAt: string | null = ride.predictedReopenAt ?? (() => {
+    const p = ride.closureProfile;
+    if (!p || p.confidenceLevel === 'suppressed') return null;
+    const remainingMs = (p.breakEstimateMinutes - p.elapsedMinutes) * 60_000;
+    if (remainingMs <= 0) return null;
+    return new Date(Date.now() + remainingMs).toISOString();
+  })();
+
   const handleNotifyReopen = async () => {
-    if (!ride.predictedReopenAt) return;
-    const result = await scheduleReopenReminder(ride.name, ride.predictedReopenAt);
+    if (!reopenAt) return;
+    const result = await scheduleReopenReminder(ride.name, reopenAt);
     switch (result) {
       case 'scheduled':
+        setReminderSet(true);
         Alert.alert('Reminder set', `We'll notify you when ${ride.name} is about to reopen.`, [{ text: 'OK' }]);
         break;
       case 'denied':
         Alert.alert('Notifications off', 'Enable notifications for Club 32 in Settings to use reminders.', [{ text: 'OK' }]);
         break;
       case 'past':
+        setReminderSet(true);
         Alert.alert('Window may have passed', `The predicted reopen window for ${ride.name} may have already come and gone. Keep an eye on it.`, [{ text: 'OK' }]);
+        break;
+      case 'unsupported':
+        setReminderSet(true);
         break;
       // 'unsupported' (web) — no-op, button shouldn't appear on web
     }
@@ -240,8 +261,9 @@ function DetailBody({
           isPaid={hasActiveTrip}
           rideClosedAt={ride.closedAt ?? null}
           closureProfile={ride.closureProfile ?? null}
-          predictedReopenAt={ride.predictedReopenAt ?? null}
+          predictedReopenAt={reopenAt}
           onNotifyReopen={handleNotifyReopen}
+          reminderSet={reminderSet}
           onUnlock={() => setPaywallOpen(true)}
         />
       ) : null}

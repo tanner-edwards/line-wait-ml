@@ -45,6 +45,9 @@ export interface SheetProps {
   title?: string;
   /** Replaces the default close ✕ button when provided. */
   headerRight?: React.ReactNode;
+  /** Optional content pinned to the left of the grab handle (e.g. a refresh
+   *  spinner). Lives in the non-scrolling handle, so it never shifts the body. */
+  headerLeft?: React.ReactNode;
   /**
    * Pinned footer rendered below the content (stays put while the body
    * scrolls, and rides above the keyboard). Use for action rows like
@@ -72,6 +75,7 @@ export function Sheet({
   size,
   title,
   headerRight,
+  headerLeft,
   footer,
   children,
   testID,
@@ -150,7 +154,7 @@ export function Sheet({
     () => (
       <View>
         <View style={styles.grabberRow}>
-          <View style={styles.grabberSide} />
+          <View style={styles.grabberSideLeft}>{headerLeft}</View>
           <View style={styles.grabberPill} />
           <View style={styles.grabberSide}>{rightSlot}</View>
         </View>
@@ -161,7 +165,7 @@ export function Sheet({
         ) : null}
       </View>
     ),
-    [rightSlot, title],
+    [rightSlot, headerLeft, title],
   );
 
   return (
@@ -207,6 +211,11 @@ const styles = StyleSheet.create({
   grabberSide: {
     flex: 1,
     alignItems: 'flex-end',
+  },
+  grabberSideLeft: {
+    flex: 1,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
   },
   grabberPill: {
     width: 36,

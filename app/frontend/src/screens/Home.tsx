@@ -96,7 +96,7 @@ export function Home() {
 
   const items: ListItem[] = scopedData
     ? sortBy
-      ? flattenSorted(scopedData, sortBy, locationCoords)
+      ? flattenSorted(scopedData, sortBy, locationCoords, persona)
       : flattenForList(scopedData)
     : [];
   const lastUpdate = lastRefreshedAt

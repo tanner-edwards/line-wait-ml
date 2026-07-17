@@ -95,6 +95,14 @@ def build_records(metadata: dict) -> list[dict]:
         }
         if entry.get("walkPenaltyMinutes"):
             rec["walkPenaltyMinutes"] = entry["walkPenaltyMinutes"]
+        # Physical ride facts + editorial category tags used by the backend to
+        # resolve categories and drive the persona sort (camelCase in Firestore).
+        rec["thrillLevel"] = entry.get("thrill_level")
+        rec["heightMinIn"] = entry.get("height_min_in")
+        rec["hasShowtime"] = entry.get("has_showtime", False)
+        rec["pregnancyAdvisory"] = entry.get("pregnancy_advisory", False)
+        rec["transferRequired"] = entry.get("transfer_required", False)
+        rec["categories"] = entry.get("categories", [])
         records.append(rec)
     log.info(
         "Built %d records; skipped %d (no themeparks_id), %d (unknown park)",

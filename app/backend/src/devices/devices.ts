@@ -58,7 +58,7 @@ export async function upsertDevice(deviceId: string, fields: UpsertFields): Prom
       updatedAt: now,
     });
   } else {
-    await docRef.set({ ...fields, updatedAt: now }, { merge: true });
+    await docRef.set({ ...fields, deviceId, updatedAt: now }, { merge: true });
   }
 }
 

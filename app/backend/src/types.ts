@@ -169,6 +169,34 @@ export interface Ride {
   // the ride has no historical data at all. Individual slots with
   // wait: null indicate the park was closed during that window historically.
   fullDayForecast?: FullDaySlot[] | null;
+  // Structured closure breakdown for the Closure Intelligence UI. Only
+  // emitted while status === 'DOWN'; null otherwise.
+  closureProfile?: ClosureProfile | null;
+  // Persona-vocabulary categories resolved server-side from ride metadata
+  // (thrill/height/showtime heuristics + hand-tagged iconic/classic/immersive).
+  // Drives the client-side persona sort. Always emitted by the live backend;
+  // optional so pre-scoring assembly and legacy fixtures can omit it.
+  categories?: RideCategory[];
+  // Raw ride facts the client-side persona sort scores against. Always
+  // emitted by the live backend; optional for the same reason as above.
+  heightMinIn?: number | null;
+  thrillLevel?: number | null;
+  pregnancyAdvisory?: boolean;
+  transferRequired?: boolean;
+}
+
+// Closure intelligence — emitted by the backend when status === 'DOWN',
+// and briefly after a reopen (postReopenWaitDrop may be true for ~30 min
+// after a break closure resolves to a short line). Mirrors the frontend
+// ClosureProfile in app/frontend/src/types.ts.
+export interface ClosureProfile {
+  closureType: 'blip' | 'break';
+  elapsedMinutes: number;
+  blipEstimateMinutes: number;
+  breakEstimateMinutes: number;
+  predictedReopenWait: number | null;
+  confidenceLevel: 'high' | 'suppressed';
+  postReopenWaitDrop: boolean;
 }
 
 export interface ParkData {
@@ -201,6 +229,15 @@ export interface RideMetadata {
   // False for shows, walk-throughs, and transportation that never post a
   // meaningful standby wait. Absent on legacy docs — treat as true.
   tracksWaitTime?: boolean;
+  // Physical ride facts seeded from ride_metadata.json, used to resolve
+  // categories and to drive the persona sort. Optional so legacy docs typecheck.
+  thrillLevel?: number | null;
+  heightMinIn?: number | null;
+  hasShowtime?: boolean;
+  pregnancyAdvisory?: boolean;
+  transferRequired?: boolean;
+  // Editorial hand-tags: any of 'iconic' | 'classic' | 'immersive'.
+  categories?: string[];
 }
 
 // --- v2 recommendations contract ---

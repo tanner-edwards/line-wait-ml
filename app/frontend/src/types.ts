@@ -112,6 +112,14 @@ export interface Ride {
   score?: ScoreResult;
   fullDayForecast?: FullDaySlot[] | null;
   closureProfile?: ClosureProfile | null;
+  // Persona-vocabulary categories resolved server-side; drives the persona
+  // sort. Always emitted by the live backend; optional for legacy fixtures.
+  categories?: RideCategory[];
+  // Raw ride facts the persona sort scores against.
+  heightMinIn?: number | null;
+  thrillLevel?: number | null;
+  pregnancyAdvisory?: boolean;
+  transferRequired?: boolean;
 }
 
 export interface ParkData {

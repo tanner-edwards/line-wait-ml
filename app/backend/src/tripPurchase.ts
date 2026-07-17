@@ -76,7 +76,7 @@ async function verifyAndDecodeJws(jws: string): Promise<JWSTransactionPayload> {
 
   const cryptoKey = await subtle.importKey(
     'spki',
-    leafSpki,
+    new Uint8Array(leafSpki),
     { name: 'ECDSA', namedCurve: 'P-256' },
     false,
     ['verify'],
@@ -85,8 +85,8 @@ async function verifyAndDecodeJws(jws: string): Promise<JWSTransactionPayload> {
   const valid = await subtle.verify(
     { name: 'ECDSA', hash: 'SHA-256' },
     cryptoKey,
-    fromBase64url(signatureB64),
-    Buffer.from(`${headerB64}.${payloadB64}`),
+    new Uint8Array(fromBase64url(signatureB64)),
+    new Uint8Array(Buffer.from(`${headerB64}.${payloadB64}`)),
   );
 
   if (!valid) throw new Error('JWS signature verification failed');

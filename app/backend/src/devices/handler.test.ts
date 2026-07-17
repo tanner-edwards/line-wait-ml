@@ -74,6 +74,7 @@ describe('POST /v1/devices (register/upsert)', () => {
       pushTokenType: 'web',
       mustDoRideIds: ['ride-1', 'ride-2'],
       notificationsEnabled: true,
+      tripEnd: null,
     });
   });
 

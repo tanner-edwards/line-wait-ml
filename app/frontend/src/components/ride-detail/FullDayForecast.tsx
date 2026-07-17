@@ -13,6 +13,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Check } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
 import { FullDaySlot } from '../../types';
 import { scheduleRideReminder } from '../../utils/scheduleReminder';
@@ -302,14 +303,16 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
   const showReminder = !slot.isPast && Platform.OS !== 'web';
 
   const [isScheduling, setIsScheduling] = useState(false);
+  const [reminderScheduled, setReminderScheduled] = useState(false);
 
   const handleRemindMe = async () => {
-    if (isScheduling) return;
+    if (isScheduling || reminderScheduled) return;
     setIsScheduling(true);
     try {
       const result = await scheduleRideReminder(rideName, slot.bestSlotStart - 15);
       switch (result) {
         case 'scheduled':
+          setReminderScheduled(true);
           Alert.alert('Reminder set', `We'll notify you at ${reminderTime}.`, [{ text: 'OK' }]);
           break;
         case 'denied':
@@ -320,7 +323,7 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
           );
           break;
         case 'past':
-          // Window already passed — shouldn't be reachable, but handle gracefully.
+          setReminderScheduled(true);
           break;
       }
     } finally {
@@ -344,12 +347,25 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
 
       {showReminder ? (
         <Pressable
-          style={[styles.remindButton, isScheduling && { opacity: 0.6 }]}
+          style={[
+            styles.remindButton,
+            reminderScheduled && styles.remindButtonSet,
+            isScheduling && { opacity: 0.6 },
+          ]}
           onPress={handleRemindMe}
           accessibilityRole="button"
-          disabled={isScheduling}
+          disabled={isScheduling || reminderScheduled}
         >
-          <Text style={styles.remindButtonText}>Remind me at {reminderTime}</Text>
+          {reminderScheduled ? (
+            <>
+              <Check size={14} color={colors.brand} />
+              <Text style={[styles.remindButtonText, styles.remindButtonSetText]}>
+                Reminder set
+              </Text>
+            </>
+          ) : (
+            <Text style={styles.remindButtonText}>Remind me at {reminderTime}</Text>
+          )}
         </Pressable>
       ) : null}
     </View>
@@ -468,10 +484,21 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 6,
+  },
+  remindButtonSet: {
+    backgroundColor: colors.goBg,
+    borderWidth: 1,
+    borderColor: colors.goBorder,
   },
   remindButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.textInverse,
+  },
+  remindButtonSetText: {
+    color: colors.brand,
   },
 });

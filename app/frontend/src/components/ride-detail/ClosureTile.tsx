@@ -15,7 +15,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, Lock } from 'lucide-react-native';
+import { Bell, Check, Lock } from 'lucide-react-native';
 import { formatHHMM } from '../../timestamp';
 import { colors } from '../../theme/tokens';
 import { ClosureProfile } from '../../types';
@@ -83,6 +83,7 @@ interface Props {
   closureProfile: ClosureProfile | null | undefined;
   predictedReopenAt: string | null | undefined;
   onNotifyReopen: () => Promise<void>;
+  reminderSet: boolean;
   onUnlock: () => void;
 }
 
@@ -93,6 +94,7 @@ export function ClosureTile({
   closureProfile,
   predictedReopenAt,
   onNotifyReopen,
+  reminderSet,
   onUnlock,
 }: Props): React.ReactElement | null {
   if (!isDown) return null;
@@ -128,6 +130,7 @@ export function ClosureTile({
           rideClosedAt={rideClosedAt}
           predictedReopenAt={predictedReopenAt ?? null}
           onNotifyReopen={onNotifyReopen}
+          reminderSet={reminderSet}
         />
       )}
     </Tile>
@@ -147,11 +150,13 @@ function PaidContent({
   rideClosedAt,
   predictedReopenAt,
   onNotifyReopen,
+  reminderSet,
 }: {
   profile: ClosureProfile;
   rideClosedAt: string | null;
   predictedReopenAt: string | null;
   onNotifyReopen: () => Promise<void>;
+  reminderSet: boolean;
 }): React.ReactElement {
   const { elapsedMinutes, blipEstimateMinutes, breakEstimateMinutes, predictedReopenWait } = profile;
   const barState = deriveBarState(profile, rideClosedAt);
@@ -217,12 +222,16 @@ function PaidContent({
           future feature (requires a dedicated watchReopenRideIds field). */}
       {isBreakState && barState !== 'past-break' && predictedReopenAt ? (
         <Pressable
-          onPress={() => { void onNotifyReopen(); }}
-          style={styles.notifyBtn}
+          onPress={() => { if (!reminderSet) void onNotifyReopen(); }}
+          style={[styles.notifyBtn, reminderSet && styles.notifyBtnSet]}
           accessibilityRole="button"
         >
-          <Bell size={16} color={colors.textInverse} />
-          <Text style={styles.notifyBtnText}>Notify me when it reopens</Text>
+          {reminderSet
+            ? <Check size={16} color={colors.brand} />
+            : <Bell size={16} color={colors.textInverse} />}
+          <Text style={[styles.notifyBtnText, reminderSet && styles.notifyBtnSetText]}>
+            {reminderSet ? 'Reminder set' : 'Notify me when it reopens'}
+          </Text>
         </Pressable>
       ) : null}
     </>
@@ -382,9 +391,17 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 13,
   },
+  notifyBtnSet: {
+    backgroundColor: colors.goBg,
+    borderWidth: 1,
+    borderColor: colors.goBorder,
+  },
   notifyBtnText: {
     fontSize: 14,
     fontWeight: '600',
     color: colors.textInverse,
+  },
+  notifyBtnSetText: {
+    color: colors.brand,
   },
 });

@@ -1,5 +1,30 @@
-import { flattenForList, rideWaitLabel } from './grouping';
-import { CombinedResponse, Ride } from './types';
+import { flattenForList, flattenSorted, rideWaitLabel } from './grouping';
+import { CombinedResponse, Persona, Ride } from './types';
+import { personaScore, typicalHeightInches } from './personaSort';
+
+function makePersona(over: Partial<Persona> = {}): Persona {
+  return {
+    tripDuration: null,
+    youngestAge: null,
+    ridePreferences: [],
+    mustDoRideIds: [],
+    accessibilityNeeds: [],
+    ...over,
+  };
+}
+
+// Ride-name order out of the opportunity sort (rides only), single park.
+function opportunityOrder(rides: Ride[], persona: Persona | null): string[] {
+  const resp: CombinedResponse = {
+    parks: [{ park: 'Disneyland', lastUpdated: '2026-05-15T20:00:00Z', rides }],
+  };
+  return flattenSorted(resp, 'opportunity', null, persona)
+    .filter(i => i.kind === 'ride')
+    .map(i => (i.kind === 'ride' ? i.ride.name : ''));
+}
+
+const GO = { badge: 'go' } as Ride['score'];
+const STAR = { badge: 'star' } as Ride['score'];
 
 function makeRide(over: Partial<Ride> = {}): Ride {
   const base: Ride = {
@@ -144,5 +169,85 @@ describe('rideWaitLabel', () => {
 
   it('returns "Refurbishment" for rides in scheduled refurb', () => {
     expect(rideWaitLabel(makeRide({ status: 'REFURBISHMENT', currentWait: null }))).toBe('Refurbishment');
+  });
+});
+
+describe('personaScore', () => {
+  it('returns 0 for a null persona', () => {
+    expect(personaScore(makeRide({ id: 'x' }), null)).toBe(0);
+  });
+
+  it('returns 0 for an empty persona (no-op)', () => {
+    expect(personaScore(makeRide({ id: 'x', categories: ['thrills'], thrillLevel: 5 }), makePersona())).toBe(0);
+  });
+
+  it('gives must-do the dominant +100', () => {
+    const ride = makeRide({ id: 'must', categories: ['thrills'] });
+    expect(personaScore(ride, makePersona({ mustDoRideIds: ['must'], ridePreferences: ['thrills'] }))).toBe(110);
+  });
+
+  it('adds +10 per matched selected category', () => {
+    const ride = makeRide({ id: 'r', categories: ['thrills', 'classics', 'immersive'] });
+    expect(personaScore(ride, makePersona({ ridePreferences: ['thrills', 'classics'] }))).toBe(20);
+    expect(personaScore(ride, makePersona({ ridePreferences: ['kid-favorites'] }))).toBe(0);
+  });
+
+  it('subtracts 5 when the youngest cannot clear the height minimum', () => {
+    const tall = makeRide({ id: 'r', heightMinIn: 48 });
+    expect(personaScore(tall, makePersona({ youngestAge: 4 }))).toBe(-5); // 4yr ≈ 40" < 48"
+    expect(personaScore(tall, makePersona({ youngestAge: 12 }))).toBe(0); // 12yr ≈ 58" ≥ 48"
+    expect(personaScore(tall, makePersona({ youngestAge: null }))).toBe(0);
+  });
+
+  it('subtracts 20 per accessibility conflict', () => {
+    const intense = makeRide({ id: 'r', thrillLevel: 5, pregnancyAdvisory: true, transferRequired: true });
+    expect(personaScore(intense, makePersona({ accessibilityNeeds: ['sensory'] }))).toBe(-20);
+    expect(personaScore(intense, makePersona({ accessibilityNeeds: ['pregnant', 'wheelchair'] }))).toBe(-40);
+    const mild = makeRide({ id: 'r', thrillLevel: 2 });
+    expect(personaScore(mild, makePersona({ accessibilityNeeds: ['sensory'] }))).toBe(0);
+  });
+
+  it('typicalHeightInches treats 13+ as adult', () => {
+    expect(typicalHeightInches(13)).toBeGreaterThanOrEqual(60);
+    expect(typicalHeightInches(4)).toBeLessThan(48);
+  });
+});
+
+describe('flattenSorted — persona level', () => {
+  it('reorders within an opportunity tier by persona (must-do floats up)', () => {
+    const rides = [
+      makeRide({ id: 'a', name: 'Alpha', score: GO }),
+      makeRide({ id: 'b', name: 'Bravo', score: GO }),
+    ];
+    // No persona → alphabetical within tier.
+    expect(opportunityOrder(rides, null)).toEqual(['Alpha', 'Bravo']);
+    // Bravo is a must-do → floats above Alpha (same tier).
+    expect(opportunityOrder(rides, makePersona({ mustDoRideIds: ['b'] }))).toEqual(['Bravo', 'Alpha']);
+  });
+
+  it('never lets persona cross an opportunity tier boundary', () => {
+    const rides = [
+      makeRide({ id: 'star', name: 'StarRide', score: STAR }),        // better tier, not a must-do
+      makeRide({ id: 'go', name: 'GoRide', score: GO }),              // worse tier, IS a must-do
+    ];
+    // Must-do GoRide gets +100 but STAR still outranks GO — badge wins.
+    expect(opportunityOrder(rides, makePersona({ mustDoRideIds: ['go'] }))).toEqual(['StarRide', 'GoRide']);
+  });
+
+  it('ranks more category matches higher within a tier', () => {
+    const rides = [
+      makeRide({ id: 'one', name: 'OneMatch', score: GO, categories: ['thrills'] }),
+      makeRide({ id: 'two', name: 'TwoMatch', score: GO, categories: ['thrills', 'immersive'] }),
+    ];
+    expect(opportunityOrder(rides, makePersona({ ridePreferences: ['thrills', 'immersive'] })))
+      .toEqual(['TwoMatch', 'OneMatch']);
+  });
+
+  it('empty persona reproduces the non-personalized order', () => {
+    const rides = [
+      makeRide({ id: 'a', name: 'Zeta', score: GO }),
+      makeRide({ id: 'b', name: 'Alpha', score: GO }),
+    ];
+    expect(opportunityOrder(rides, makePersona())).toEqual(opportunityOrder(rides, null));
   });
 });

@@ -38,6 +38,7 @@ import {
   Persona,
   RecommendationsResponse,
   RideCategory,
+  RideMetadata,
   TripDuration,
   UserResponse,
 } from './types';
@@ -208,6 +209,25 @@ function buildPrediction(mlPred: MLPredictionDoc): Prediction {
   };
 }
 
+// Resolve a ride's persona-vocabulary categories from its metadata: physical
+// heuristics (thrill/height/showtime) merged with editorial hand-tags
+// (iconic/classic/immersive). Output uses the RideCategory vocabulary so the
+// client-side persona sort matches directly against persona.ridePreferences.
+export function resolveCategories(meta: RideMetadata | null): RideCategory[] {
+  if (!meta) return [];
+  const cats = new Set<RideCategory>();
+  const thrill = meta.thrillLevel ?? null;
+  if (thrill != null && thrill >= 4) cats.add('thrills');
+  if (thrill != null && thrill <= 2 && meta.heightMinIn == null) cats.add('kid-favorites');
+  if (meta.hasShowtime) cats.add('shows-characters');
+  for (const tag of meta.categories ?? []) {
+    if (tag === 'classic') cats.add('classics');
+    else if (tag === 'immersive') cats.add('immersive');
+    else if (tag === 'iconic') cats.add('first-time');
+  }
+  return [...cats];
+}
+
 export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
@@ -260,6 +280,12 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         recentHistory: recentHistoryMap.get(entity.id) ?? null,
         lat: meta?.lat ?? null,
         lng: meta?.lng ?? null,
+        // Persona sort inputs: resolved categories + raw ride facts.
+        categories: resolveCategories(meta),
+        heightMinIn: meta?.heightMinIn ?? null,
+        thrillLevel: meta?.thrillLevel ?? null,
+        pregnancyAdvisory: meta?.pregnancyAdvisory ?? false,
+        transferRequired: meta?.transferRequired ?? false,
         // Only meaningful when status is DOWN — the scanner only records
         // OPERATING → DOWN transitions. For other states we leave null.
         closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
