@@ -13,7 +13,7 @@
 //                  whatever screen the app was on.
 
 import React, { createContext, useCallback, useContext, useMemo, useState } from 'react';
-import { NotificationKind } from '../types';
+import { NotificationCategory, NotificationKind } from '../types';
 
 export type DetailSource = 'history' | 'deeplink' | 'browse';
 
@@ -35,7 +35,8 @@ export interface ActiveDetail {
 interface NotificationDetailContextValue {
   active: ActiveDetail | null;
   historySheetOpen: boolean;
-  openHistorySheet: () => void;
+  historySheetPreFilter: NotificationCategory | null;
+  openHistorySheet: (preFilter?: NotificationCategory) => void;
   closeHistorySheet: () => void;
   openDetail: (detail: ActiveDetail) => void;
   closeDetail: () => void;
@@ -47,9 +48,16 @@ const NotificationDetailContext = createContext<NotificationDetailContextValue |
 export function NotificationDetailProvider({ children }: { children: React.ReactNode }) {
   const [active, setActive] = useState<ActiveDetail | null>(null);
   const [historySheetOpen, setHistorySheetOpen] = useState(false);
+  const [historySheetPreFilter, setHistorySheetPreFilter] = useState<NotificationCategory | null>(null);
 
-  const openHistorySheet = useCallback(() => setHistorySheetOpen(true), []);
-  const closeHistorySheet = useCallback(() => setHistorySheetOpen(false), []);
+  const openHistorySheet = useCallback((preFilter?: NotificationCategory) => {
+    setHistorySheetPreFilter(preFilter ?? null);
+    setHistorySheetOpen(true);
+  }, []);
+  const closeHistorySheet = useCallback(() => {
+    setHistorySheetOpen(false);
+    setHistorySheetPreFilter(null);
+  }, []);
 
   const openDetail = useCallback((detail: ActiveDetail) => {
     // Sheet stays open underneath — the detail modal is mounted after
@@ -79,13 +87,14 @@ export function NotificationDetailProvider({ children }: { children: React.React
     () => ({
       active,
       historySheetOpen,
+      historySheetPreFilter,
       openHistorySheet,
       closeHistorySheet,
       openDetail,
       closeDetail,
       dismissAll,
     }),
-    [active, historySheetOpen, openHistorySheet, closeHistorySheet, openDetail, closeDetail, dismissAll]
+    [active, historySheetOpen, historySheetPreFilter, openHistorySheet, closeHistorySheet, openDetail, closeDetail, dismissAll]
   );
 
   return (

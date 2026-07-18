@@ -221,6 +221,10 @@ export interface DailyContext {
 
 export type NotificationKind = 'trough' | 'closure' | 'reopen' | 'peak';
 export type NotificationTypes = Record<NotificationKind, boolean>;
+// Digest grouping category — used by filter chips and digest push payloads.
+// 'rare-find' is a sub-type of 'trough' (badge==='star') that always fires as
+// an individual push and gets its own filter chip in the history sheet.
+export type NotificationCategory = 'trough' | 'peak' | 'closure' | 'reopen' | 'rare-find';
 export const NOTIFICATION_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen', 'peak'];
 export function defaultNotificationTypes(): NotificationTypes {
   return { trough: true, closure: true, reopen: true, peak: false };

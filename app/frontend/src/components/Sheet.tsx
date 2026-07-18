@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     marginTop: spacing.md,
   },
   title: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: '700',
     color: colors.textPrimary,
   },

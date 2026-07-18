@@ -16,7 +16,7 @@ export function NotificationBellButton(): React.ReactElement | null {
   if (!notificationsEnabled || !hasActiveTrip) return null;
   return (
     <Pressable
-      onPress={openHistorySheet}
+      onPress={() => openHistorySheet()}
       style={styles.button}
       testID="notification-bell"
       hitSlop={10}

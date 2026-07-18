@@ -135,6 +135,103 @@ const PEAK_STRONG = [
   'Brutal wait. Skip.',
 ];
 
+// Digest copy — used when 2+ rides trigger the same category in one scan.
+// Title and body rotate independently. No magnitude axis (signal data isn't
+// aggregated at digest level), so single pools per category.
+
+const DIGEST_TROUGH_TITLES = [
+  'Short Wait Windows',
+  'Good Windows Right Now',
+  'Short Waits Spotted',
+  'Lines Moving',
+  'Worth a Look',
+  'Quick Windows Open',
+];
+
+const DIGEST_PEAK_TITLES = [
+  'Long Wait Alert',
+  'Crowds Building',
+  'Peak Waits',
+  'Lines Getting Long',
+  'High Waits Right Now',
+  'Skip These for Now',
+];
+
+const DIGEST_CLOSURE_TITLES = [
+  'Ride Closures',
+  'Rides Down',
+  'Multiple Closures',
+  'Rides Out of Service',
+  'Temporary Closures',
+  'Down for Now',
+];
+
+const DIGEST_REOPEN_TITLES = [
+  'Rides Reopened',
+  'Back Up',
+  'Rides Back Online',
+  'Good News',
+  'Back in Operation',
+  'Reopened',
+];
+
+const DIGEST_TROUGH_BODIES = [
+  (n) => `${n} are at short waits right now.`,
+  (n) => `Short window across ${n}.`,
+  (n) => `Good time to head to ${n}.`,
+  (n) => `${n} are moving quickly.`,
+  (n) => `Waits are down at ${n}.`,
+  (n) => `${n} worth hitting right now.`,
+];
+
+const DIGEST_PEAK_BODIES = [
+  (n) => `${n} have hit peak waits.`,
+  (n) => `${n} are backed up right now.`,
+  (n) => `Long lines across ${n}.`,
+  (n) => `Not the time for ${n}.`,
+  (n) => `${n} are running long — consider waiting.`,
+  (n) => `${n} are crowded right now.`,
+];
+
+const DIGEST_CLOSURE_BODIES = [
+  (n) => `${n} just went down.`,
+  (n) => `${n} are down.`,
+  (n) => `${n} are temporarily closed.`,
+  (n) => `Plan around it — ${n} are closed.`,
+  (n) => `${n} went offline.`,
+  (n) => `${n} are out of service for now.`,
+];
+
+const DIGEST_REOPEN_BODIES = [
+  (n) => `${n} just reopened.`,
+  (n) => `${n} are back up.`,
+  (n) => `${n} are running again.`,
+  (n) => `Good news — ${n} reopened.`,
+  (n) => `${n} came back online.`,
+  (n) => `${n} are back in operation.`,
+];
+
+const DIGEST_COPY = {
+  trough:  { titles: DIGEST_TROUGH_TITLES,  bodies: DIGEST_TROUGH_BODIES  },
+  peak:    { titles: DIGEST_PEAK_TITLES,    bodies: DIGEST_PEAK_BODIES    },
+  closure: { titles: DIGEST_CLOSURE_TITLES, bodies: DIGEST_CLOSURE_BODIES },
+  reopen:  { titles: DIGEST_REOPEN_TITLES,  bodies: DIGEST_REOPEN_BODIES  },
+};
+
+/**
+ * @param {string} category - 'trough' | 'peak' | 'closure' | 'reopen'
+ * @param {string} nameList - pre-formatted ride name string (e.g. "X, Y, and 2 others")
+ * @returns {{ title: string, body: string }}
+ */
+export function digestNotification(category, nameList) {
+  const pool = DIGEST_COPY[category];
+  if (!pool) return { title: 'Park Update', body: nameList };
+  return {
+    title: pickRandom(pool.titles),
+    body: pickRandom(pool.bodies)(nameList),
+  };
+}
+
 function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }

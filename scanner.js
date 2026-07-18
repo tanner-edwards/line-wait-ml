@@ -19,7 +19,7 @@
 
 import admin from 'firebase-admin';
 import webpush from 'web-push';
-import { notificationTitle, notificationBody, formatDuration } from './notification-copy.js';
+import { notificationTitle, notificationBody, formatDuration, digestNotification } from './notification-copy.js';
 
 const PARK_TZ = 'America/Los_Angeles';
 
@@ -523,6 +523,8 @@ function isExpoToken(token) {
 
 // Sends via the Expo Push API (https://exp.host/--/api/v2/push/send).
 // No auth required for basic delivery. Returns { sent, reason, expired? }.
+// payload.pushData overrides the `data` field — used for digest payloads
+// that carry { category, ride_ids } instead of { rideId, type, badge }.
 async function sendExpoPush(device, payload) {
   const { pushToken } = device;
   if (!pushToken) return { sent: false, reason: 'no_expo_token' };
@@ -544,7 +546,7 @@ async function sendExpoPush(device, payload) {
         to: pushToken,
         title: payload.title,
         body: payload.body,
-        data: { rideId: payload.rideId, type: payload.type, badge: payload.badge },
+        data: payload.pushData ?? { rideId: payload.rideId, type: payload.type, badge: payload.badge },
         sound: 'default',
         ttl: 1800,
       }),
@@ -608,6 +610,83 @@ async function nullDeviceToken(db, deviceId) {
     { pushToken: null, pushTokenType: null, updatedAt: new Date().toISOString() },
     { merge: true }
   );
+}
+
+// --- Digest grouping helpers ---
+
+// Maps (type, badge) to the digest category key used for grouping and the
+// deep-link payload. 'rare-find' always fires individually regardless of count.
+function digestCategory(type, badge) {
+  if (type === 'trough' && badge === 'star') return 'rare-find';
+  return type; // 'trough' | 'peak' | 'closure' | 'reopen'
+}
+
+// Build a single digest push payload for 2+ rides in the same category.
+// No wait times in copy — just ride names and a category label.
+function buildDigestPayload(category, rideNames, rideIds) {
+  const [first, second] = rideNames;
+  const overflow = rideNames.length - 2;
+  const nameList = rideNames.length === 1
+    ? first
+    : rideNames.length === 2
+      ? `${first} and ${second}`
+      : `${first}, ${second}, and ${overflow} other${overflow > 1 ? 's' : ''}`;
+
+  const { title, body } = digestNotification(category, nameList);
+  return {
+    title,
+    body,
+    // Individual fields stay null — deep-link uses pushData instead.
+    rideId: null,
+    type: category,
+    badge: null,
+    pushData: { category, ride_ids: rideIds },
+  };
+}
+
+// Fire one push for multiple rides in the same category. Writes individual
+// notification_log entries per ride (for cooldown + history sheet display).
+async function fireDigestGroup(db, device, category, items) {
+  const { deviceId } = device;
+  const firedAt = new Date().toISOString();
+  const rideNames = items.map(it => it.currentRide.name);
+  const rideIds   = items.map(it => it.currentRide.rideId);
+
+  const digestPayload = buildDigestPayload(category, rideNames, rideIds);
+  const result = await sendPush(device, digestPayload);
+  if (result.expired) await nullDeviceToken(db, deviceId);
+
+  for (const { currentRide, type, badge, extra } of items) {
+    const indivPayload = buildPayload({
+      type, rideId: currentRide.rideId, rideName: currentRide.name, badge,
+      currentWait: currentRide.wait,
+      bucket0Wait: extra.bucket0Wait ?? null,
+      rideStats:   extra.rideStats   ?? null,
+      previousWait: extra.previousWait ?? null,
+      durationMs:  extra.durationMs  ?? null,
+      waitAtClose: extra.waitAtClose  ?? null,
+      isOpportunity: extra.isOpportunity ?? false,
+    });
+    await writeNotificationLog(db, stripUndefined({
+      deviceId,
+      rideId: currentRide.rideId,
+      rideName: currentRide.name,
+      type, badge, firedAt,
+      expiresAt: new Date(Date.now() + 24 * 3600_000).toISOString(),
+      currentWait: currentRide.wait,
+      body: indivPayload.body,
+      delivered: result.sent,
+      deliveryError: result.sent ? null : result.reason,
+      ...extra,
+    }));
+  }
+
+  log('fired_digest', {
+    deviceId, category, count: items.length,
+    delivered: result.sent,
+    deliveryError: result.sent ? undefined : result.reason,
+  });
+  return result;
 }
 
 // Shared fire path used by all three notification types. Cooldown check,
@@ -781,79 +860,83 @@ async function run() {
     reopens: [...statusChanges.values()].filter(e => e.kind === 'reopen').length,
   });
 
-  // --- Second pass: device fanout ---
+  // --- Second pass: device fanout (with per-cycle digest grouping) ---
+  //
+  // For each device we collect all qualifying notifications for this scan
+  // cycle into pendingByCategory before sending any pushes. Categories with
+  // 2+ rides get ONE digest push instead of N individual pushes. 'rare-find'
+  // (badge==='star' trough) always fires individually regardless of count.
   let skippedWrongPark = 0;
   for (const device of devices) {
-    const { mustDoRideIds = [] } = device;
+    const { mustDoRideIds = [], deviceId } = device;
     const dailyParkIds = allowedParkIdsFor(device);
+
+    // Map from digestCategory → Array<{ currentRide, type, badge, extra }>
+    const pendingByCategory = new Map();
+
     for (const rideId of mustDoRideIds) {
       const obs = snapshot.get(rideId);
       if (!obs) continue;
       const current = obs.current;
-      // Daily-parks gate: skip rides outside the user's selected scope.
-      // 'both' (or missing) passes everything (treats user as a hopper).
-      if (!dailyParkIds.includes(current.parkId)) {
-        skippedWrongPark++;
-        continue;
-      }
-      if (!openParkIds.includes(current.parkId)) {
-        skippedClosed++;
-        continue;
-      }
+      if (!dailyParkIds.includes(current.parkId)) { skippedWrongPark++; continue; }
+      if (!openParkIds.includes(current.parkId)) { skippedClosed++; continue; }
       considered++;
 
-      // --- Status-change fanout (uses first-pass result) ---
+      // --- Status-change fanout ---
       const change = statusChanges.get(rideId);
       if (change?.kind === 'closure') {
         if (!wantsNotification(device, 'closure')) {
           skippedTypeOptOut++;
         } else {
-          const r = await fireNotification({
-            db, device, currentRide: current, type: 'closure',
-          });
-          if (r.fired) { fired++; firedClosure++; }
-          else if (r.reason === 'cooldown') skippedCooldown++;
+          const onCooldown = await isWithinCooldown(db, deviceId, rideId, 'closure');
+          if (onCooldown) { skippedCooldown++; }
+          else {
+            const cat = 'closure';
+            const list = pendingByCategory.get(cat) ?? [];
+            list.push({ currentRide: current, type: 'closure', badge: null, extra: {} });
+            pendingByCategory.set(cat, list);
+          }
         }
       } else if (change?.kind === 'reopen') {
         if (!wantsNotification(device, 'reopen')) {
           skippedTypeOptOut++;
         } else {
-          const rideStats = stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null;
-          const typicalWait = historical.get(`${current.parkId}__${rideId}__${buckets[0]}__${dayType}`)?.wait ?? null;
+          const onCooldown = await isWithinCooldown(db, deviceId, rideId, 'reopen');
+          if (onCooldown) { skippedCooldown++; }
+          else {
+            const rideStats = stats.get(`${current.parkId}__${rideId}__${dayType}`) ?? null;
+            const typicalWait = historical.get(`${current.parkId}__${rideId}__${buckets[0]}__${dayType}`)?.wait ?? null;
 
-          // An opportunity reopen: closure was extended AND the current wait
-          // is meaningfully below the typical wait for this hour. Uses the same
-          // absolute floor as the trough scorer so both signals agree.
-          const isOpportunity = (() => {
-            if (!change.durationMs || current.wait == null || typicalWait == null) return false;
-            const durationMin = change.durationMs / 60_000;
-            const profile = closureProfiles.get(rideId);
-            const threshold = profile?.shortResetThresholdMin ?? 30;
-            if (durationMin <= threshold) return false;
-            const drop = typicalWait - current.wait;
-            const dropPct = drop / typicalWait;
-            return drop >= absoluteFloorForTypical(typicalWait) && dropPct >= 0.30;
-          })();
+            const isOpportunity = (() => {
+              if (!change.durationMs || current.wait == null || typicalWait == null) return false;
+              const durationMin = change.durationMs / 60_000;
+              const profile = closureProfiles.get(rideId);
+              const threshold = profile?.shortResetThresholdMin ?? 30;
+              if (durationMin <= threshold) return false;
+              const drop = typicalWait - current.wait;
+              const dropPct = drop / typicalWait;
+              return drop >= absoluteFloorForTypical(typicalWait) && dropPct >= 0.30;
+            })();
 
-          const r = await fireNotification({
-            db, device, currentRide: current, type: 'reopen',
-            extra: {
-              closedAt: change.closedAt,
-              durationMs: change.durationMs,
-              waitAtClose: change.waitAtClose,
-              rideStats,
-              bucket0Wait: typicalWait,
-              isOpportunity,
-            },
-          });
-          if (r.fired) { fired++; firedReopen++; }
-          else if (r.reason === 'cooldown') skippedCooldown++;
+            const cat = 'reopen';
+            const list = pendingByCategory.get(cat) ?? [];
+            list.push({
+              currentRide: current, type: 'reopen', badge: null,
+              extra: {
+                closedAt: change.closedAt,
+                durationMs: change.durationMs,
+                waitAtClose: change.waitAtClose,
+                rideStats,
+                bucket0Wait: typicalWait,
+                isOpportunity,
+              },
+            });
+            pendingByCategory.set(cat, list);
+          }
         }
       }
 
-      // --- Trough detection (Phase B) ---
-      // Only score rides that are currently operating; closed rides can't
-      // have a meaningful trough.
+      // --- Trough / peak detection ---
       if (current.status !== 'OPERATING') continue;
 
       const historicalBuckets = buckets.map((bucket, i) => {
@@ -880,21 +963,24 @@ async function run() {
 
       const badge = scoreRide(rideForScoring);
 
-      // Trough and peak are mutually exclusive: trough fires on a good-score
-      // (low relative wait), peak fires when the wait hits p90.
       if (badge === 'star' || badge === 'go') {
         if (!wantsNotification(device, 'trough')) {
           skippedTypeOptOut++;
         } else {
-          const r = await fireNotification({
-            db, device, currentRide: current, type: 'trough', badge,
-            extra: {
-              bucket0Wait: historicalBuckets[0]?.wait ?? null,
-              rideStats: rideForScoring.rideStats,
-            },
-          });
-          if (r.fired) { fired++; firedTrough++; }
-          else if (r.reason === 'cooldown') skippedCooldown++;
+          const onCooldown = await isWithinCooldown(db, deviceId, rideId, 'trough');
+          if (onCooldown) { skippedCooldown++; }
+          else {
+            const cat = digestCategory('trough', badge);
+            const list = pendingByCategory.get(cat) ?? [];
+            list.push({
+              currentRide: current, type: 'trough', badge,
+              extra: {
+                bucket0Wait: historicalBuckets[0]?.wait ?? null,
+                rideStats: rideForScoring.rideStats,
+              },
+            });
+            pendingByCategory.set(cat, list);
+          }
         }
       } else {
         const rideStats = rideForScoring.rideStats;
@@ -902,13 +988,51 @@ async function run() {
           if (!wantsNotification(device, 'peak')) {
             skippedTypeOptOut++;
           } else {
-            const r = await fireNotification({
-              db, device, currentRide: current, type: 'peak',
-              extra: { rideStats },
-            });
-            if (r.fired) { fired++; firedPeak++; }
-            else if (r.reason === 'cooldown') skippedCooldown++;
+            const onCooldown = await isWithinCooldown(db, deviceId, rideId, 'peak');
+            if (onCooldown) { skippedCooldown++; }
+            else {
+              const cat = 'peak';
+              const list = pendingByCategory.get(cat) ?? [];
+              list.push({ currentRide: current, type: 'peak', badge: null, extra: { rideStats } });
+              pendingByCategory.set(cat, list);
+            }
           }
+        }
+      }
+    }
+
+    // --- Flush: send digest or individual push per category ---
+    log('pending_by_category', {
+      deviceId,
+      categories: Object.fromEntries([...pendingByCategory.entries()].map(([cat, items]) => [cat, items.length])),
+    });
+    for (const [category, items] of pendingByCategory) {
+      const isRareFind = category === 'rare-find';
+
+      if (isRareFind || items.length === 1) {
+        // Rare finds and single-ride categories fire individually.
+        for (const item of items) {
+          const r = await fireNotification({
+            db, device, currentRide: item.currentRide,
+            type: item.type, badge: item.badge, extra: item.extra,
+          });
+          if (r.fired) {
+            fired++;
+            if (item.type === 'trough') firedTrough++;
+            else if (item.type === 'closure') firedClosure++;
+            else if (item.type === 'reopen') firedReopen++;
+            else if (item.type === 'peak') firedPeak++;
+          }
+        }
+      } else {
+        // 2+ rides in the same category → one digest push.
+        const r = await fireDigestGroup(db, device, category, items);
+        if (r.sent) {
+          fired++;
+          if (category === 'trough') firedTrough++;
+          else if (category === 'closure') firedClosure++;
+          else if (category === 'reopen') firedReopen++;
+          else if (category === 'peak') firedPeak++;
         }
       }
     }

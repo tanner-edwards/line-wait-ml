@@ -18,10 +18,11 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
-import { NotificationKind } from '../types';
+import { NotificationCategory, NotificationKind } from '../types';
 import { logInfo, logWarn } from '../utils/logger';
 
 const VALID_KINDS: readonly NotificationKind[] = ['trough', 'closure', 'reopen', 'peak'];
+const VALID_CATEGORIES: readonly NotificationCategory[] = ['trough', 'peak', 'closure', 'reopen', 'rare-find'];
 
 function parseNotifParam(value: string | null): { rideId: string; type: NotificationKind } | null {
   if (!value) return null;
@@ -82,6 +83,9 @@ export function NotificationDeepLinkHandler(): null {
   }, [openDetail, openHistorySheet]);
 
   // 3. Native push tap (iOS/Android only) — Expo notification response listener.
+  //    Handles two payload shapes:
+  //      - Individual: { rideId, type, badge } → open ride detail
+  //      - Digest:     { category, ride_ids }  → open history sheet pre-filtered to category
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
@@ -89,10 +93,25 @@ export function NotificationDeepLinkHandler(): null {
       const data = response.notification.request.content.data as {
         rideId?: string;
         type?: string;
+        category?: string;
+        ride_ids?: string[];
       } | null;
-      logInfo(`deeplink/native: tap received rideId="${data?.rideId ?? ''}" type="${data?.type ?? ''}"`, 'deeplink');
+      logInfo(`deeplink/native: tap received rideId="${data?.rideId ?? ''}" type="${data?.type ?? ''}" category="${data?.category ?? ''}"`, 'deeplink');
+
+      if (data?.category) {
+        // Digest tap — open history sheet filtered to category chip.
+        // 'rare-find' digests aren't sent by scanner (they're always individual)
+        // but handle defensively.
+        const cat = (VALID_CATEGORIES as readonly string[]).includes(data.category)
+          ? (data.category as NotificationCategory)
+          : undefined;
+        logInfo(`deeplink/native: digest tap category=${cat ?? '(unknown)'}`, 'deeplink');
+        openHistorySheet(cat);
+        return;
+      }
+
       if (!data?.rideId) {
-        logWarn('deeplink/native: notification tap missing rideId', 'deeplink');
+        logWarn('deeplink/native: notification tap missing rideId and category', 'deeplink');
         return;
       }
       const type = (VALID_KINDS as readonly string[]).includes(data.type ?? '')
@@ -102,7 +121,7 @@ export function NotificationDeepLinkHandler(): null {
     });
 
     return () => subscription.remove();
-  }, [openDetail]);
+  }, [openDetail, openHistorySheet]);
 
   return null;
 }
