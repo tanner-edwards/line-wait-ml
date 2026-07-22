@@ -284,7 +284,7 @@ function DetailBody({
 
           {!isDown && ride.fullDayForecast ? (
             <Tile>
-              <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} />
+              <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} prediction={ride.prediction} />
             </Tile>
           ) : null}
         </>

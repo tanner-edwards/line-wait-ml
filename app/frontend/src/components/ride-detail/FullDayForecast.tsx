@@ -15,7 +15,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
-import { FullDaySlot } from '../../types';
+import { FullDaySlot, Prediction } from '../../types';
 import { scheduleRideReminder } from '../../utils/scheduleReminder';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
@@ -170,21 +170,70 @@ function formatReminderTime(bestSlotStart: number): string {
   return `${h12}${mm} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
+// Overwrite the T+60, T+90, T+120, T+150 sub-slots with the 2-hour model's
+// values so the near-term hour bars reflect the more accurate short-horizon
+// model. All four sub-slots within the two affected hour buckets are patched
+// so buildDisplaySlots' minimum-within-bucket logic picks up the override.
+function applyNearTermSubstitution(
+  forecast: FullDaySlot[],
+  prediction: Prediction | null,
+  currentHourStart: number
+): FullDaySlot[] {
+  if (!prediction) return forecast;
+  const targets = new Map<number, number>([
+    [currentHourStart + 60,  prediction.t60],
+    [currentHourStart + 90,  prediction.t90],
+    [currentHourStart + 120, prediction.t120],
+    [currentHourStart + 150, prediction.t150],
+  ]);
+  return forecast.map(slot =>
+    slot.wait !== null && targets.has(slot.startMinutes)
+      ? { ...slot, wait: targets.get(slot.startMinutes)! }
+      : slot
+  );
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
   fullDayForecast: FullDaySlot[];
   rideName: string;
+  prediction?: Prediction | null;
 }
 
-export function FullDayForecast({ fullDayForecast, rideName }: Props): React.ReactElement | null {
+export function FullDayForecast({ fullDayForecast, rideName, prediction = null }: Props): React.ReactElement | null {
   const currentMins     = useMemo(() => getLAMinutesFromMidnight(), []);
   const currentHourStart = Math.floor(currentMins / 60) * 60;
 
-  const displaySlots = useMemo(
-    () => buildDisplaySlots(fullDayForecast, currentHourStart),
-    [fullDayForecast, currentHourStart]
-  );
+  // Session-sticky substitutions: once a slot is rendered with the 2-hour
+  // model's value, that value is held for the session. Prevents a hue/height
+  // flip when the slot ages into the past and the day model would otherwise
+  // take over.
+  const stickySlots = useRef<Map<number, { wait: number; classification: Classification }>>(new Map());
+
+  const displaySlots = useMemo(() => {
+    const patchedForecast = applyNearTermSubstitution(fullDayForecast, prediction, currentHourStart);
+    const slots = buildDisplaySlots(patchedForecast, currentHourStart);
+
+    // Write the T+60 and T+120 hour bars into the sticky cache while they're
+    // still future, so the cache is populated before the slot ages to past.
+    const substitutedHours = new Set([currentHourStart + 60, currentHourStart + 120]);
+    for (const slot of slots) {
+      if (!slot.isPast && !slot.isCurrent && substitutedHours.has(slot.hourStart)) {
+        stickySlots.current.set(slot.hourStart, { wait: slot.wait, classification: slot.classification });
+      }
+    }
+
+    // When a previously-substituted slot ages into the past, use the cached
+    // value instead of letting the day model reclaim it.
+    return slots.map(slot => {
+      if (slot.isPast) {
+        const cached = stickySlots.current.get(slot.hourStart);
+        if (cached) return { ...slot, wait: cached.wait, classification: cached.classification };
+      }
+      return slot;
+    });
+  }, [fullDayForecast, prediction, currentHourStart]);
 
   const [selectedHour, setSelectedHour] = useState<number | null>(() =>
     findDefaultSelection(displaySlots, currentHourStart)
