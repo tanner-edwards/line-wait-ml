@@ -1,14 +1,14 @@
 // Full-screen ride detail page — "the brain" of a ride.
 //
 // Layout (top → bottom):
-//   1. Header: name + close, badge pill, land · park + wait/trend, walk + watch
+//   1. Hero card — Stacked-Center layout (name, location+walk, badge, wait,
+//      direction, range bar, watch button). Range bar only for paid+operating.
 //   2. Restriction note (when LLM flagged a persona conflict)
-//   3. AI one-liner tile (when opened from Recommendations)
-//   4. Today's Range tile — p10/p90 bar with current wait + typical marker
-//   5. Trend tile — 7-column sparkline + plain-language caption
-//   6. Closure tile — currently-down rides + recently reopened
-//   7. Recent alerts tile — per-ride notification history
-//   8. Scoring debug card (debug mode only)
+//   3. Reason card — AI one-liner (only when opened from Recommendations)
+//   4. Closure tile — when ride is DOWN
+//   5. Full Day Forecast card (paid only)
+//   6. Recent alerts tile — per-ride notification history
+//   7. Trend debug card (debug mode only)
 //
 // This file is the COORDINATOR. All visual pieces live in ./ride-detail/.
 // The hook for fetching per-ride notification history lives in ../hooks/.
@@ -34,12 +34,13 @@ import { useRideNotificationHistory } from '../hooks/useRideNotificationHistory'
 import { haversineMeters } from '../grouping';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
+import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 import { isParkError, Ride } from '../types';
 import { scheduleReopenReminder } from '../utils/scheduleReminder';
 
 import { Tile, TileLabel } from './ride-detail/Tile';
 import { RideDetailHeader } from './ride-detail/RideDetailHeader';
-import { TodaysRange } from './ride-detail/TodaysRange';
+import { ReasonCard } from './ride-detail/ReasonCard';
 import { TrendGraph } from './ride-detail/TrendGraph';
 import { TrendCaption } from './ride-detail/TrendCaption';
 import { ClosureTile } from './ride-detail/ClosureTile';
@@ -141,7 +142,21 @@ function DetailBody({
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const rawBadge = ride.score?.badge ?? null;
   // Star badge is a paid feature — downgrade to 'go' when no active trip.
-  const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
+  const scoreBadge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
+  // Caution: fires when score has no opinion but wait is >25% above historical avg.
+  // Never overrides a score badge — same rule as list view.
+  // Use historicalBaseline first: when ML predictions are present, historicalAverage.buckets[0]
+  // holds the current wait (not the true historical average), so baseline is the right source.
+  const bucket0 = (ride.historicalBaseline?.buckets?.[0] ?? ride.historicalAverage?.buckets?.[0]) ?? null;
+  const cautionEligible =
+    scoreBadge === null &&
+    ride.status === 'OPERATING' &&
+    ride.currentWait !== null &&
+    bucket0?.wait != null &&
+    bucket0.wait > 0 &&
+    (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
+    ride.currentWait > bucket0.wait * 1.25;
+  const badge = cautionEligible ? 'caution' as const : scoreBadge;
 
   const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
   const onToggleWatch = () => {
@@ -232,15 +247,14 @@ function DetailBody({
           anchorWait={anchorWait}
           showWalkOn={showWalkOn}
           badge={badge}
-          oneLiner={oneLiner}
           walkMins={walkMins}
           isWatching={isWatching}
           rideId={ride.id}
           trendDir={trendDir}
           bucket0Wait={bucket0Wait}
-          bucket4Wait={bucket4Wait}
           onToggleWatch={onToggleWatch}
           hasActiveTrip={hasActiveTrip}
+          rideStats={ride.rideStats ?? null}
           postReopenWaitDrop={ride.closureProfile?.postReopenWaitDrop ?? false}
           downDurationMs={notifDurationMs}
           waitAtClose={null}
@@ -252,6 +266,8 @@ function DetailBody({
           </View>
         ) : null}
       </Tile>
+
+      <ReasonCard oneLiner={oneLiner} />
 
       {/* Closure tile — shown for DOWN rides only, outside the paywall gate
           so free users still see "Down since X". */}
@@ -270,21 +286,9 @@ function DetailBody({
 
       {hasActiveTrip ? (
         <>
-          {!isDown && ride.rideStats ? (
-            <Tile>
-              <TileLabel>Today's Range</TileLabel>
-              <TodaysRange
-                p10={ride.rideStats.p10}
-                p90={ride.rideStats.p90}
-                current={anchorWait}
-                typicalWait={bucket0Wait}
-              />
-            </Tile>
-          ) : null}
-
           {!isDown && ride.fullDayForecast ? (
             <Tile>
-              <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} prediction={ride.prediction} />
+              <FullDayForecast fullDayForecast={ride.fullDayForecast} rideName={ride.name} prediction={ride.prediction} currentWait={ride.currentWait} recentHistory={ride.recentHistory} />
             </Tile>
           ) : null}
         </>

@@ -398,7 +398,7 @@ describe('Home — v1 historical-context indicators', () => {
     expect(screen.getByText('Below normal')).toBeTruthy();
   });
 
-  it('shows "Above normal" badge when currentWait > bucket[0] * 1.25', async () => {
+  it('shows "Running high" badge when currentWait > bucket[0] * 1.25', async () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space',
@@ -417,7 +417,7 @@ describe('Home — v1 historical-context indicators', () => {
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('above-normal-badge')).toBeTruthy();
-    expect(screen.getByText('Above normal')).toBeTruthy();
+    expect(screen.getByText('Running high')).toBeTruthy();
   });
 
   it('low-confidence (bucket[0].sampleCount=0): badge suppressed, arrow uses low-conf styling', async () => {

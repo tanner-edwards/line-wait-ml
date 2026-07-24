@@ -38,6 +38,8 @@ export const colors = {
   skip:              '#B83A2A',  // brick red, complements green + gold
   skipBg:            'rgba(184,58,42,0.09)',
   skipBorder:        'rgba(184,58,42,0.25)',
+  caution:           '#C96B1A',  // orange — 4th badge state, between go and skip
+  cautionBg:         'rgba(138,158,152,0.14)',  // neutral gray, distinct from all other badge bgs
   star:              '#C9941D',  // deeper amber gold, reserved for star
   starBg:            'rgba(201,148,29,0.12)',
   starBorder:        'rgba(201,148,29,0.25)',

@@ -139,11 +139,13 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
           <View style={styles.row2}>
             <View style={styles.row2Left}>
               {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
-              <BelowNormalBadge
-                currentWait={ride.currentWait}
-                bucket0Wait={bucket0?.wait ?? null}
-                sampleCount={bucket0?.sampleCount ?? 0}
-              />
+              {badge === null ? (
+                <BelowNormalBadge
+                  currentWait={ride.currentWait}
+                  bucket0Wait={bucket0?.wait ?? null}
+                  sampleCount={bucket0?.sampleCount ?? 0}
+                />
+              ) : null}
             </View>
             <View style={styles.trendRow}>
               {trend ? <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text> : null}

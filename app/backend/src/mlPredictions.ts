@@ -12,6 +12,9 @@ export interface MLPredictionDoc {
   t90: number;
   t120: number;
   t150: number;
+  t180: number;
+  t210: number;
+  t240: number;
   trend: string;
   trend_delta_30: number;
   confidence: string;

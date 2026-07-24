@@ -35,7 +35,7 @@ export interface RideStats {
 
 // --- Scoring (computed server-side as of v2; UI is a pure renderer) ---
 
-export type Badge = 'star' | 'go' | 'skip' | null;
+export type Badge = 'star' | 'go' | 'caution' | 'skip' | null;
 
 export interface FactorBreakdown {
   vsAvg:           { delta: number; points: number } | null;

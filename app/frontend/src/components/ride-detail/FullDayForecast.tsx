@@ -15,8 +15,9 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Check } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
-import { FullDaySlot, Prediction } from '../../types';
+import { FullDaySlot, Prediction, RecentSnapshot } from '../../types';
 import { scheduleRideReminder } from '../../utils/scheduleReminder';
+import { roundWait } from '../../utils/roundWait';
 
 // ── Design tokens ─────────────────────────────────────────────────────────────
 //
@@ -193,15 +194,37 @@ function applyNearTermSubstitution(
   );
 }
 
+// Average the actual wait observations from recentHistory that fall within
+// the previous hour bucket. Filters out DOWN snapshots and null waits.
+// Returns null when there's no usable data (falls back to day model).
+function computePrevHourActual(
+  recentHistory: RecentSnapshot[] | null,
+  currentMins: number,
+  currentHourStart: number
+): number | null {
+  if (!recentHistory?.length) return null;
+  const prevHourStart = currentHourStart - 60;
+  const waits = recentHistory
+    .filter(s => {
+      const snapshotHour = Math.floor((currentMins - s.minutesAgo) / 60) * 60;
+      return snapshotHour === prevHourStart && s.wait != null && s.status !== 'DOWN';
+    })
+    .map(s => s.wait as number);
+  if (waits.length === 0) return null;
+  return Math.round(waits.reduce((sum, w) => sum + w, 0) / waits.length);
+}
+
 // ── Main component ────────────────────────────────────────────────────────────
 
 interface Props {
   fullDayForecast: FullDaySlot[];
   rideName: string;
   prediction?: Prediction | null;
+  currentWait?: number | null;
+  recentHistory?: RecentSnapshot[] | null;
 }
 
-export function FullDayForecast({ fullDayForecast, rideName, prediction = null }: Props): React.ReactElement | null {
+export function FullDayForecast({ fullDayForecast, rideName, prediction = null, currentWait = null, recentHistory = null }: Props): React.ReactElement | null {
   const currentMins     = useMemo(() => getLAMinutesFromMidnight(), []);
   const currentHourStart = Math.floor(currentMins / 60) * 60;
 
@@ -212,7 +235,30 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null }
   const stickySlots = useRef<Map<number, { wait: number; classification: Classification }>>(new Map());
 
   const displaySlots = useMemo(() => {
-    const patchedForecast = applyNearTermSubstitution(fullDayForecast, prediction, currentHourStart);
+    let patchedForecast = applyNearTermSubstitution(fullDayForecast, prediction, currentHourStart);
+
+    // Ground the current-hour bar in the live wait when available.
+    // Falls back to the day model's value when currentWait is null so the
+    // bar stays visible and consistent across the hour boundary.
+    if (currentWait != null) {
+      patchedForecast = patchedForecast.map(slot =>
+        slot.startMinutes === currentHourStart || slot.startMinutes === currentHourStart + 30
+          ? { ...slot, wait: currentWait }
+          : slot
+      );
+    }
+
+    // Replace the previous hour's day-model values with the average of actual
+    // wait observations from recentHistory for that window.
+    const prevHourActual = computePrevHourActual(recentHistory, currentMins, currentHourStart);
+    if (prevHourActual != null) {
+      patchedForecast = patchedForecast.map(slot =>
+        slot.startMinutes === currentHourStart - 60 || slot.startMinutes === currentHourStart - 30
+          ? { ...slot, wait: prevHourActual }
+          : slot
+      );
+    }
+
     const slots = buildDisplaySlots(patchedForecast, currentHourStart);
 
     // Write the T+60 and T+120 hour bars into the sticky cache while they're
@@ -233,7 +279,7 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null }
       }
       return slot;
     });
-  }, [fullDayForecast, prediction, currentHourStart]);
+  }, [fullDayForecast, prediction, currentWait, recentHistory, currentHourStart]);
 
   const [selectedHour, setSelectedHour] = useState<number | null>(() =>
     findDefaultSelection(displaySlots, currentHourStart)
@@ -283,7 +329,7 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null }
               onPress={() => handleBarPress(slot)}
               disabled={slot.isPast || slot.isCurrent}
               accessibilityRole="button"
-              accessibilityLabel={`${formatBestWindowLabel(slot.bestSlotStart)}: ~${slot.wait} min predicted`}
+              accessibilityLabel={`${formatBestWindowLabel(slot.bestSlotStart)}: ~${roundWait(slot.wait)} min predicted`}
             >
               <View style={styles.barArea}>
                 {/* Now dot — floats just above the bar top regardless of height */}
@@ -389,7 +435,7 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
         </View>
       </View>
 
-      <Text style={[styles.predictedWait, { color: accentColor }]}>~{slot.wait}m</Text>
+      <Text style={[styles.predictedWait, { color: accentColor }]}>~{roundWait(slot.wait)}m</Text>
       <Text style={[styles.contextLine, !showReminder && styles.contextLineNoMargin]}>
         {contextLine}
       </Text>

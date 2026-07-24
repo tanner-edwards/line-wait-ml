@@ -84,6 +84,9 @@ export interface Prediction {
   t90: number;
   t120: number;
   t150: number;
+  t180: number;
+  t210: number;
+  t240: number;
   trend: 'rising' | 'falling' | 'stable' | 'peak' | 'trough';
   trendDelta30: number;
   confidence: 'high' | 'medium' | 'low';

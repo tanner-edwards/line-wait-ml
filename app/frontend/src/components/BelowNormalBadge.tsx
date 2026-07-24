@@ -4,7 +4,7 @@
 // Render rules (keep in sync with v1 spec):
 //   - null currentWait, null bucket0Wait, bucket0Wait === 0, sampleCount < 1 → nothing
 //   - currentWait < bucket0Wait * 0.75 → "Below normal" (go)
-//   - currentWait > bucket0Wait * 1.25 → "Above normal" (skip)
+//   - currentWait > bucket0Wait * 1.25 → "Running high" (caution)
 //   - within ±25% band → nothing
 //
 import React from 'react';
@@ -36,7 +36,7 @@ export function BelowNormalBadge({
   }
 
   if (currentWait > bucket0Wait * 1.25) {
-    return <Pill variant="skip" label="Above normal" testID="above-normal-badge" />;
+    return <Pill variant="caution" label="Running high" testID="above-normal-badge" />;
   }
 
   return null;

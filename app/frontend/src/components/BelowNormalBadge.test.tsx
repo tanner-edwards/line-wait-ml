@@ -41,12 +41,12 @@ describe('BelowNormalBadge', () => {
     expect(screen.getByText('Below normal')).toBeTruthy();
   });
 
-  it('renders "Above normal" when currentWait is materially higher than bucket0Wait', () => {
+  it('renders "Running high" when currentWait is materially higher than bucket0Wait', () => {
     render(
       <BelowNormalBadge currentWait={60} bucket0Wait={40} sampleCount={50} />
     );
     expect(screen.getByTestId('above-normal-badge')).toBeTruthy();
-    expect(screen.getByText('Above normal')).toBeTruthy();
+    expect(screen.getByText('Running high')).toBeTruthy();
   });
 
   it('renders nothing when currentWait is within ±25% of bucket0Wait', () => {

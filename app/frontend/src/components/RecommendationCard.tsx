@@ -19,6 +19,7 @@ import { TrendArrow } from './TrendArrow';
 import { WalkPill } from './WalkPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
+import { roundWait } from '../utils/roundWait';
 import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const SUPPRESSED_SCORE: ScoreResult = {
@@ -89,7 +90,7 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   const waitColor = isBelowNormal ? colors.go : colors.textPrimary;
 
   const waitDisplay = rec.arrivalWait !== null
-    ? `${rec.arrivalWait}`
+    ? `${roundWait(rec.arrivalWait)}`
     : ride.currentWait !== null
     ? `${ride.currentWait}`
     : null;

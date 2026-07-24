@@ -1,7 +1,7 @@
 """ML inference script — runs every 10 min via Cloud Run Jobs.
 
 For each ride with enough recent data:
-  - Computes trajectory predictions (T+10 → T+150 minutes)
+  - Computes trajectory predictions (T+10 → T+240 minutes)
   - Derives trend / confidence from the forecast curve
   - Computes a 34-slot full-day forecast (7:00 AM – 11:30 PM PT)
   - Writes to predictions/{ride_id} in Firestore
@@ -35,7 +35,7 @@ from closure_features import CLOSURE_FEATURE_COLS, slot_closure_context, empty_c
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 
-HORIZONS = [10, 20, 30, 40, 50, 60, 90, 120, 150]
+HORIZONS = [10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 210, 240]
 LOOKBACK_MINUTES = 120
 BATCH_SIZE = 400
 
@@ -312,12 +312,18 @@ def _build_full_day(
     ride_id_cats: list[str],
     hol: dict,
     closures_today: list[dict] | None = None,
+    traj_preds: dict[int, float] | None = None,
 ) -> list[dict]:
     """Run the day-profile model for all 34 half-hour slots.
 
     closures_today: completed closures for this ride today, from _read_today_closures.
                     Each entry: { closed_at_min, reopened_at_min, duration_min }.
                     When None or empty, closure features default to "no closure today."
+
+    traj_preds: trajectory predictions keyed by horizon in minutes. When provided,
+                the slots that fall within the T+30–T+240 window are overridden with
+                trajectory values so the full-day curve doesn't jump at the seam where
+                the trajectory model hands off to the day-profile model.
     """
     # collect.js stores day_of_week in JS convention (Sun=0); convert from Python (Mon=0)
     js_dow = (now_la.weekday() + 1) % 7
@@ -341,7 +347,7 @@ def _build_full_day(
     X_profile = pd.DataFrame(rows)[DAY_PROFILE_FEATURE_COLS]
     X_profile["ride_id_cat"] = pd.Categorical(X_profile["ride_id_cat"], categories=ride_id_cats)
     preds = day_profile_model.predict(X_profile)
-    return [
+    slots = [
         {
             "time_slot":     time_slot,
             "start_minutes": start_min,
@@ -349,6 +355,21 @@ def _build_full_day(
         }
         for (start_min, time_slot), p in zip(FULL_DAY_SLOTS, preds)
     ]
+
+    # Override near-future slots with trajectory predictions to smooth the seam.
+    # For each trajectory horizon, find the 30-min slot it falls into and replace
+    # the day-profile value with the trajectory value.
+    if traj_preds:
+        now_min = now_la.hour * 60 + now_la.minute
+        slot_index = {s["start_minutes"]: i for i, s in enumerate(slots)}
+        for h in [30, 60, 90, 120, 150, 180, 210, 240]:
+            if h not in traj_preds:
+                continue
+            target_min = ((now_min + h) // 30) * 30
+            if target_min in slot_index:
+                slots[slot_index[target_min]]["wait"] = max(0, round(float(traj_preds[h])))
+
+    return slots
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
@@ -406,6 +427,7 @@ def main() -> int:
             full_day = _build_full_day(
                 ride_id, now_la, day_profile_model, ride_id_cats, hol,
                 closures_today=today_closures.get(ride_id),
+                traj_preds=traj_preds,
             )
 
             prediction_docs.append({
@@ -420,6 +442,9 @@ def main() -> int:
                 "t90":            traj_preds[90],
                 "t120":           traj_preds[120],
                 "t150":           traj_preds[150],
+                "t180":           traj_preds[180],
+                "t210":           traj_preds[210],
+                "t240":           traj_preds[240],
                 "trend":          trend,
                 "trend_delta_30": trend_delta_30,
                 "confidence":     confidence,

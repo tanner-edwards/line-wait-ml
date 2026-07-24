@@ -1,19 +1,23 @@
 // Pill — unified badge/pill primitive.
 //
 // Icon mode (no label): renders a Lucide icon in the variant's color.
-//   star → Star (filled gold)  |  go → CircleCheck (green)  |  skip → OctagonX (red)
+//   star    → Star (filled gold)
+//   go      → CircleCheck (green)
+//   caution → AlertTriangle (filled orange)
+//   skip    → OctagonX (red)
 //
-// Pill mode (with label): small text pill.
-//   go   → goBg bg, go text    (Below normal)
-//   skip → skipBg bg, skip text (Above normal)
-//   star → starBg bg, star text
+// Pill mode (with label): small text pill with optional leading icon.
+//   go      → goBg bg, go text, CircleCheck icon
+//   caution → cautionBg bg, textSecondary text, AlertTriangle filled orange icon
+//   skip    → skipBg bg, skip text
+//   star    → starBg bg, star text
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { AlertTriangle, CircleCheck, OctagonX, Star } from 'lucide-react-native';
 import { colors, radius } from '../theme/tokens';
 
-export type PillVariant = 'star' | 'go' | 'skip' | 'neutral';
+export type PillVariant = 'star' | 'go' | 'caution' | 'skip' | 'neutral';
 
 interface PillProps {
   variant: PillVariant;
@@ -24,6 +28,7 @@ interface PillProps {
 const PILL_BG: Record<PillVariant, string> = {
   star:    colors.starBg,
   go:      colors.goBg,
+  caution: colors.cautionBg,
   skip:    colors.skipBg,
   neutral: 'transparent',
 };
@@ -31,6 +36,7 @@ const PILL_BG: Record<PillVariant, string> = {
 const PILL_TEXT: Record<PillVariant, string> = {
   star:    colors.star,
   go:      colors.go,
+  caution: colors.textSecondary,
   skip:    colors.skip,
   neutral: colors.textTertiary,
 };
@@ -39,6 +45,11 @@ export function Pill({ variant, label, testID }: PillProps): React.ReactElement 
   if (label) {
     return (
       <View style={[styles.pill, { backgroundColor: PILL_BG[variant] }]} testID={testID}>
+        {variant === 'go' ? (
+          <CircleCheck size={10} color={colors.go} style={styles.pillIcon} />
+        ) : variant === 'caution' ? (
+          <AlertTriangle size={10} color={colors.caution} fill={colors.caution} style={styles.pillIcon} />
+        ) : null}
         <Text style={[styles.pillText, { color: PILL_TEXT[variant] }]}>{label}</Text>
       </View>
     );
@@ -56,6 +67,13 @@ export function Pill({ variant, label, testID }: PillProps): React.ReactElement 
     return (
       <View style={styles.icon} testID={testID ?? 'badge-go'}>
         <CircleCheck size={20} color={colors.go} />
+      </View>
+    );
+  }
+  if (variant === 'caution') {
+    return (
+      <View style={styles.icon} testID={testID ?? 'badge-caution'}>
+        <AlertTriangle size={20} color={colors.caution} fill={colors.caution} />
       </View>
     );
   }
@@ -77,9 +95,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pill: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: radius.pill,
+  },
+  pillIcon: {
+    marginRight: 4,
   },
   pillText: {
     fontSize: 11,

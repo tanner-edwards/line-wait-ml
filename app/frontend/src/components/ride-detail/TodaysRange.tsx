@@ -1,7 +1,6 @@
 // Horizontal range bar: |─●─| from p10 → p90 with the current wait as a
-// dot + callout bubble above. A "typical for this slot" tick floats inside
-// the track (or outside it when out of range), and a tagline below sums up
-// how today compares to the usual.
+// dot. A "typical for this slot" tick floats inside the track (or outside
+// it when out of range).
 //
 // Out-of-bounds design principle (both sides):
 //   When current or typical falls outside the P10–P90 range, the element
@@ -16,21 +15,16 @@
 
 import React, { useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import Svg, { Circle, Line, Polygon, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
+import { roundWait } from '../../utils/roundWait';
 
 
 // Geometry constants — all in the viewBox coordinate system.
 export const TR_W = 360;
 export const PAD_NORMAL = 12;  // padding when nothing floats out of bounds
 export const FLOAT_PAD  = 52;  // padding on a side that accommodates OOB elements
-export const HALF_BUBBLE = 22;
-const BUBBLE_TOP_Y    = 4;
-const BUBBLE_H        = 18;
-const BUBBLE_BOTTOM_Y = BUBBLE_TOP_Y + BUBBLE_H;
-const POINTER_H       = 7;
-const POINTER_TIP_Y   = BUBBLE_BOTTOM_Y + POINTER_H;
-export const TRACK_TOP_Y    = POINTER_TIP_Y + 2;
+export const TRACK_TOP_Y    = 4;
 export const TRACK_H        = 8;
 export const TRACK_CY       = TRACK_TOP_Y + TRACK_H / 2;
 const TRACK_BOTTOM_Y  = TRACK_TOP_Y + TRACK_H;
@@ -53,8 +47,6 @@ export interface RangeLayout {
   dotX: number | null;
   dotFloatingLeft: boolean;
   dotFloatingRight: boolean;
-  bubbleCx: number | null;
-  bubbleLeft: number | null;
   typicalX: number | null;
   typicalInBounds: boolean;
   typicalLabelX: number | null;
@@ -88,10 +80,6 @@ export function computeLayout(
   const dotFloatingLeft  = rawDotX != null && rawDotX < innerLeft;
   const dotFloatingRight = rawDotX != null && rawDotX > innerRight;
 
-  // Bubble follows dot, clamped to SVG bounds (not track bounds).
-  const bubbleCx   = dotX != null ? Math.max(HALF_BUBBLE, Math.min(TR_W - HALF_BUBBLE, dotX)) : null;
-  const bubbleLeft = bubbleCx != null ? bubbleCx - HALF_BUBBLE : null;
-
   // Typical marker — unclamped on both sides.
   const rawTypicalX = typicalRatio != null ? innerLeft + typicalRatio * totalW : null;
   const typicalX    = rawTypicalX  != null ? Math.max(7, Math.min(TR_W - 7, rawTypicalX)) : null;
@@ -101,7 +89,7 @@ export function computeLayout(
   const typicalLabelX = typicalX != null
     ? typicalInBounds
       ? Math.max(innerLeft + 28, Math.min(innerRight - 28, typicalX))
-      : Math.max(HALF_BUBBLE, Math.min(TR_W - HALF_BUBBLE, typicalX))
+      : Math.max(22, Math.min(TR_W - 22, typicalX))
     : null;
 
   // Drop typical label to a second row only when in-bounds and crowding an endpoint label.
@@ -112,7 +100,6 @@ export function computeLayout(
   return {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
-    bubbleCx, bubbleLeft,
     typicalX, typicalInBounds, typicalLabelX,
     typicalLabelY: typicalDropped ? LABEL_Y + 14 : LABEL_Y,
     svgH: typicalDropped ? TR_H + 14 : TR_H,
@@ -122,13 +109,14 @@ export function computeLayout(
 export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.ReactElement {
   const [renderW, setRenderW] = useState(0);
 
-  // Range fill + bubble use brand teal — verdict lives in the header badge,
-  // not this bar.
-  const fillColor = colors.brand;
+  // High-range fill: use skip color when current is in the upper quartile.
+  const fillColor = (current != null && current > p10 + (p90 - p10) * 0.75)
+    ? colors.skip
+    : colors.brand;
+
   const {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
-    bubbleCx, bubbleLeft,
     typicalX, typicalLabelX, typicalLabelY, svgH,
   } = computeLayout(p10, p90, current, typicalWait);
 
@@ -198,7 +186,7 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
                 fontSize="12" fontWeight="500"
                 fill={colors.textSecondary} textAnchor="middle"
               >
-                {`usually ${typicalWait}m`}
+                {`usually ${roundWait(typicalWait)}m`}
               </SvgText>
             ) : null}
 
@@ -206,35 +194,12 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
             {dotX != null ? (
               <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
             ) : null}
-
-            {/* Current wait bubble */}
-            {dotX != null && bubbleLeft != null && bubbleCx != null && current != null ? (
-              <>
-                <Rect
-                  x={bubbleLeft} y={BUBBLE_TOP_Y}
-                  width={HALF_BUBBLE * 2} height={BUBBLE_H}
-                  rx={BUBBLE_H / 2}
-                  fill={fillColor}
-                />
-                <Polygon
-                  points={`${bubbleCx - 5},${BUBBLE_BOTTOM_Y} ${bubbleCx + 5},${BUBBLE_BOTTOM_Y} ${dotX},${POINTER_TIP_Y}`}
-                  fill={fillColor}
-                />
-                <SvgText
-                  x={bubbleCx} y={BUBBLE_TOP_Y + BUBBLE_H - 5}
-                  fontSize="11" fontWeight="700"
-                  fill="white" textAnchor="middle"
-                >
-                  {`${current}m`}
-                </SvgText>
-              </>
-            ) : null}
           </Svg>
           {/* p10/p90 endpoint labels as native Text so they can't be SVG-clipped.
               Positioned to match LABEL_Y in the SVG coordinate space (y-scale is 1:1). */}
           <View style={styles.rangeLabelsRow}>
-            <Text style={styles.rangeLabel}>{p10}m</Text>
-            <Text style={styles.rangeLabel}>{p90}m</Text>
+            <Text style={styles.rangeLabel}>{roundWait(p10)}m</Text>
+            <Text style={styles.rangeLabel}>{roundWait(p90)}m</Text>
           </View>
           </>
         ) : null}

@@ -14,6 +14,7 @@ import React, {
   useEffect,
   useState,
 } from 'react';
+import { AppState } from 'react-native';
 import { TripRecord } from '../types';
 import { useAuth } from './AuthContext';
 import { fetchUserTrip } from '../api';
@@ -78,6 +79,20 @@ export function TripProvider({ children }: { children: React.ReactNode }): React
       setTrip(null);
       setLoading(false);
     }
+  }, [user, loadTrip]);
+
+  // Re-evaluate access whenever the app returns to the foreground. hasActiveTrip
+  // is derived from new Date() at render time, so a session left open across the
+  // tripEnd boundary keeps stale access until something re-renders. Refetching on
+  // foreground both recomputes the date check and picks up any new purchase.
+  // Done silently (no loading flag) to avoid flashing a spinner on resume.
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active' && user) {
+        void loadTrip();
+      }
+    });
+    return () => sub.remove();
   }, [user, loadTrip]);
 
   const bypass = userRecord?.bypass ?? false;
