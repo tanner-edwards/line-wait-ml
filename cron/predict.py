@@ -58,6 +58,7 @@ FULL_DAY_SLOTS = [
 
 TRAJECTORY_FEATURE_COLS = [
     "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3",
+    "park_crowd_median",
     "hour_of_day", "day_of_week", "month",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
@@ -406,11 +407,25 @@ def main() -> int:
         today_closures = _read_today_closures(db, now_la)
         log.info("Read today's closures for %d rides", len(today_closures))
 
+        # Park-wide crowd proxy — median operating wait at the most recent poll.
+        # Matches the training-time computation in the notebook.
+        latest_ts = df["timestamp_utc"].max()
+        _operating_at_latest = df.loc[
+            (df["timestamp_utc"] == latest_ts) & (df["status"] == "OPERATING"),
+            "wait_minutes",
+        ]
+        park_crowd_median = float(
+            _operating_at_latest.median() if not _operating_at_latest.empty
+            else df["wait_minutes"].median()
+        )
+        log.info("park_crowd_median: %.1f min", park_crowd_median)
+
         prediction_docs = []
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats)
             if feat_row is None:
                 continue
+            feat_row["park_crowd_median"] = park_crowd_median
 
             X = pd.DataFrame([feat_row])[TRAJECTORY_FEATURE_COLS]
             X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
