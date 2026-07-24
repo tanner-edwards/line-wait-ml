@@ -19,7 +19,7 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchWaits(at?: string): Promise<CombinedResponse> {
+export async function fetchWaits(at?: string, idToken?: string | null): Promise<CombinedResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
   }
@@ -28,11 +28,16 @@ export async function fetchWaits(at?: string): Promise<CombinedResponse> {
     ? `${BASE_URL}/v0/waits?at=${encodeURIComponent(at)}`
     : `${BASE_URL}/v0/waits`;
 
+  // Server-side paywall: the token identifies the user so the backend can
+  // include premium (predictive) fields for entitled users. Absent token →
+  // free tier (current waits only). Optional so a token hiccup never blanks
+  // the waits screen.
+  const headers: Record<string, string> = { 'x-api-key': API_KEY };
+  if (idToken) headers['authorization'] = `Bearer ${idToken}`;
+
   let res: Response;
   try {
-    res = await fetch(url, {
-      headers: { 'x-api-key': API_KEY },
-    });
+    res = await fetch(url, { headers });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
     throw new ApiError(null, message);
@@ -65,6 +70,9 @@ interface FetchRecommendationsInput {
   /** Optional AbortSignal so the Recommendations screen can cancel an in-
    *  flight call when the user re-picks before the previous call returns. */
   signal?: AbortSignal;
+  /** Firebase ID token. Recommendations is a premium, entitlement-gated
+   *  endpoint — the backend returns 402 without a valid entitled token. */
+  idToken?: string | null;
 }
 
 export async function fetchRecommendations({
@@ -74,6 +82,7 @@ export async function fetchRecommendations({
   persona,
   excludeRideIds,
   signal,
+  idToken,
 }: FetchRecommendationsInput): Promise<RecommendationsResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
@@ -83,14 +92,17 @@ export async function fetchRecommendations({
   if (persona) body.persona = persona;
   if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 
+  const headers: Record<string, string> = {
+    'x-api-key': API_KEY,
+    'content-type': 'application/json',
+  };
+  if (idToken) headers['authorization'] = `Bearer ${idToken}`;
+
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}/v2/recommendations`, {
       method: 'POST',
-      headers: {
-        'x-api-key': API_KEY,
-        'content-type': 'application/json',
-      },
+      headers,
       body: JSON.stringify(body),
       signal,
     });

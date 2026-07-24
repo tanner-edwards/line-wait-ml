@@ -30,6 +30,16 @@ Parameters:
       Used by the waits handler (read historical_averages) and the averages
       cron (read wait_times, write historical_averages).
 
+  AllowAnonymousPremium:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: >
+      When 'true', anonymous Firebase users get full premium (predictive) data
+      from /v0/waits and /v2/recommendations — used for the web-demo build and
+      local dev. MUST stay 'false' in production so the paywall actually holds:
+      anonymous is the web sign-in path, so 'true' would unlock everyone.
+
   BedrockModelId:
     Type: String
     Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
@@ -148,6 +158,7 @@ Resources:
           API_KEY: !Ref ApiKeyValue
           CORS_ORIGIN: !Ref CorsOrigin
           FIREBASE_SERVICE_ACCOUNT_JSON: !Ref FirebaseServiceAccountJson
+          ALLOW_ANONYMOUS_PREMIUM: !Ref AllowAnonymousPremium
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_REGION: !Ref BedrockRegion
           APPLE_SHARED_SECRET: !Ref AppleSharedSecret

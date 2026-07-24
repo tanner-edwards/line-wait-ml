@@ -22,6 +22,7 @@ import { StatusBar } from 'expo-status-bar';
 import { ApiError, fetchRecommendations } from '../api';
 import { DailyContext, ParkSlug, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
+import { useAuth } from '../context/AuthContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useLocation } from '../context/LocationContext';
@@ -57,6 +58,7 @@ function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] 
 
 export function Recommendations(): React.ReactElement {
   const { data, error: waitsError, loading: waitsLoading, ridesById } = useRides();
+  const { getIdToken } = useAuth();
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
   const { coords, status, retry, setDebugCoords } = useLocation();
@@ -117,17 +119,25 @@ export function Recommendations(): React.ReactElement {
     setLoadMoreError(null);
     loadMoreAbort.current?.abort();
     try {
-      const res = await fetchRecommendations({ park, userLat: lat, userLng: lng, persona, signal: controller.signal });
+      const idToken = await getIdToken();
+      const res = await fetchRecommendations({ park, userLat: lat, userLng: lng, persona, signal: controller.signal, idToken });
       if (controller.signal.aborted) return;
       setRecs(res);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
+      // 402 = not entitled. The tab paywall handles the upsell UI; here we just
+      // avoid surfacing a scary error if an unentitled request slips through.
+      if (err instanceof ApiError && err.statusCode === 402) {
+        setRecs(null);
+        setRecsError(null);
+        return;
+      }
       const message = err instanceof ApiError ? err.message : 'Unknown error';
       setRecsError(message);
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen, persona]);
+  }, [isParkOpen, persona, getIdToken]);
 
   const loadMore = useCallback(async () => {
     if (!recs || !coords) return;
@@ -139,6 +149,7 @@ export function Recommendations(): React.ReactElement {
     setLoadingMore(true);
     setLoadMoreError(null);
     try {
+      const idToken = await getIdToken();
       const res = await fetchRecommendations({
         park,
         userLat: coords.lat,
@@ -146,6 +157,7 @@ export function Recommendations(): React.ReactElement {
         persona,
         excludeRideIds: recs.recommendations.map(r => r.rideId),
         signal: controller.signal,
+        idToken,
       });
       if (controller.signal.aborted) return;
       setRecs(prev => prev
@@ -166,7 +178,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
-  }, [recs, coords, dailyContext, persona]);
+  }, [recs, coords, dailyContext, persona, getIdToken]);
 
   const onRefresh = useCallback(() => {
     if (!coords) return;

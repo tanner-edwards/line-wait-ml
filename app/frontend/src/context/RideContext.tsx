@@ -16,6 +16,7 @@ import { AppState } from 'react-native';
 import { ApiError, fetchWaits } from '../api';
 import { CombinedResponse, Ride } from '../types';
 import { erroredParks } from '../grouping';
+import { useAuth } from './AuthContext';
 
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const STALE_FOREGROUND_THRESHOLD_MS = 10 * 60 * 1000;
@@ -48,6 +49,15 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const lastFetchedAtMs = useRef<number>(0);
 
+  // Firebase token identifies the user so the backend includes premium fields
+  // for entitled users. Held in a ref so `refresh` stays stable (its identity
+  // feeds the interval/foreground effects) while always reading the latest.
+  const { user, getIdToken } = useAuth();
+  const getIdTokenRef = useRef(getIdToken);
+  useEffect(() => {
+    getIdTokenRef.current = getIdToken;
+  }, [getIdToken]);
+
   const refresh = useCallback(
     async (mode: 'user' | 'auto' | 'initial', at?: string) => {
       if (mode === 'initial') setLoading(true);
@@ -55,7 +65,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       if (mode === 'auto') setBackgroundRefreshing(true);
       const fetchedAt = new Date().toISOString();
       try {
-        const fresh = await fetchWaits(at);
+        const token = await getIdTokenRef.current();
+        const fresh = await fetchWaits(at, token);
         setData(fresh);
         lastFetchedAtMs.current = Date.now();
         if (mode !== 'initial') setLastRefreshedAt(fetchedAt);
@@ -83,6 +94,17 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refresh('initial');
   }, [refresh]);
+
+  // Auth resolves asynchronously after the initial fetch. When it first
+  // becomes available (null → uid), silently refetch so an entitled user
+  // upgrades from the token-less free-tier first paint to the full payload.
+  const authUid = user?.uid ?? null;
+  const prevAuthUid = useRef<string | null>(null);
+  useEffect(() => {
+    const was = prevAuthUid.current;
+    prevAuthUid.current = authUid;
+    if (!was && authUid) void refresh('auto');
+  }, [authUid, refresh]);
 
   // Auto-refresh every 10 minutes while the app is open.
   useEffect(() => {

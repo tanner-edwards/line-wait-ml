@@ -43,6 +43,12 @@ import {
   UserResponse,
 } from './types';
 import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode } from './users';
+import {
+  resolveEntitlement,
+  stripPremiumFromRide,
+  verifyAuthClaims,
+  invalidateEntitlement,
+} from './entitlement';
 import { purchaseTrip } from './tripPurchase';
 import {
   DAILY_PARKS_VALUES,
@@ -370,20 +376,10 @@ function corsHeaders(): Record<string, string> {
   };
 }
 
+// Thin wrapper over entitlement.verifyAuthClaims — the user/trip/promo routes
+// only need the uid. Token parsing + verification lives in one place.
 async function verifyAuth(event: APIGatewayProxyEvent): Promise<string | null> {
-  const headers = event.headers ?? {};
-  const authHeader = headers['authorization'] ?? headers['Authorization'] ?? '';
-  const token = authHeader.replace(/^Bearer\s+/i, '');
-  if (!token) return null;
-  try {
-    const { initFirebase } = await import('./firestoreClient');
-    const app = initFirebase();
-    const admin = await import('firebase-admin');
-    const decoded = await admin.auth(app).verifyIdToken(token);
-    return decoded.uid;
-  } catch {
-    return null;
-  }
+  return (await verifyAuthClaims(event))?.uid ?? null;
 }
 
 function jsonResponse(
@@ -570,10 +566,14 @@ export async function handler(
     }
   }
 
+  // Premium gate: non-entitled callers get current-state data only; the
+  // predictive fields are nulled out. Resolved once per request.
+  const entitled = await resolveEntitlement(event);
+
   if (route.kind === 'park') {
     try {
       const data = await fetchPark(route.slug, referenceDate);
-      return jsonResponse(200, data);
+      return jsonResponse(200, entitled ? data : stripParkData(data));
     } catch (err) {
       const status = err instanceof UpstreamError ? err.statusCode : 502;
       const message = err instanceof Error ? err.message : 'Unknown upstream error';
@@ -585,7 +585,8 @@ export async function handler(
   const entries: (ParkData | ParkError)[] = await Promise.all(
     PARK_ORDER.map(async (slug): Promise<ParkData | ParkError> => {
       try {
-        return await fetchPark(slug, referenceDate);
+        const data = await fetchPark(slug, referenceDate);
+        return entitled ? data : stripParkData(data);
       } catch {
         return shapeParkError(slug, 'UPSTREAM_UNAVAILABLE');
       }
@@ -603,9 +604,23 @@ export async function handler(
   return jsonResponse(200, shapeCombined(entries));
 }
 
+// Non-mutating copy of a ParkData with every ride's premium fields stripped.
+// Must not mutate the input — parkCache serves a shared object across requests.
+function stripParkData(data: ParkData): ParkData {
+  return { ...data, rides: data.rides.map(stripPremiumFromRide) };
+}
+
 async function handleRecommendations(
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> {
+  // Recommendations are the premium product and the most expensive endpoint
+  // (live fetch + Bedrock). Reject non-entitled callers up front — before any
+  // fetch, cache read, or LLM call — so a scraper with only the API key gets
+  // nothing and burns none of the Bedrock budget.
+  if (!(await resolveEntitlement(event))) {
+    return jsonResponse(402, errorBody('PAYMENT_REQUIRED', 'An active trip is required to view recommendations.'));
+  }
+
   let body: {
     park?: unknown;
     userLat?: unknown;
@@ -1016,6 +1031,7 @@ async function handleClaimFreeTrip(
     const userRecord = await getUser(uid);
     if (!userRecord) return jsonResponse(404, errorBody('NOT_FOUND', 'User not found'));
     const trip = await claimFreeTrip(uid, userRecord.appleId, tripStart, tripEnd);
+    invalidateEntitlement(uid); // reflect the new trip on the next data poll
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1046,6 +1062,7 @@ async function handlePromoValidate(
 
   try {
     const trip = await validatePromoCode(uid, code, tripStart, tripEnd);
+    invalidateEntitlement(uid); // reflect the new trip on the next data poll
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1106,6 +1123,7 @@ async function handleTripPurchase(
 
   try {
     const trip = await purchaseTrip(uid, receiptData, tripStart, tripEnd);
+    invalidateEntitlement(uid); // reflect the new trip on the next data poll
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

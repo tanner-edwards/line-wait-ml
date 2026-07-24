@@ -117,6 +117,13 @@ PARAMETER_OVERRIDES=(
 if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
   PARAMETER_OVERRIDES+=("BedrockBudgetAlarmEmail=$BEDROCK_BUDGET_ALARM_EMAIL")
 fi
+# Opt-in ONLY for a dev/demo backend: unlocks premium for anonymous users
+# (the web sign-in path). Leave unset for prod so the paywall holds — the
+# template default is 'false'.
+if [[ "${ALLOW_ANONYMOUS_PREMIUM:-}" == "true" ]]; then
+  PARAMETER_OVERRIDES+=("AllowAnonymousPremium=true")
+  echo "==> WARNING: AllowAnonymousPremium=true — anonymous users get premium. Dev/demo only, never prod."
+fi
 
 echo "==> sam deploy"
 sam deploy \
