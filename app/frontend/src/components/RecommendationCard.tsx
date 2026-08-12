@@ -15,26 +15,22 @@ import { Recommendation, Ride, ScoreResult } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
 import { Pill } from './Pill';
-import { TrendArrow } from './TrendArrow';
+import { TrendArrow, trajectoryDirection } from './TrendArrow';
 import { WalkPill } from './WalkPill';
 import { isWalkOnRide } from '../utils/walkOn';
-import { trendDirection } from '../utils/trendDirection';
 import { roundWait } from '../utils/roundWait';
-import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 
 const SUPPRESSED_SCORE: ScoreResult = {
   score: 0,
   badge: null,
   factors: {
-    vsAvg: null,
-    vsRange: null,
-    projectedChange: null,
-    nearTermChange: null,
-    rapidChange: null,
+    zone: 'suppressed', typical: null, worthWeight: null, valueMinutes: null,
+    betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+    reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
   },
 };
 
-const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
+const TREND_LABEL = { down: 'Dropping', up: 'Rising' } as const;
 
 interface RecommendationCardProps {
   rec: Recommendation;
@@ -53,12 +49,6 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   }
 
   const isOperating = ride.status === 'OPERATING';
-  const ha = ride.historicalAverage;
-  const bucket0 = ha?.buckets[0] ?? null;
-  const bucket1 = ha?.buckets[1] ?? null;
-  const bucket3 = ha?.buckets[3] ?? null;
-  const bucket4 = ha?.buckets[4] ?? null;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   const badge = scoreResult.badge;
   const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
@@ -66,28 +56,9 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.
   const showWalkOn = walkOnRaw && badge !== 'star';
   const showBadge = badge !== null && !showWalkOn;
-  // Trend combines real past observations with the historical-average future
-  // curve. We anchor "current" on arrivalWait when available (the wait the
-  // guest will actually face after walking over) — the past observation
-  // becomes the "where the ride was when we last polled".
-  const trendInput = {
-    currentWait: rec.arrivalWait ?? ride.currentWait,
-    recentWait: ride.recentHistory?.[0]?.wait ?? null,
-    bucket1Wait: bucket1?.wait ?? null,
-    bucket3Wait: bucket3?.wait ?? null,
-    bucket4Wait: bucket4?.wait ?? null,
-  };
-  const trend = trendDirection(trendInput);
-
-  const isBelowNormal =
-    isOperating &&
-    (rec.arrivalWait ?? ride.currentWait) !== null &&
-    bucket0?.wait != null &&
-    bucket0.wait > 0 &&
-    (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
-    ((rec.arrivalWait ?? ride.currentWait) as number) < bucket0.wait * 0.75;
-
-  const waitColor = isBelowNormal ? colors.go : colors.textPrimary;
+  // Trend — single source of truth is the server verdict's trajectory. No local
+  // recompute; Steady / absent renders nothing.
+  const trend = isOperating ? trajectoryDirection(scoreResult.factors.trajectory) : null;
 
   const waitDisplay = rec.arrivalWait !== null
     ? `${roundWait(rec.arrivalWait)}`
@@ -121,9 +92,7 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
               </View>
             ) : waitDisplay !== null ? (
               <>
-                <Text style={[styles.waitNumber, { color: waitColor }]}>
-                  {waitDisplay}
-                </Text>
+                <Text style={styles.waitNumber}>{waitDisplay}</Text>
                 <Text style={styles.waitMin}> min</Text>
               </>
             ) : (
@@ -141,13 +110,10 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
             </View>
             <View style={styles.trendRow}>
               {trend ? (
-                <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
-              ) : null}
-              {bucket0?.wait != null && bucket4?.wait != null ? (
-                <TrendArrow
-                  {...trendInput}
-                  lowConfidence={lowConfidence}
-                />
+                <>
+                  <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
+                  <TrendArrow direction={trend} />
+                </>
               ) : null}
             </View>
           </View>
@@ -214,6 +180,7 @@ const styles = StyleSheet.create({
   },
   waitNumber: {
     ...typography.waitNumber,
+    color: colors.textPrimary,
   },
   waitMin: {
     ...typography.label,

@@ -107,21 +107,73 @@ export interface RideStats {
 
 export type Badge = 'star' | 'go' | 'skip' | null;
 
-export interface FactorBreakdown {
-  vsAvg:           { delta: number; points: number } | null;
-  vsRange:         { pct: number;  points: number } | null;
-  projectedChange: { delta: number; points: number } | null;
-  nearTermChange:  { delta: number; points: number } | null;
-  // ≥40% swing from the previous observed wait (previous must have been
-  // OPERATING — excludes reopens from DOWN). Override: fires 'go'/'skip'
-  // badge even when score-based factors don't reach the ±2 threshold.
-  rapidChange:     { delta: number; points: number } | null;
+// Which of the three zones (anchored on rideStats.p10/p90) the current wait
+// landed in. 'suppressed' = data too thin / degenerate to judge.
+export type VerdictZone = 'opportunity' | 'judgment' | 'skip' | 'suppressed';
+
+// Trajectory sourced from the ML prediction.trend, confidence-gated. Null when
+// no prediction or confidence is 'low'. Replaces the old F3/F4/trendDirection
+// recomputations as the single trajectory signal.
+export type VerdictTrajectory = 'rising' | 'falling' | 'trough' | 'peak' | 'stable' | null;
+
+// The three-zone verdict breakdown — the source of truth for the detail view's
+// "why". See ~/.claude/specs/line-wait-ml/verdict-function-spec.md.
+export interface VerdictBreakdown {
+  zone:             VerdictZone;     // axis-1 rank label: opportunity(≤p10) / judgment / skip(>p90)
+  typical:          number | null;   // true historical avg for this slot (baseline, not ML-swapped)
+  worthWeight:      number | null;   // p50-derived magnitude amplifier
+  valueMinutes:     number | null;   // signed opportunity magnitude (worth-weighted)
+  betterWindowWait: number | null;   // AXIS 2: wait at the best reachability-weighted window
+  betterWindowInMin: number | null;  // AXIS 2: how far out that window is (minutes)
+  recoverableNet:   number | null;   // AXIS 2: reachability-DECAYED savings vs that window
+  reachableSoon:    boolean;         // that window is inside the near (≤2h) horizon
+  climb:            boolean;         // AXIS 2: forecast says it's about to rise (window closing)
+  trajectory:       VerdictTrajectory;
+  // ≥40% swing from the previous OPERATING snapshot — real-time event override.
+  rapidChange:      { delta: number; points: number } | null;
 }
 
 export interface ScoreResult {
-  score:   number;
-  badge:   Badge;
-  factors: FactorBreakdown;
+  score:   number;              // signed worth-weighted magnitude (cross-ride ranking currency)
+  badge:   Badge;               // the verdict; null === Neutral (renders no chip)
+  factors: VerdictBreakdown;    // the "why", for the detail view + LLM prompt
+}
+
+// ── Two-layer verdict (Layer 1 deal math + Layer 2 worth/absolute/star) ──
+// The authoritative verdict. `verdict` drives the badge (neutral → no chip);
+// `reasons` drives the deterministic "why this rating" copy — both derived from
+// the SAME numbers so they can never contradict.
+// See app/backend/src/scoring/{layer1,layer2}.ts.
+export type Verdict = 'go' | 'star' | 'skip' | 'neutral';
+
+export type VerdictReason =
+  | 'rare-low'      // STAR — near its best all day AND well below typical-for-now
+  | 'todays-low'    // GO — lowest wait left today
+  | 'below-usual'   // GO — below its usual for right now
+  | 'at-ceiling'    // SKIP — at/above its ceiling, a shorter window is reachable
+  | 'high-vs-usual' // SKIP — above usual + near today's peak, better window coming
+  | 'dropping-soon' // SKIP — about to drop hard (big reachable fall), even if near its usual
+  | 'high-but-steady' // NEUTRAL — high/at today's peak, but no better window is reachable → hold
+  | 'filler'        // NEUTRAL — looked like a deal but it's an always-short ride
+  | 'trivial-drop'  // NEUTRAL — below usual, but the drop is too small to matter
+  | 'short-to-skip' // NEUTRAL — high for the ride, but too short a wait to avoid
+  | 'none';         // NEUTRAL — no real decision either way
+
+export interface VerdictReasons {
+  primary:      VerdictReason;
+  current:      number;
+  typical:      number | null;   // historical avg for this ride · slot · day-type
+  todayP30:     number | null;   // 30th pctl of today's remaining predicted waits
+  todayP80:     number | null;   // 80th pctl of today's remaining predicted waits
+  p10:          number | null;   // ride's all-time floor (day-type)
+  p90:          number | null;   // ride's all-time ceiling (day-type)
+  beatableSoon: boolean;         // a meaningfully-lower window is reachable soon
+  star:         boolean;
+}
+
+export interface VerdictInfo {
+  verdict: Verdict;
+  reasons: VerdictReasons;
 }
 
 export interface RecentSnapshot {
@@ -168,6 +220,9 @@ export interface Ride {
   // the pre-scoring assembly stage in handler.ts to build a Ride and
   // then attach the score result.
   score?: ScoreResult;
+  // Authoritative two-layer verdict + deterministic "why" reasons. Additive
+  // alongside `score` during the migration off the old engine.
+  verdict?: VerdictInfo;
   // 30-min historical-average slots from ~7 AM to midnight. Null when
   // the ride has no historical data at all. Individual slots with
   // wait: null indicate the park was closed during that window historically.
@@ -332,6 +387,7 @@ export interface UserRecord {
   createdAt: string;
   freeTripClaimed: boolean;
   bypass: boolean;
+  debugMode: boolean;
 }
 
 export interface TripRecord {
@@ -349,6 +405,9 @@ export interface UserResponse {
   userId: string;
   freeTripClaimed: boolean;
   bypass: boolean;
+  // Gates visibility of the client's debug-mode UI. Firestore-only — no API
+  // sets this to true; it's flipped by hand for internal devices.
+  debugMode: boolean;
   isNew: boolean;
   trip: TripRecord | null;
 }

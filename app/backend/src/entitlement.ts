@@ -135,6 +135,20 @@ export function stripPremiumFromRide(ride: Ride): Ride {
   const score = ride.score
     ? { ...ride.score, badge: ride.score.badge === 'star' ? ('go' as const) : ride.score.badge }
     : ride.score;
+  // Mirror the score treatment on the two-layer verdict: keep the coarse label
+  // (star → go), but null the raw predictive numbers behind the "why" reasons —
+  // those are the same premium detail we strip via rideStats/fullDayForecast.
+  const verdict = ride.verdict
+    ? {
+        verdict: ride.verdict.verdict === 'star' ? ('go' as const) : ride.verdict.verdict,
+        reasons: {
+          ...ride.verdict.reasons,
+          primary: ride.verdict.reasons.primary === 'rare-low' ? ('todays-low' as const) : ride.verdict.reasons.primary,
+          star: false,
+          typical: null, todayP30: null, todayP80: null, p10: null, p90: null,
+        },
+      }
+    : ride.verdict;
   return {
     ...ride,
     rideStats: null,
@@ -142,6 +156,7 @@ export function stripPremiumFromRide(ride: Ride): Ride {
     closureProfile: null,
     predictedReopenAt: null,
     score,
+    verdict,
   };
 }
 

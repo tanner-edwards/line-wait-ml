@@ -3,7 +3,7 @@ import { RefreshControl } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Home } from './Home';
 import * as api from '../api';
-import { CombinedResponse, HistoricalAverage, Ride } from '../types';
+import { CombinedResponse, HistoricalAverage, Ride, ScoreResult, VerdictTrajectory } from '../types';
 import { RideProvider } from '../context/RideContext';
 import { LocationProvider } from '../context/LocationContext';
 import { DailyContextProvider } from '../context/DailyContextContext';
@@ -313,163 +313,77 @@ describe('Home — v1 historical-context indicators', () => {
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
   });
 
-  it('shows green ↓ when bucket[2] < bucket[0] * 0.9', async () => {
+  // The row trend is now sourced from the server verdict's trajectory — no
+  // local bucket recompute. Only the trajectory field matters here.
+  const scoreWithTrajectory = (trajectory: VerdictTrajectory): ScoreResult => ({
+    score: 0,
+    badge: null,
+    factors: {
+      zone: 'judgment', typical: null, worthWeight: null, valueMinutes: null,
+      betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+      reachableSoon: false, climb: false, trajectory, rapidChange: null,
+    },
+  });
+
+  it('shows Dropping ↓ when the verdict trajectory is falling', async () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 50,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 50, sampleCount: 100 },
-          { wait: 25, sampleCount: 100 }
-        ),
-        prediction: null,
+        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
+        status: 'OPERATING', currentWait: 50, prediction: null,
+        score: scoreWithTrajectory('falling'),
       })
     );
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-down')).toBeTruthy();
+    expect(screen.getByText('Dropping')).toBeTruthy();
   });
 
-  it('shows red ↑ when bucket[2] > bucket[0] * 1.1', async () => {
+  it('shows Rising ↑ when the verdict trajectory is rising', async () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 30,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 30, sampleCount: 100 },
-          { wait: 60, sampleCount: 100 }
-        ),
-        prediction: null,
+        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
+        status: 'OPERATING', currentWait: 30, prediction: null,
+        score: scoreWithTrajectory('rising'),
       })
     );
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
+    expect(screen.getByText('Rising')).toBeTruthy();
   });
 
-  it('shows gray → when next-hour averages are within ±10%', async () => {
+  it('suppresses the trend arrow when the trajectory is stable', async () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 30,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 30, sampleCount: 100 },
-          { wait: 31, sampleCount: 100 }
-        ),
-        prediction: null,
+        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
+        status: 'OPERATING', currentWait: 30, prediction: null,
+        score: scoreWithTrajectory('stable'),
       })
     );
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
+    expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
+    expect(screen.queryByTestId('trend-arrow-down')).toBeNull();
   });
 
-  it('shows "Below normal" badge when currentWait < bucket[0] * 0.75', async () => {
+  it('the wait number is a neutral fact — below/above-normal badges are gone', async () => {
+    // The old "Below normal" / "Running high" pills were removed in the
+    // one-chip unification; the verdict badge is the only good/bad signal now.
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 10,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 40, sampleCount: 100 },
-          { wait: 40, sampleCount: 100 }
-        ),
-        prediction: null,
+        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
+        status: 'OPERATING', currentWait: 10, prediction: null,
+        score: scoreWithTrajectory(null),
       })
     );
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByTestId('below-normal-badge')).toBeTruthy();
-    expect(screen.getByText('Below normal')).toBeTruthy();
-  });
-
-  it('shows "Running high" badge when currentWait > bucket[0] * 1.25', async () => {
-    mockFetchWaits.mockResolvedValue(
-      singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 80,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 40, sampleCount: 100 },
-          { wait: 40, sampleCount: 100 }
-        ),
-        prediction: null,
-      })
-    );
-    renderHome();
-    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
-
-    expect(screen.getByTestId('above-normal-badge')).toBeTruthy();
-    expect(screen.getByText('Running high')).toBeTruthy();
-  });
-
-  it('low-confidence (bucket[0].sampleCount=0): badge suppressed, arrow uses low-conf styling', async () => {
-    // Confidence threshold is currently 1 (lowered from 20 while wait_times
-    // is still accumulating history — see Home.tsx + BelowNormalBadge.tsx
-    // comments). Only sampleCount=0 triggers suppression.
-    mockFetchWaits.mockResolvedValue(
-      singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        currentWait: 10,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 50, sampleCount: 0 },
-          { wait: 25, sampleCount: 0 }
-        ),
-        status: 'OPERATING',
-        prediction: null,
-      })
-    );
-    renderHome();
-    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
-
-    expect(screen.queryByTestId('below-normal-badge')).toBeNull();
-    expect(screen.queryByTestId('above-normal-badge')).toBeNull();
-    // Arrow still renders with low-confidence variant. TrendArrow is anchored
-    // to currentWait=10; bucket4.wait=25 is higher → up-low-conf.
-    expect(screen.getByTestId('trend-arrow-up-low-conf')).toBeTruthy();
-  });
-
-  it('bucket[0].wait === 0: TrendArrow uses currentWait as anchor (still renders), below-normal badge suppressed', async () => {
-    // TrendArrow is now anchored to currentWait=25, not bucket0.wait=0.
-    // currentWait=25 vs bucket4.wait=25 → stable arrow renders.
-    // BelowNormalBadge still guards against bucket0.wait=0 → no badge.
-    mockFetchWaits.mockResolvedValue(
-      singleRideResponse({
-        id: 'space',
-        name: 'Hyperspace Mountain',
-        land: 'Tomorrowland',
-        status: 'OPERATING',
-        currentWait: 25,
-        historicalAverage: makeHistoricalAverage(
-          { wait: 0, sampleCount: 100 },
-          { wait: 25, sampleCount: 100 }
-        ),
-        prediction: null,
-      })
-    );
-    renderHome();
-    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
-
-    expect(screen.getByTestId('trend-arrow-stable')).toBeTruthy();
+    expect(screen.getByText('10')).toBeTruthy();
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
   });

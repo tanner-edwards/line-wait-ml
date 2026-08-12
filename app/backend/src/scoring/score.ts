@@ -1,208 +1,285 @@
-import { Badge, FactorBreakdown, Ride, ScoreResult } from '../types';
+import {
+  Badge,
+  Ride,
+  ScoreResult,
+  VerdictBreakdown,
+  VerdictTrajectory,
+} from '../types';
 
-// Minimum bucket0 sampleCount before scoring is considered trustworthy.
-// Raised from 1 → 10 on 2026-06-07 (~36 days of data). Raise toward 20
-// around 2026-07-07 once weekend counts reach ~60 samples/bucket.
-// Keep in sync with: scanner.js MIN_BUCKET_SAMPLE_COUNT,
-//                    app/frontend/src/scoreConstants.ts MIN_BUCKET_SAMPLE_COUNT
+// ─────────────────────────────────────────────────────────────────────────────
+// Two-axis opportunity verdict.
+//
+// Full design + rationale: ~/.claude/specs/line-wait-ml/verdict-function-spec.md
+// and verdict-retrospective.html.
+//
+//   AXIS 1  "How does this wait rank for THIS ride, and is it worth it?"
+//           From history: p50 (worth) + position in p10/p90 (rank). GATES the
+//           verdict (worth-line, skip-floor, p90 hard-skip) and SCALES it
+//           (worth-weighted magnitude, star). Excel-able, and that's fine —
+//           this axis only judges "is it a lot for this ride / worth waiting."
+//
+//   AXIS 2  "Where does NOW sit within TODAY's forecast?"
+//           From the reachable rest-of-day curve (trajectory model 0–2h +
+//           full-day profile 2h→close, future slots only): dayFloor (best wait
+//           still reachable), savings (minutes gained by waiting for it), climb
+//           (about to rise). This axis DECIDES the direction (go/neutral/skip).
+//           It's the predictive part — the reason this isn't a spreadsheet.
+//
+// Combine: axis 1 says whether we speak and how loudly; axis 2 says what.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Keep in sync with scanner.js and app/frontend/src/scoreConstants.ts (all 10).
 export const MIN_BUCKET_SAMPLE_COUNT = 10;
+
+// --- Locked calibration (from real ride_stats, 2026-07-25) ---
+export const SKIP_FLOOR_MIN = 15;      // current wait must clear this to ever be a Skip
+export const GO_WORTH_LINE_MIN = 15;   // ride p50 must clear this to be Go/Star-eligible at all
+export const GO_TIMING_WORTH_MIN = 25; // ride p50 for a "best-window" GO — timing only matters on
+                                       // higher-demand rides; a spinner (p50 20) at its floor is
+                                       // "ride whenever", not a green badge. Rare lows (≤p10) still
+                                       // use GO_WORTH_LINE_MIN. Tunable.
+export const GO_DISCOUNT_MIN = 0.15;   // (legacy) retained for reference; superseded by the
+                                       // typical-based GO below.
+
+// --- v2 calibration (fit to the hand-labeled set, 2026-08-01) ---
+// The labels showed GO/STAR/SKIP are driven mostly by the ride's own
+// distribution + the true typical-for-now, NOT the (still-flattening) forecast.
+export const GO_WORTH_P90 = 25;        // a ride must be able to reach ≥ this (its p90) for timing to
+                                       // matter — the worth gate. Below it → filler → never Go/Star.
+export const SKIP_OVER_TYPICAL = 1.30; // current ≥ this × typical (and ≥ skip floor) → overpriced
+                                       // vs its own norm → Skip, even under p90.
+export const STAR_IMPROVEMENT_MIN = 12;// Star needs current ≤ p10 AND typical−current ≥ this — a
+                                       // rare low that's ALSO well below the typical-for-now. Rope-
+                                       // drop lows (typical already low → small gap) stay Go, not Star.
+const SOON_HORIZON_MIN = 150;          // a better window within this many minutes…
+const SOON_IMPROVE_MIN = 15;           // …that's ≥ this much lower can suppress a GO to Neutral.
+
+// --- Tunable thresholds (calibrate by eyeballing the review harness) ---
+const MIN_ZONE_SPREAD = 5;             // p90−p10 below this → distribution unreliable → suppress
+const WALK_ROUNDTRIP_MIN = 12;         // leave-and-return cost baked into savings
+const BEATABLE_SAVINGS_MIN = 15;       // DECAYED minutes a later window must save to justify a Skip
+const EXTREME_DROP_MIN = 40;           // a huge RAW drop later today skips regardless of distance (decay can't bury it)
+const FLOOR_SLACK_MIN = 0;             // decayed savings ≤ this → "now is the best window" (go)
+const WORTH_WEIGHT_DIVISOR = 40;       // worth_weight = p50 / divisor (magnitude scaling)
+const STAR_P50_MIN = 25;               // Star reserved for genuine headliners
+const ML_MAX_HORIZON_MIN = 240;        // ML curve (t10..t240) owns the reachable near-to-mid window
+const RAPID_SWING = 0.40;              // ±40% vs previous snapshot
+const RAPID_ABS_MIN = 10;              // …and ≥10 min absolute (ignore small-number noise)
+
+// --- Reachability decay (non-linear): how much a future better-window counts,
+// by how far out it is. Gentle 0→4h (today-adaptive ML zone, trusted), steeper
+// 4→8h (flattening calendar tail — discounted but NOT to zero). Floors at ~0.3:
+// a far window still holds real weight, and the 4h knee is safe because the
+// horizon slides — a 5h-out dip resurfaces inside the trusted window as the
+// guest rides and re-checks, so we never need to promise it now. Tunable. ---
+const DECAY_KNEE_H = 4, DECAY_KNEE_VAL = 0.7, DECAY_FAR_H = 8, DECAY_FAR_VAL = 0.3, DECAY_FLOOR = 0.3;
+function reachabilityWeight(deltaMinutes: number): number {
+  const h = deltaMinutes / 60;
+  if (h <= DECAY_KNEE_H) return 1 - ((1 - DECAY_KNEE_VAL) / DECAY_KNEE_H) * h;
+  const d = DECAY_KNEE_VAL - ((DECAY_KNEE_VAL - DECAY_FAR_VAL) / (DECAY_FAR_H - DECAY_KNEE_H)) * (h - DECAY_KNEE_H);
+  return Math.max(DECAY_FLOOR, d);
+}
 
 const SUPPRESSED: ScoreResult = {
   score: 0,
   badge: null,
   factors: {
-    vsAvg: null,
-    vsRange: null,
-    projectedChange: null,
-    nearTermChange: null,
-    rapidChange: null,
+    zone: 'suppressed', typical: null, worthWeight: null, valueMinutes: null,
+    betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+    reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
   },
 };
 
 export function scoreRide(ride: Ride): ScoreResult {
-  const { currentWait, status, historicalAverage, rideStats } = ride;
+  const { currentWait, status, rideStats } = ride;
 
-  // Suppression rules — no badge when data is absent or unreliable.
-  if (
-    currentWait === null ||
-    status !== 'OPERATING' ||
-    historicalAverage === null
-  ) {
-    return SUPPRESSED;
+  // Suppression — need a live wait, an operating ride, and enough history.
+  if (currentWait === null || status !== 'OPERATING') return SUPPRESSED;
+  const typicalBucket = (ride.historicalBaseline ?? ride.historicalAverage)?.buckets[0] ?? null;
+  if (typicalBucket === null || typicalBucket.sampleCount < MIN_BUCKET_SAMPLE_COUNT) return SUPPRESSED;
+
+  const typical = typicalBucket.wait;
+  const rapid = computeRapidChange(ride, currentWait);
+  const trajectory = trajectoryFromML(ride);
+
+  // No usable distribution (new ride / shows / transport with p10=p50=p90) →
+  // can't rank. Neutral, unless a real-time event fires (subject to floors).
+  if (rideStats === null || rideStats.p90 - rideStats.p10 < MIN_ZONE_SPREAD) {
+    let badge: Badge = null;
+    if (rapid?.dir === 'drop') badge = 'go';
+    else if (rapid?.dir === 'spike' && currentWait >= SKIP_FLOOR_MIN) badge = 'skip';
+    const v: VerdictBreakdown = {
+      zone: 'suppressed', typical, worthWeight: null, valueMinutes: null,
+      betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+      reachableSoon: false, climb: false, trajectory,
+      rapidChange: rapid ? { delta: rapid.delta, points: rapid.points } : null,
+    };
+    return { badge, score: signedScore(badge, v), factors: v };
   }
 
-  const bucket0 = historicalAverage.buckets[0];
-  const bucket1 = historicalAverage.buckets[1];
-  const bucket3 = historicalAverage.buckets[3];
-  const bucket4 = historicalAverage.buckets[4];
+  const { p10, p50, p90 } = rideStats;
+  const worthWeight = p50 / WORTH_WEIGHT_DIVISOR;
 
-  // Minimum sample count for the t+0 bucket before we'll score a ride. The
-  // intent of this gate is "don't claim a pattern off thin data" — when a
-  // (ride, bucket, dayType) cell has too few historical observations the
-  // signal is noise. Production target is ~20, matching the BelowNormalBadge
-  // gate and the TrendArrow lowConfidence threshold. Currently set to 1
-  // because data collection started 2026-05-02 — weekend cells only have
-  // ~18 samples max (6 weekend days × 3 polls per 30-min bucket), so the
-  // 20-cap suppressed every weekend score. Raise back toward 20 once the
-  // wait_times collection has accumulated several months.
-  if (bucket0.sampleCount < MIN_BUCKET_SAMPLE_COUNT) return SUPPRESSED;
+  // ── AXIS 2 — day position (reachability-weighted) ──
+  // Kept for the score magnitude, the detail view, and a LIGHT go-suppression /
+  // beatable-skip. The badge no longer leans hard on the forecast (the labels
+  // showed distribution + typical drive the call; the forecast still flattens).
+  const best = computeBestWindow(ride, currentWait);
+  const savings = best ? best.eff : null;
+  const reachableSoon = best !== null && best.dt <= 120;
+  const climb = trajectory === 'rising' || trajectory === 'trough';
+  // A meaningfully-better window reachably SOON (suppresses a GO to Neutral).
+  const soonBetter = best !== null && best.dt <= SOON_HORIZON_MIN &&
+    (currentWait - best.wait) >= SOON_IMPROVE_MIN;
+  const floorIsNow = savings !== null && savings <= FLOOR_SLACK_MIN;
 
-  // --- Factor 1: current wait vs. t+0 bucket average (max ±2) ---
-  let vsAvg: FactorBreakdown['vsAvg'];
-  let f1 = 0;
-  if (bucket0.wait !== null && bucket0.wait !== 0) {
-    const delta = (currentWait - bucket0.wait) / bucket0.wait;
-    // Absolute-difference floor scales with typical wait so an 8-min drop
-    // on a 68-min headliner doesn't look the same as an 8-min drop on a
-    // 15-min ride. Anchors: 20→5, 50→10, 90→15, 120→20, with linear
-    // interpolation between. Caps at 20 above typical=120.
-    if (Math.abs(currentWait - bucket0.wait) >= absoluteFloorForTypical(bucket0.wait)) {
-      if      (delta < -0.25) f1 = +2;
-      else if (delta < -0.10) f1 = +1;
-      else if (delta >  0.25) f1 = -2;
-      else if (delta >  0.10) f1 = -1;
-    }
-    vsAvg = { delta, points: f1 };
-  } else {
-    vsAvg = null;
-  }
+  // ── Worth + rank (distribution + true typical-for-now) ──
+  const worthy = p90 >= GO_WORTH_P90;                 // can this ride get busy enough to time?
+  const typ = typical ?? p50;                          // fall back to median if no baseline
+  const rank: 'below-floor' | 'mid' | 'at-ceiling' =
+    currentWait <= p10 ? 'below-floor' : currentWait >= p90 ? 'at-ceiling' : 'mid';
+  const zone: VerdictBreakdown['zone'] =
+    rank === 'below-floor' ? 'opportunity' : rank === 'at-ceiling' ? 'skip' : 'judgment';
 
-  // --- Factor 2: position in p10/p90 range (max ±2) ---
-  let vsRange: FactorBreakdown['vsRange'] = null;
-  let f2 = 0;
-  if (rideStats != null) {
-    const range = rideStats.p90 - rideStats.p10;
-    if (range >= 5) {
-      const pct = Math.max(0, Math.min(1, (currentWait - rideStats.p10) / range));
-      if      (currentWait <= rideStats.p10)  f2 = +2;
-      else if (pct < 0.25)                    f2 = +1;
-      else if (currentWait >= rideStats.p90)  f2 = -2;
-      else if (pct > 0.75)                    f2 = -1;
-      vsRange = { pct, points: f2 };
-    }
-  }
-
-  // --- Factor 3: projected change, anchored early window vs late window (max ±2) ---
-  // earlyAvg = avg(currentWait, t+30)  lateAvg = avg(t+90, t+120)
-  let projectedChange: FactorBreakdown['projectedChange'] = null;
-  let f3 = 0;
-  const b1w = bucket1.wait;
-  const b3w = bucket3.wait, b4w = bucket4.wait;
-  const earlyAvg = b1w !== null ? (currentWait + b1w) / 2 : currentWait;
-  const lateAvg  = (b3w !== null && b4w !== null) ? (b3w + b4w) / 2 : (b3w ?? b4w);
-  if (currentWait !== 0 && lateAvg !== null) {
-    const delta = (lateAvg - earlyAvg) / earlyAvg;
-    if (Math.abs(lateAvg - earlyAvg) >= 10) {
-      if      (delta < -0.25) f3 = -2;
-      else if (delta < -0.10) f3 = -1;
-      else if (delta >  0.25) f3 = +2;
-      else if (delta >  0.10) f3 = +1;
-    }
-    projectedChange = { delta, points: f3 };
-  }
-
-  // --- Factor 4: near-term change, current → t+30 (max ±1) ---
-  let nearTermChange: FactorBreakdown['nearTermChange'] = null;
-  let f4 = 0;
-  if (b1w !== null && currentWait > 0) {
-    const minuteDelta = b1w - currentWait;
-    const threshold = Math.max(10, currentWait * 0.20);
-    if (Math.abs(minuteDelta) >= threshold) {
-      f4 = minuteDelta > 0 ? +1 : -1;
-    }
-    nearTermChange = { delta: minuteDelta / currentWait, points: f4 };
-  }
-
-  const score = f1 + f2 + f3 + f4;
-
-  // Rapid change: ≥40% swing from the previous OPERATING snapshot. Fires
-  // 'go'/'skip' as an override even when score-based factors are neutral
-  // (e.g., a wait that's still above average but dropped dramatically).
-  // Guard: previousStatus must be 'OPERATING' to exclude reopen-from-DOWN
-  // scenarios where a jump from 0 → 45 min looks like a +Inf% spike.
-  const previousWait   = ride.recentHistory?.[0]?.wait   ?? null;
-  const previousStatus = ride.recentHistory?.[0]?.status ?? null;
-  let rapidChange: FactorBreakdown['rapidChange'] = null;
-  let isRapidDrop  = false;
-  let isRapidSpike = false;
-  if (previousWait !== null && previousWait > 0 && previousStatus === 'OPERATING') {
-    const delta   = (currentWait - previousWait) / previousWait;
-    const absDiff = Math.abs(currentWait - previousWait);
-    if (absDiff >= 10) {
-      isRapidDrop  = delta <= -0.40;
-      isRapidSpike = delta >= +0.40;
-    }
-    rapidChange = { delta, points: isRapidDrop ? +2 : isRapidSpike ? -2 : 0 };
-  }
-
-  // Gold star: rare exceptional opportunity. All conditions must hold:
-  //   1. rideStats.p50 >= 25       — ride is a real headliner (not a permanent
-  //                                   walk-on like Dumbo or Carousel)
-  //   2. currentWait <= p10 * 1.15 — current wait is in the rare-low tail for
-  //                                   this ride
-  //   3. vsAvg.delta < -0.30       — current wait is 30%+ below the typical
-  //                                   for this time slot
-  //   4. |drop| >= absoluteFloor   — the drop is meaningful in absolute minutes,
-  //                                   not just a big percent on a small baseline
-  //                                   (mirrors Factor 1's floor — without it,
-  //                                   a 5→3 min "drop" on Big Thunder during
-  //                                   rope drop would look like -40% and earn
-  //                                   a star, even though 3 vs 5 is noise)
-  const isGoldStar =
-    rideStats != null &&
-    rideStats.p50 >= 25 &&
-    currentWait <= rideStats.p10 * 1.15 &&
-    vsAvg !== null &&
-    vsAvg.delta < -0.30 &&
-    bucket0.wait !== null &&
-    Math.abs(currentWait - bucket0.wait) >= absoluteFloorForTypical(bucket0.wait);
-
-  let badge: Badge;
-  if (isGoldStar) {
-    badge = 'star';
-  } else if (isRapidDrop) {
-    badge = 'go';
-  } else if (score >= 2) {
-    // Suppress 'go' only when the projected future improvement is substantial in
-    // BOTH percentage (>30%) and absolute minutes (>=10 — same floor F3 uses for
-    // points). Pure-percentage dips on already-low waits don't justify suppression.
-    const projectedAbsDiff = lateAvg !== null ? Math.abs(lateAvg - earlyAvg) : 0;
-    const futureDipSuppressed = projectedChange !== null
-      && projectedChange.delta < -0.30
-      && projectedAbsDiff >= 10;
-    badge = futureDipSuppressed ? null : 'go';
-  } else if (isRapidSpike || score <= -2) {
+  // ── Decide ──
+  let badge: Badge = null;
+  if (currentWait >= p90 && currentWait >= SKIP_FLOOR_MIN) {
+    // Overpriced: at/above its own ceiling (≥, per the labeled set) and not a
+    // trivial wait. Worth-independent.
     badge = 'skip';
-  } else {
-    badge = null;
+  } else if (worthy && currentWait >= typ * SKIP_OVER_TYPICAL && currentWait >= SKIP_FLOOR_MIN) {
+    // Meaningfully above the ride's typical-for-now → overpriced vs its own norm.
+    badge = 'skip';
+  } else if (worthy && currentWait <= p10 && (typ - currentWait) >= STAR_IMPROVEMENT_MIN) {
+    // STAR — a rare low (≤ p10) that's ALSO well below the typical-for-now.
+    // Rope-drop lows (typical already low → small gap) don't qualify.
+    badge = 'star';
+  } else if (worthy && currentWait <= typ && currentWait <= p50) {
+    // GO — a busy-capable ride at/below both its median and its typical-for-now.
+    // Suppressed to Neutral only if a much-better window is reachably soon.
+    badge = soonBetter ? null : 'go';
   }
 
+  // Rapid-change override — a real-time event, subordinate to the ceiling.
+  if (badge !== 'star' && rapid) {
+    if (rapid.dir === 'drop' && currentWait < p90 && worthy) {
+      badge = badge ?? 'go';
+    } else if (rapid.dir === 'spike' && currentWait >= p90 && currentWait >= SKIP_FLOOR_MIN) {
+      badge = 'skip';
+    }
+  }
+
+  const valueMinutes = worthy ? ((typical ?? p50) - currentWait) * worthWeight : null;
+  const verdict: VerdictBreakdown = {
+    zone, typical, worthWeight, valueMinutes,
+    betterWindowWait: best?.wait ?? null, betterWindowInMin: best?.dt ?? null,
+    recoverableNet: savings, reachableSoon, climb, trajectory,
+    rapidChange: rapid ? { delta: rapid.delta, points: rapid.points } : null,
+  };
   return {
-    score,
     badge,
-    factors: {
-      vsAvg,
-      vsRange,
-      projectedChange,
-      nearTermChange,
-      rapidChange,
-    },
+    score: signedScore(badge, verdict, currentWait, p90),
+    factors: verdict,
   };
 }
 
-// Piecewise linear curve that scales the "is this delta meaningful?" floor
-// with typical wait. Anchors:
-//   typical ≤ 20  → 5 min   (short-wait rides: 5-min jitter shouldn't count)
-//   typical = 50  → 10 min
-//   typical = 90  → 15 min
-//   typical = 120 → 20 min  (and capped here above)
-// Between anchors the floor interpolates linearly, e.g. typical=40 → 8.3.
-// Exported because both the Browse badge logic (here) and scanner.js (its
-// JS port) need the exact same threshold to stay consistent.
-export function absoluteFloorForTypical(typical: number): number {
-  if (typical <= 20)  return 5;
-  if (typical <= 50)  return 5  + (typical - 20) / 30 * 5;
-  if (typical <= 90)  return 10 + (typical - 50) / 40 * 5;
-  if (typical <= 120) return 15 + (typical - 90) / 30 * 5;
-  return 20;
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+// Single trajectory signal, from the ML's own trend. Confidence-gated.
+function trajectoryFromML(ride: Ride): VerdictTrajectory {
+  const p = ride.prediction;
+  if (!p || p.confidence === 'low') return null;
+  return p.trend as VerdictTrajectory;
+}
+
+// The best future window to wait for — the one that MAXIMIZES reachability-
+// decayed savings, so a moderate drop soon beats a huge drop at closing time.
+//   • ML trajectory (t10..t240) owns the reachable near-to-mid window (today-
+//     adaptive; wins ≤4h),
+//   • full-day profile supplies windows beyond that (calendar tail),
+//   • each candidate's raw savings (current − wait − walk) is scaled by
+//     reachabilityWeight(Δt); we keep the best scaled result.
+//   • fall back to p10 (treated as far) when neither forecast is available.
+function computeBestWindow(
+  ride: Ride,
+  current: number
+): { wait: number; dt: number; raw: number; eff: number; deepestRaw: number } | null {
+  const slotStart = currentSlotStartMinutes(ride);
+  const p = ride.prediction;
+  const fd = ride.fullDayForecast ?? null;
+  const hasML = p != null && p.confidence !== 'low';
+
+  const candidates: { wait: number; dt: number }[] = [];
+  if (hasML) {
+    const curve: [number, number][] = [
+      [10, p!.t10], [20, p!.t20], [30, p!.t30], [40, p!.t40], [50, p!.t50], [60, p!.t60],
+      [90, p!.t90], [120, p!.t120], [150, p!.t150], [180, p!.t180], [210, p!.t210], [240, p!.t240],
+    ];
+    for (const [dt, w] of curve) if (w != null) candidates.push({ wait: w, dt });
+  }
+  const mlMaxDt = hasML ? ML_MAX_HORIZON_MIN : 0;
+  if (fd && slotStart !== null) {
+    for (const s of fd) {
+      if (s.wait === null || s.startMinutes <= slotStart) continue;
+      const dt = s.startMinutes - slotStart;
+      if (dt <= mlMaxDt) continue;              // ML owns the near-to-mid horizon
+      candidates.push({ wait: s.wait, dt });
+    }
+  }
+
+  if (candidates.length === 0) {
+    const p10 = ride.rideStats?.p10 ?? null;
+    if (p10 === null) return null;
+    const raw = current - p10 - WALK_ROUNDTRIP_MIN;
+    return { wait: p10, dt: ML_MAX_HORIZON_MIN, raw, eff: raw * reachabilityWeight(ML_MAX_HORIZON_MIN), deepestRaw: raw };
+  }
+
+  // best = window with the highest DECAYED savings; deepestRaw = the single
+  // largest RAW drop available anytime today (for the extreme-drop bypass).
+  let best: { wait: number; dt: number; raw: number; eff: number } | null = null;
+  let deepestRaw = -Infinity;
+  for (const c of candidates) {
+    const raw = current - c.wait - WALK_ROUNDTRIP_MIN;
+    if (raw > deepestRaw) deepestRaw = raw;
+    const eff = raw * reachabilityWeight(c.dt);
+    if (best === null || eff > best.eff) best = { wait: c.wait, dt: c.dt, raw, eff };
+  }
+  return { ...best!, deepestRaw };
+}
+
+// Current 30-min slot start (minutes past LA-local midnight), parsed from the
+// t+0 bucket's timeSlot ("10:30-11:00" → 630). Self-contained, no TZ math.
+function currentSlotStartMinutes(ride: Ride): number | null {
+  const ts = (ride.historicalBaseline ?? ride.historicalAverage)?.buckets[0]?.timeSlot;
+  if (!ts) return null;
+  const [h, m] = ts.split('-')[0].split(':').map(Number);
+  if (Number.isNaN(h) || Number.isNaN(m)) return null;
+  return h * 60 + m;
+}
+
+interface RapidChange { delta: number; points: number; dir: 'drop' | 'spike' | null; }
+
+function computeRapidChange(ride: Ride, currentWait: number): RapidChange | null {
+  const prev = ride.recentHistory?.[0] ?? null;
+  if (!prev || prev.wait === null || prev.wait <= 0 || prev.status !== 'OPERATING') return null;
+  const delta = (currentWait - prev.wait) / prev.wait;
+  const absDiff = Math.abs(currentWait - prev.wait);
+  let dir: RapidChange['dir'] = null;
+  if (absDiff >= RAPID_ABS_MIN) {
+    if (delta <= -RAPID_SWING) dir = 'drop';
+    else if (delta >= RAPID_SWING) dir = 'spike';
+  }
+  return { delta, points: dir === 'drop' ? 2 : dir === 'spike' ? -2 : 0, dir };
+}
+
+// Signed worth-weighted magnitude — the cross-ride currency ("good-minutes on
+// the table"). Positive = opportunity, negative = skip.
+function signedScore(badge: Badge, v: VerdictBreakdown, currentWait?: number, p90?: number): number {
+  if (badge === 'star' || badge === 'go') return v.valueMinutes ?? 1;
+  if (badge === 'skip') {
+    if (v.recoverableNet !== null && v.recoverableNet > 0) return -v.recoverableNet;
+    if (currentWait !== undefined && p90 !== undefined) return -(currentWait - p90);
+    return -1;
+  }
+  return 0;
 }

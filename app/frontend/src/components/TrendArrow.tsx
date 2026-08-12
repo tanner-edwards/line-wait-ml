@@ -1,54 +1,38 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
-import { Minus, TrendingDown, TrendingUp } from 'lucide-react-native';
+import { TrendingDown, TrendingUp } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
-import { trendDirection, TrendInput } from '../utils/trendDirection';
+import { VerdictTrajectory } from '../types';
 
-export interface TrendArrowProps extends TrendInput {
-  /**
-   * When true, the arrow renders with a dashed border — signals a low-
-   * confidence estimate (thin historical data) without changing the direction.
-   */
-  lowConfidence: boolean;
+export type RowTrendDirection = 'up' | 'down';
+
+/**
+ * Map the server verdict's ML trajectory to a row arrow direction. This is the
+ * single source of truth for the list-row trend — no local recompute from
+ * buckets. Steady (and absent/low-confidence → null) is suppressed per the
+ * "each signal silent in its neutral middle" rule.
+ *   rising | trough → 'up' (Rising)     falling | peak → 'down' (Dropping)
+ */
+export function trajectoryDirection(traj: VerdictTrajectory): RowTrendDirection | null {
+  if (traj === 'rising' || traj === 'trough') return 'up';
+  if (traj === 'falling' || traj === 'peak') return 'down';
+  return null;
+}
+
+interface TrendArrowProps {
+  direction: RowTrendDirection;
 }
 
 /**
- * Direction-of-change indicator next to a ride's current wait.
- * Delegates the actual decision to the shared `trendDirection` helper, so the
- * arrow, the "Rising/Dropping/Steady" label, and the TrendCaption sentence
- * all agree by construction.
+ * Direction-of-change indicator next to a ride's wait. NEUTRAL color — the
+ * arrow shape carries direction; the verdict chip carries good/bad. Only
+ * rendered for an actionable up/down direction (callers suppress the rest).
  */
-export function TrendArrow({
-  lowConfidence,
-  ...input
-}: TrendArrowProps): React.ReactElement | null {
-  const direction = trendDirection(input);
-  if (direction === null) return null;
-
-  // Trend indicators are intentionally NEUTRAL — the arrow shape carries
-  // direction; color used to be go/skip (green/red) but paired conflicting
-  // signals with the wait number (e.g. green "Rising" arrow next to a green
-  // below-typical wait). textTertiary for actionable directions, trendFlat
-  // for the quieter Steady state.
-  let Icon: typeof TrendingDown;
-  let color: string;
-
-  if (direction === 'down') {
-    Icon = TrendingDown;
-    color = colors.trendDown;
-  } else if (direction === 'up') {
-    Icon = TrendingUp;
-    color = colors.trendUp;
-  } else {
-    Icon = Minus;
-    color = colors.trendFlat;
-  }
-
+export function TrendArrow({ direction }: TrendArrowProps): React.ReactElement {
+  const Icon = direction === 'up' ? TrendingUp : TrendingDown;
+  const color = direction === 'up' ? colors.trendUp : colors.trendDown;
   return (
-    <View
-      style={[styles.container, lowConfidence && styles.lowConfidence]}
-      testID={`trend-arrow-${direction}${lowConfidence ? '-low-conf' : ''}`}
-    >
+    <View style={styles.container} testID={`trend-arrow-${direction}`}>
       <Icon size={14} color={color} strokeWidth={2.5} />
     </View>
   );
@@ -60,13 +44,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 3,
     paddingVertical: 2,
     borderRadius: 4,
-    borderWidth: 1,
-    borderColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lowConfidence: {
-    borderStyle: 'dashed',
-    borderColor: colors.borderStrong,
   },
 });

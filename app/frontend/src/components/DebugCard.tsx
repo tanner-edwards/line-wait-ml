@@ -117,35 +117,20 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
   const rs = ride.rideStats;
   const { factors, score, badge } = result;
 
-  const nearTermValue = factors.nearTermChange !== null
-    ? (() => {
-        const pct = Math.round(factors.nearTermChange.delta * 100);
-        const sign = pct > 0 ? '+' : '';
-        return `${sign}${pct}% at t+30`;
-      })()
-    : 'no t+30 data';
-
-  const projectedChangeValue = factors.projectedChange !== null
-    ? (() => {
-        const pct = Math.round(factors.projectedChange.delta * 100);
-        const sign = pct > 0 ? '+' : '';
-        const glyph = factors.projectedChange.delta > 0.001 ? '↗' : factors.projectedChange.delta < -0.001 ? '↘' : '→';
-        return `${glyph} ${sign}${pct}% over 2hr`;
-      })()
-    : 'no projection';
-
-  const avgWait = ha?.buckets[0].wait;
-  const vsAvgValue = factors.vsAvg !== null
-    ? `${avgWait ?? '?'} avg → ${ride.currentWait} now (${Math.round(factors.vsAvg.delta * 100) > 0 ? '+' : ''}${Math.round(factors.vsAvg.delta * 100)}%)`
-    : 'bucket avg = 0';
-
-  const vsRangeValue = factors.vsRange !== null
-    ? (factors.vsRange.points >= 2 ? 'at/below min'
-      : factors.vsRange.points === 1 ? 'near min'
-      : factors.vsRange.points <= -2 ? 'at/above max'
-      : factors.vsRange.points === -1 ? 'near max'
-      : 'mid-range')
-    : (rs === null ? 'no range data' : 'range < 5 min');
+  // Two-axis verdict breakdown (the "why").
+  const f = factors;
+  const zoneValue = f.zone;
+  const typicalValue = f.typical != null ? `${f.typical} min typical for now` : '—';
+  const windowValue = f.betterWindowWait != null
+    ? `${f.betterWindowWait} min${f.betterWindowInMin != null ? ` @ ${(f.betterWindowInMin / 60).toFixed(1)}h out` : ''}`
+    : '—';
+  const savingsValue = f.recoverableNet != null
+    ? `${Math.round(f.recoverableNet)} min saved by waiting`
+    : '—';
+  const trendValue = f.trajectory ?? 'flat / unknown';
+  const rapidValue = f.rapidChange != null
+    ? `${Math.round(f.rapidChange.delta * 100)}% vs last poll`
+    : 'none';
 
   const scoreSign = score > 0 ? '+' : '';
   const badgeLabel =
@@ -216,31 +201,13 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
 
       <View style={styles.divider} />
 
-      {/* Score factors */}
-      <FactorRow
-        label="vs avg"
-        value={vsAvgValue}
-        points={factors.vsAvg?.points ?? 0}
-        skipped={factors.vsAvg === null}
-      />
-      <FactorRow
-        label="range"
-        value={vsRangeValue}
-        points={factors.vsRange?.points ?? 0}
-        skipped={factors.vsRange === null}
-      />
-      <FactorRow
-        label="t+30"
-        value={nearTermValue}
-        points={factors.nearTermChange?.points ?? 0}
-        skipped={factors.nearTermChange === null}
-      />
-      <FactorRow
-        label="trend"
-        value={projectedChangeValue}
-        points={factors.projectedChange?.points ?? 0}
-        skipped={factors.projectedChange === null}
-      />
+      {/* Verdict breakdown (two-axis) */}
+      <FactorRow label="zone" value={zoneValue} points={0} skipped={false} />
+      <FactorRow label="typical" value={typicalValue} points={0} skipped={f.typical == null} />
+      <FactorRow label="best window" value={windowValue} points={0} skipped={f.betterWindowWait == null} />
+      <FactorRow label="savings" value={savingsValue} points={0} skipped={f.recoverableNet == null} />
+      <FactorRow label="trend" value={trendValue} points={0} skipped={f.trajectory == null} />
+      <FactorRow label="rapid" value={rapidValue} points={0} skipped={f.rapidChange == null} />
 
       <View style={styles.divider} />
 

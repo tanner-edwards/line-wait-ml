@@ -14,10 +14,11 @@
 // without rendering SVG.
 
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { View } from 'react-native';
 import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 import { roundWait } from '../../utils/roundWait';
+import { Badge } from '../../types';
 
 
 // Geometry constants — all in the viewBox coordinate system.
@@ -38,7 +39,19 @@ interface Props {
   p90: number;
   current: number | null;
   typicalWait: number | null;
+  badge: Badge;
 }
+
+// Fill/dot color follows the verdict badge so the bar reinforces the ONE
+// signal. It used to compute its own upper-quartile "red" rule, which painted
+// red on neutral rides (e.g. Pirates at 25 within a 5–30 range) and contradicted
+// the badge. Neutral (no badge) → brand; the dot's position still carries the
+// "where in range" information without a false skip signal.
+const BADGE_FILL: Record<'go' | 'skip' | 'star', string> = {
+  go: colors.go,
+  skip: colors.skip,
+  star: colors.star,
+};
 
 export interface RangeLayout {
   innerLeft: number;
@@ -106,19 +119,25 @@ export function computeLayout(
   };
 }
 
-export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.ReactElement {
+export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): React.ReactElement {
   const [renderW, setRenderW] = useState(0);
 
-  // High-range fill: use skip color when current is in the upper quartile.
-  const fillColor = (current != null && current > p10 + (p90 - p10) * 0.75)
-    ? colors.skip
-    : colors.brand;
+  // Fill/dot color = the verdict badge (see BADGE_FILL). No independent rule.
+  const fillColor = badge ? BADGE_FILL[badge] : colors.brand;
+
+  // Round to Disney's 5-min grid ONCE, then drive BOTH positions and labels
+  // from the rounded values. Raw positions + rounded labels was the drift
+  // source — a dot/marker/endpoint would sit where its label didn't claim.
+  const rP10 = roundWait(p10);
+  const rP90 = roundWait(p90);
+  const rCurrent = current != null ? roundWait(current) : null;
+  const rTypical = typicalWait != null ? roundWait(typicalWait) : null;
 
   const {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
     typicalX, typicalLabelX, typicalLabelY, svgH,
-  } = computeLayout(p10, p90, current, typicalWait);
+  } = computeLayout(rP10, rP90, rCurrent, rTypical);
 
   return (
     <View>
@@ -159,8 +178,11 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               />
             ) : null}
 
-            {/* Fill: none when below range, full when above range, partial when in range */}
-            {dotX != null && !dotFloatingLeft ? (
+            {/* Fill carries the verdict: only drawn when there's a badge, so a
+                neutral ride never shows an alarming full/partial bar — just the
+                position dot on an empty track. skip → long red, go/star → short
+                green/gold, neutral → no fill. */}
+            {dotX != null && !dotFloatingLeft && badge != null ? (
               <Rect
                 x={innerLeft} y={TRACK_TOP_Y}
                 width={dotFloatingRight ? totalW : dotX - innerLeft}
@@ -179,14 +201,30 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               />
             ) : null}
 
+            {/* p10 / p90 endpoint labels — anchored to the actual track ends
+                (same coordinate system as the track), so they follow the float
+                padding instead of pinning to the container edges. */}
+            <SvgText
+              x={innerLeft} y={LABEL_Y}
+              fontSize="12" fill={colors.textSecondary} textAnchor="start"
+            >
+              {`${rP10}m`}
+            </SvgText>
+            <SvgText
+              x={innerRight} y={LABEL_Y}
+              fontSize="12" fill={colors.textSecondary} textAnchor="end"
+            >
+              {`${rP90}m`}
+            </SvgText>
+
             {/* Typical label */}
-            {typicalX != null && typicalLabelX != null && typicalWait != null ? (
+            {typicalX != null && typicalLabelX != null && rTypical != null ? (
               <SvgText
                 x={typicalLabelX} y={typicalLabelY}
                 fontSize="12" fontWeight="500"
                 fill={colors.textSecondary} textAnchor="middle"
               >
-                {`usually ${roundWait(typicalWait)}m`}
+                {`usually ${rTypical}m`}
               </SvgText>
             ) : null}
 
@@ -195,12 +233,6 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
               <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
             ) : null}
           </Svg>
-          {/* p10/p90 endpoint labels as native Text so they can't be SVG-clipped.
-              Positioned to match LABEL_Y in the SVG coordinate space (y-scale is 1:1). */}
-          <View style={styles.rangeLabelsRow}>
-            <Text style={styles.rangeLabel}>{roundWait(p10)}m</Text>
-            <Text style={styles.rangeLabel}>{roundWait(p90)}m</Text>
-          </View>
           </>
         ) : null}
       </View>
@@ -208,20 +240,3 @@ export function TodaysRange({ p10, p90, current, typicalWait }: Props): React.Re
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  rangeLabelsRow: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    // LABEL_Y is the SVG baseline. y-scale is 1:1, so subtract cap-height (~11px)
-    // to align the native text cap with the SVG label row.
-    top: LABEL_Y - 11,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  rangeLabel: {
-    fontSize: 12,
-    color: colors.textSecondary,
-  },
-});

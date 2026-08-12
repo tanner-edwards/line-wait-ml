@@ -88,7 +88,7 @@ INPUT YOU WILL RECEIVE:
 - The park name. Park hours and current local time may be present; if hours show "unknown", do not let that stop you from recommending — just trust the operating ride list as the source of truth.
 - A list of operating rides in the same park. For each ride you get:
   - Current wait time in minutes
-  - A deterministic score breakdown (badge: star/go/skip/null, factors: vsAvg / vsRange / projectedChange / nearTermChange)
+  - A deterministic verdict (badge: star/go/skip/null) with its reasoning: zone (opportunity/judgment/skip), typical wait for now, the best wait still reachable later today (bestWindow) and how far out it is, the net minutes you'd save by waiting for it (savings), and the trend
   - Historical bucket waits at t+0, t+30, t+60, t+90, t+120 with sample counts
   - Historical p10 (floor) and p90 (ceiling) for the day type
   - Walking minutes from the guest's current ride (or null if metadata is missing)
@@ -98,11 +98,11 @@ The score breakdown is the deterministic skeleton — use it as one signal, not 
 RANKING GUIDANCE:
 - Use your own knowledge of this park's attractions. You know which rides are marquee, must-do experiences and which are minor filler. A low wait or a favorable badge does NOT make a filler attraction worth a recommendation slot — judge each ride on whether it's worth this guest's limited time.
 - The app earns its value on high-demand attractions where timing is hard to judge. A headliner sitting at a wait that's low FOR THAT RIDE is a strong pick — that's the kind of window the guest can't spot on their own. Don't waste slots optimizing rides that are always low-wait; anyone can walk onto those anytime.
-- Judge waits relative to each ride's own normal range (use vsAvg / vsRange / p10 / p90), not against a fixed minute ceiling. A 75-minute wait can be a great deal on a ride that usually peaks far higher.
+- Judge waits relative to each ride's own normal range (use its typical, p10 floor, and p90 ceiling), not against a fixed minute ceiling. A 75-minute wait can be a great deal on a ride that usually peaks far higher.
 - Factor the current local California time into rankings. You know which attractions gain or lose appeal based on time of day. Outdoor or scenery-driven rides (e.g., Jungle Cruise, Mark Twain Riverboat) deliver a richer experience in daylight — don't push guests toward them in the final hour before park close or after dark when comparable alternatives exist. Conversely, some indoor thrill rides (e.g., Guardians of the Galaxy, Space Mountain) see natural crowd surges in the evening as guests make a final push — a short wait on one of those after dinner can be a genuine window. Use your own knowledge of each attraction's time-of-day character; don't ignore the clock when it changes the calculus.
-- Estimate the ARRIVAL wait, not the current wait. A ride showing 20 minutes right now but requiring a 12-minute walk may have a 35-minute wait by the time the guest reaches the queue. Use nearTermChange, projectedChange, and the historical bucket progression (t+0 → t+30) to estimate where the wait will be at the moment of arrival. A ride that looks like a deal now but is climbing sharply should be treated as worse than the current snapshot suggests. Conversely, a ride that's trending down is better than it appears. When the trend signals are absent or flat, assume the current wait holds.
+- Estimate the ARRIVAL wait, not the current wait. A ride showing 20 minutes right now but requiring a 12-minute walk may have a 35-minute wait by the time the guest reaches the queue. Use the trend signal and the historical bucket progression (t+0 → t+30) to estimate where the wait will be at the moment of arrival. A ride that looks like a deal now but is climbing sharply should be treated as worse than the current snapshot suggests. Conversely, a ride that's trending down is better than it appears. When the trend is absent or flat, assume the current wait holds.
 - DEFAULT sort order is by walking distance — closest rides first. When two rides are in the same prestige tier with similar timing signals, distance breaks the tie cleanly. Do not let a subjective prestige edge between similarly-ranked headliners override a large proximity advantage — if Matterhorn and Big Thunder Mountain are both below normal with favorable badges, the closer one wins.
-- A ride may jump above closer options when it represents a genuine timing opportunity on a meaningful attraction. Use all available signals (badge, vsAvg, p10/p90, projectedChange, nearTermChange, your own knowledge of the ride's demand, and the estimated arrival wait) to judge whether the opportunity is rare enough to justify the extra walk. A headliner running at or near its historic floor is a strong candidate; a lower-tier ride at its floor is not — that window isn't special, and the ride doesn't earn the slot. The only exception: if every headliner in the park is running high and a secondary ride has a near walk-on wait, include it — but rank it below the headliners, not above them.
+- A ride may jump above closer options when it represents a genuine timing opportunity on a meaningful attraction. Use all available signals (badge, zone, p10/p90, bestWindow/savings, trend, your own knowledge of the ride's demand, and the estimated arrival wait) to judge whether the opportunity is rare enough to justify the extra walk. A headliner running at or near its historic floor is a strong candidate; a lower-tier ride at its floor is not — that window isn't special, and the ride doesn't earn the slot. The only exception: if every headliner in the park is running high and a secondary ride has a near walk-on wait, include it — but rank it below the headliners, not above them.
 
 WRITING THE COPY (oneLiner):
 - Write like a knowledgeable friend giving a tip — not like a system explaining its output.
@@ -177,13 +177,14 @@ function rideBlock(ride: Ride, walkMinutes: number | null): string {
   const ha = ride.historicalAverage;
   const rs = ride.rideStats;
 
-  const scoreLine = score
-    ? `score=${score.score} badge=${score.badge ?? 'null'} ` +
-      `factors=[vsAvg=${factorPts(score.factors.vsAvg)} ` +
-      `vsRange=${factorPts(score.factors.vsRange)} ` +
-      `projectedChange=${factorPts(score.factors.projectedChange)} ` +
-      `nearTermChange=${factorPts(score.factors.nearTermChange)}]`
-    : 'score=unavailable';
+  const v = score?.factors;
+  const scoreLine = score && v
+    ? `verdict=${score.badge ?? 'neutral'} score=${Math.round(score.score)} zone=${v.zone} ` +
+      `typical=${v.typical ?? 'null'} ` +
+      `bestWindow=${v.betterWindowWait ?? 'null'}${v.betterWindowInMin != null ? `@${(v.betterWindowInMin / 60).toFixed(1)}h` : ''} ` +
+      `savings=${v.recoverableNet != null ? Math.round(v.recoverableNet) : 'null'}` +
+      `${v.trajectory ? ` trend=${v.trajectory}` : ''}`
+    : 'verdict=unavailable';
 
   const bucketLine = ha
     ? 'buckets=' + ha.buckets
@@ -200,6 +201,3 @@ function rideBlock(ride: Ride, walkMinutes: number | null): string {
   return `- ${ride.name} (${ride.id}) wait=${ride.currentWait ?? 'null'}min ${walkLine} ${scoreLine} ${rangeLine} ${bucketLine}`;
 }
 
-function factorPts(f: { points: number } | null): string {
-  return f === null ? '-' : String(f.points);
-}

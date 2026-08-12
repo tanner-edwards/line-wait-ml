@@ -34,12 +34,12 @@ import { useRideNotificationHistory } from '../hooks/useRideNotificationHistory'
 import { haversineMeters } from '../grouping';
 import { isWalkOnRide } from '../utils/walkOn';
 import { trendDirection } from '../utils/trendDirection';
-import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 import { isParkError, Ride } from '../types';
 import { scheduleReopenReminder } from '../utils/scheduleReminder';
 
 import { Tile, TileLabel } from './ride-detail/Tile';
 import { RideDetailHeader } from './ride-detail/RideDetailHeader';
+import { whyLine } from '../utils/whyLine';
 import { ReasonCard } from './ride-detail/ReasonCard';
 import { TrendGraph } from './ride-detail/TrendGraph';
 import { TrendCaption } from './ride-detail/TrendCaption';
@@ -142,21 +142,14 @@ function DetailBody({
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const rawBadge = ride.score?.badge ?? null;
   // Star badge is a paid feature — downgrade to 'go' when no active trip.
-  const scoreBadge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
-  // Caution: fires when score has no opinion but wait is >25% above historical avg.
-  // Never overrides a score badge — same rule as list view.
-  // Use historicalBaseline first: when ML predictions are present, historicalAverage.buckets[0]
-  // holds the current wait (not the true historical average), so baseline is the right source.
-  const bucket0 = (ride.historicalBaseline?.buckets?.[0] ?? ride.historicalAverage?.buckets?.[0]) ?? null;
-  const cautionEligible =
-    scoreBadge === null &&
-    ride.status === 'OPERATING' &&
-    ride.currentWait !== null &&
-    bucket0?.wait != null &&
-    bucket0.wait > 0 &&
-    (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
-    ride.currentWait > bucket0.wait * 1.25;
-  const badge = cautionEligible ? 'caution' as const : scoreBadge;
+  const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
+
+  // "Why this recommendation" line — deterministic, from the same numbers as
+  // the badge. rare-low is a paid elevation (like star), so downgrade it to the
+  // plain today's-low reason when there's no active trip.
+  const rawPrimary = ride.verdict?.reasons?.primary ?? 'none';
+  const whyPrimary = !hasActiveTrip && rawPrimary === 'rare-low' ? 'todays-low' : rawPrimary;
+  const whyText = whyLine(whyPrimary);
 
   const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
   const onToggleWatch = () => {
@@ -216,10 +209,30 @@ function DetailBody({
   const bucket4Wait = buckets?.[4]?.wait ?? null;
   // When ML predictions are present, bucket0.wait is currentWait (not the
   // historical average). Use the baseline bucket0 for "typical" comparisons
-  // (TodaysRange marker, DirectionCurve, trend caption) so we're comparing
-  // current vs. history, not current vs. itself.
+  // (TodaysRange marker, trend caption) so we're comparing current vs. history,
+  // not current vs. itself.
   const baselineBuckets = ride.historicalBaseline?.buckets;
   const bucket0Wait = (baselineBuckets?.[0]?.wait ?? buckets?.[0]?.wait) ?? null;
+
+  // Prediction-based range: p10/p90 across the full day's forecast so the bar
+  // shows "where are you in today's complete arc." Falls back to historical
+  // rideStats when forecast is unavailable.
+  const rideStats = useMemo(() => {
+    const forecast = ride.fullDayForecast;
+    if (!forecast) return ride.rideStats ?? null;
+    const waits = forecast
+      .filter(s => s.wait !== null)
+      .map(s => s.wait as number)
+      .sort((a, b) => a - b);
+    if (waits.length < 5) return ride.rideStats ?? null;
+    const pct = (p: number) => {
+      const idx = (p / 100) * (waits.length - 1);
+      const lo = Math.floor(idx);
+      const hi = Math.ceil(idx);
+      return waits[lo] + (waits[hi] - waits[lo]) * (idx - lo);
+    };
+    return { p10: pct(10), p50: pct(50), p90: pct(90), sampleCount: waits.length };
+  }, [ride.fullDayForecast, ride.rideStats]);
 
   // Star always wins; walkOn beats go/skip otherwise.
   const showWalkOn = walkOn && badge !== 'star';
@@ -247,6 +260,7 @@ function DetailBody({
           anchorWait={anchorWait}
           showWalkOn={showWalkOn}
           badge={badge}
+          whyText={whyText}
           walkMins={walkMins}
           isWatching={isWatching}
           rideId={ride.id}
@@ -254,7 +268,7 @@ function DetailBody({
           bucket0Wait={bucket0Wait}
           onToggleWatch={onToggleWatch}
           hasActiveTrip={hasActiveTrip}
-          rideStats={ride.rideStats ?? null}
+          rideStats={rideStats}
           postReopenWaitDrop={ride.closureProfile?.postReopenWaitDrop ?? false}
           downDurationMs={notifDurationMs}
           waitAtClose={null}

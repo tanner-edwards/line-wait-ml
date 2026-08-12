@@ -1,13 +1,13 @@
 // Compact row item for the Home / Live Waits list.
 // Rows with dividers, not individual cards — 30+ items, density matters.
 //
-// Row 1: [Badge?] Ride name (flex)   [WalkOn OR Wait + min] [›]
-// Row 2: [~X min walk pill]          [Trend label + TrendArrow]
+// Row 1: [Verdict chip?] Ride name (flex)   [WalkOn OR Wait + min] [›]
+// Row 2: [~X min walk pill]                  [Rising/Dropping + arrow]
 //
-// Badge precedence (mutually exclusive, highest wins):
-//   star > walkOn > go > skip
-// WalkOn replaces the wait number when it applies (and the ride isn't a star).
-// Status color on the wait number only: go=below-normal, skip=above-normal.
+// ONE good/bad signal: the verdict chip (star > walkOn > go > skip; Neutral =
+// no chip). The wait number is a neutral fact — never colored. The trend is
+// secondary context sourced from the server verdict's trajectory; Rising and
+// Dropping only, Steady is suppressed.
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -16,13 +16,10 @@ import { Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
-import { BelowNormalBadge } from './BelowNormalBadge';
-import { TrendArrow } from './TrendArrow';
+import { TrendArrow, trajectoryDirection } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
-import { trendDirection } from '../utils/trendDirection';
 import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
-import { MIN_BUCKET_SAMPLE_COUNT } from '../scoreConstants';
 import { useTrip } from '../context/TripContext';
 
 interface RideRowProps {
@@ -45,52 +42,25 @@ function walkMinsTo(
   return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
 }
 
-const TREND_LABEL = { down: 'Dropping', up: 'Rising', stable: 'Steady' } as const;
+const TREND_LABEL = { down: 'Dropping', up: 'Rising' } as const;
 
 export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps): React.ReactElement {
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
-  const ha = ride.historicalAverage;
-  // When ML predictions are present, historicalBaseline holds the real
-  // historical averages; bucket0 from primary would be currentWait.
-  const bucket0 = (ride.historicalBaseline?.buckets[0] ?? ha?.buckets[0]) ?? null;
-  const bucket1 = ha?.buckets[1] ?? null;
-  const bucket3 = ha?.buckets[3] ?? null;
-  const bucket4 = ha?.buckets[4] ?? null;
   const { hasActiveTrip } = useTrip();
   const rawBadge = ride.score?.badge ?? null;
   const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
-  const lowConfidence = (bucket0?.sampleCount ?? 0) < MIN_BUCKET_SAMPLE_COUNT;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
-  // Trend combines real recent past observations with the historical-average
-  // future curve. recentHistory is most-recent-first; we use [0] as the
-  // last real datapoint. Past + future deltas summed, ±5 min threshold.
-  const trendInput = {
-    currentWait: ride.currentWait,
-    recentWait: ride.recentHistory?.[0]?.wait ?? null,
-    bucket1Wait: bucket1?.wait ?? null,
-    bucket3Wait: bucket3?.wait ?? null,
-    bucket4Wait: bucket4?.wait ?? null,
-  };
-  const trend = trendDirection(trendInput);
+  // Trend — single source of truth is the server verdict's trajectory. No local
+  // recompute; Steady / absent renders nothing.
+  const trend = isOperating ? trajectoryDirection(ride.score?.factors.trajectory ?? null) : null;
 
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip
   // (a walk-on IS the truest "go"), but a star always wins.
   const showWalkOn = walkOn && badge !== 'star';
   const showBadge = badge !== null && !showWalkOn;
-
-  const isBelowNormal =
-    isOperating && ride.currentWait !== null && bucket0?.wait != null &&
-    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
-    ride.currentWait < bucket0.wait * 0.75;
-  const isAboveNormal =
-    isOperating && ride.currentWait !== null && bucket0?.wait != null &&
-    bucket0.wait > 0 && (bucket0.sampleCount ?? 0) >= MIN_BUCKET_SAMPLE_COUNT &&
-    ride.currentWait > bucket0.wait * 1.25;
-
-  const waitColor = isBelowNormal ? colors.go : isAboveNormal ? colors.skip : colors.textPrimary;
 
   const showRow2 = walkMins != null || trend !== null;
 
@@ -102,7 +72,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
       <View style={[styles.row, !isOperating && styles.rowDown]}>
         {/* Row 1 */}
         <View style={styles.row1}>
-          {/* Badge — left of name (star/go/skip only; walkOn handled on right) */}
+          {/* Verdict chip — left of name (star/go/skip only; walkOn handled on right) */}
           {showBadge && <Pill variant={badge!} />}
 
           {/* Name + optional bell */}
@@ -111,7 +81,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
             {isWatching && hasActiveTrip && <Bell size={12} color={colors.star} />}
           </View>
 
-          {/* Right side: Walk On OR wait number */}
+          {/* Right side: Walk On OR wait number (neutral color — it's a fact) */}
           <View style={styles.waitCluster}>
             {showWalkOn ? (
               <View style={styles.walkOnCluster} testID="badge-walk-on">
@@ -120,9 +90,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
               </View>
             ) : isOperating && ride.currentWait !== null ? (
               <>
-                <Text style={[styles.waitNumber, { color: waitColor }]}>
-                  {ride.currentWait}
-                </Text>
+                <Text style={styles.waitNumber}>{ride.currentWait}</Text>
                 <Text style={styles.waitMin}> min</Text>
               </>
             ) : isDown ? (
@@ -139,23 +107,13 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
           <View style={styles.row2}>
             <View style={styles.row2Left}>
               {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
-              {badge === null ? (
-                <BelowNormalBadge
-                  currentWait={ride.currentWait}
-                  bucket0Wait={bucket0?.wait ?? null}
-                  sampleCount={bucket0?.sampleCount ?? 0}
-                />
-              ) : null}
             </View>
-            <View style={styles.trendRow}>
-              {trend ? <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text> : null}
-              {bucket0?.wait != null && bucket4?.wait != null ? (
-                <TrendArrow
-                  {...trendInput}
-                  lowConfidence={lowConfidence}
-                />
-              ) : null}
-            </View>
+            {trend ? (
+              <View style={styles.trendRow}>
+                <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
+                <TrendArrow direction={trend} />
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -205,6 +163,7 @@ const styles = StyleSheet.create({
   },
   waitNumber: {
     ...typography.waitNumber,
+    color: colors.textPrimary,
   },
   waitMin: {
     ...typography.label,
@@ -221,11 +180,6 @@ const styles = StyleSheet.create({
     ...typography.label,
     fontSize: 14,
     color: colors.star,
-  },
-  closedLabel: {
-    ...typography.label,
-    fontSize: 14,
-    color: colors.textTertiary,
   },
   walkOnCluster: {
     flexDirection: 'row',

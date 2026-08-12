@@ -39,11 +39,9 @@ function makeScore(): ScoreResult {
     score: 2,
     badge: 'go',
     factors: {
-      vsAvg: { delta: 0.12, points: 1 },
-      vsRange: { pct: 0.4, points: 0 },
-      projectedChange: { delta: 0.5, points: 2 },
-      nearTermChange: { delta: 0.1, points: -1 },
-      rapidChange: null,
+      zone: 'judgment', typical: 40, worthWeight: 1, valueMinutes: 8,
+      betterWindowWait: 55, betterWindowInMin: 120, recoverableNet: -3,
+      reachableSoon: true, climb: false, trajectory: 'stable', rapidChange: null,
     },
   };
 }
@@ -125,8 +123,9 @@ describe('buildUserMessage', () => {
     expect(msg).toContain('ride-1');
     expect(msg).toContain('wait=45min');
     expect(msg).toContain('walk=5min');
-    expect(msg).toContain('badge=go');
+    expect(msg).toContain('verdict=go');
     expect(msg).toContain('score=2');
+    expect(msg).toContain('zone=judgment');
     expect(msg).toContain('range=[p10=20 p90=80');
     expect(msg).toContain('t+0=40(n=27)');
     expect(msg).toContain('t+120=60(n=27)');
@@ -148,7 +147,7 @@ describe('buildUserMessage', () => {
     const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5, walkYards: 400 }] }), 5);
     expect(msg).toContain('buckets=null');
     expect(msg).toContain('range=null');
-    expect(msg).toContain('score=unavailable');
+    expect(msg).toContain('verdict=unavailable');
   });
 
   it('renders the rides-count in the header so the model can sanity check', () => {

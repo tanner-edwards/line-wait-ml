@@ -19,6 +19,8 @@ export interface MLPredictionDoc {
   trend_delta_30: number;
   confidence: string;
   full_day: Array<{ time_slot: string; start_minutes: number; wait: number }>;
+  reversion_prob?: number;  // P(wait spikes ≥40% within 30 min)
+  pct_rank?: number;        // empirical percentile within ride's own hour/day-type bucket
 }
 
 export async function loadPredictions(): Promise<Map<string, MLPredictionDoc>> {

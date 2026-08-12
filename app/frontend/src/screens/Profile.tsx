@@ -1,7 +1,8 @@
 // Profile tab — card-grouped sections, iOS Settings pattern.
 // Three sections: Your Visit | Notifications | Debug
-// Debug section is always shown but visually muted; it's the user's access
-// point for debug mode and the ride-picker GPS override in Recommendations.
+// Debug section only renders when the server-controlled userRecord.debugMode
+// flag is on (set by hand in Firestore) — it's the user's access point for
+// debug mode and the ride-picker GPS override in Recommendations.
 
 import React, { useState } from 'react';
 import {
@@ -302,36 +303,40 @@ export function Profile(): React.ReactElement {
           </Pressable>
         </Card>
 
-        {/* ── Debug ──────────────────────────────────── */}
-        <SectionHeader title="Debug" />
-        <Card flush style={styles.debugSectionCard}>
-          <ToggleRow
-            label="Debug mode"
-            value={debugMode ? 'On — fake GPS via ride picker' : 'Off'}
-            valueColor={debugMode ? colors.textTertiary : undefined}
-            enabled={debugMode}
-            onValueChange={() => {
-              LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-              void setDebugMode(!debugMode);
-            }}
-            testID="debug-mode-toggle"
-          />
-          {debugMode ? (
-            <TapEditRow
-              label="View logs"
-              value="Session diagnostics — push, arm, errors"
-              onPress={() => setLogsOpen(true)}
-              testID="debug-view-logs"
-            />
-          ) : null}
-          <Pressable
-            onPress={() => void resetForTesting()}
-            style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
-            testID="debug-reset"
-          >
-            <Text style={styles.resetText}>Reset persona</Text>
-          </Pressable>
-        </Card>
+        {/* ── Debug (server-gated: userRecord.debugMode) ── */}
+        {userRecord?.debugMode ? (
+          <>
+            <SectionHeader title="Debug" />
+            <Card flush style={styles.debugSectionCard}>
+              <ToggleRow
+                label="Debug mode"
+                value={debugMode ? 'On — fake GPS via ride picker' : 'Off'}
+                valueColor={debugMode ? colors.textTertiary : undefined}
+                enabled={debugMode}
+                onValueChange={() => {
+                  LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+                  void setDebugMode(!debugMode);
+                }}
+                testID="debug-mode-toggle"
+              />
+              {debugMode ? (
+                <TapEditRow
+                  label="View logs"
+                  value="Session diagnostics — push, arm, errors"
+                  onPress={() => setLogsOpen(true)}
+                  testID="debug-view-logs"
+                />
+              ) : null}
+              <Pressable
+                onPress={() => void resetForTesting()}
+                style={({ pressed }) => [styles.resetRow, pressed && styles.resetRowPressed]}
+                testID="debug-reset"
+              >
+                <Text style={styles.resetText}>Reset persona</Text>
+              </Pressable>
+            </Card>
+          </>
+        ) : null}
 
       </ScrollView>
 

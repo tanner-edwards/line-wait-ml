@@ -41,7 +41,8 @@ BATCH_SIZE = 400
 
 DAY_PROFILE_FEATURE_COLS = [
     "ride_id_cat",
-    "hour_of_day", "day_of_week", "month",
+    "hour_of_day", "day_of_week", "week_of_year", "month",
+    "temp_high_f", "morning_crowd_index",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
 ] + CLOSURE_FEATURE_COLS
@@ -59,7 +60,7 @@ FULL_DAY_SLOTS = [
 TRAJECTORY_FEATURE_COLS = [
     "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3",
     "park_crowd_median",
-    "hour_of_day", "day_of_week", "month",
+    "hour_of_day", "day_of_week", "week_of_year", "month",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
     "minutes_since_last_status_change", "closure_duration_minutes",
@@ -88,7 +89,8 @@ def _download_models(bucket_name: str, dest: Path) -> None:
     bucket = client.bucket(bucket_name)
     files = (
         [f"trajectory_t{h}.txt" for h in HORIZONS]
-        + ["day_profile.txt", "feature_categories.json"]
+        + ["day_profile.txt", "feature_categories.json", "morning_baselines.json",
+           "reversion_model.txt", "ride_percentile_buckets.json"]
     )
     for name in files:
         bucket.blob(name).download_to_filename(str(dest / name))
@@ -99,10 +101,141 @@ def _load_models(model_dir: Path):
     traj = {h: lgb.Booster(model_file=str(model_dir / f"trajectory_t{h}.txt")) for h in HORIZONS}
     day_profile = lgb.Booster(model_file=str(model_dir / "day_profile.txt"))
     cats = json.loads((model_dir / "feature_categories.json").read_text())
-    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"]
+    baselines = json.loads((model_dir / "morning_baselines.json").read_text())
+    reversion = lgb.Booster(model_file=str(model_dir / "reversion_model.txt"))
+    pct_buckets = json.loads((model_dir / "ride_percentile_buckets.json").read_text())
+    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], baselines, reversion, pct_buckets
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
+
+def _read_morning_waits(db: firestore.Client, now_la: datetime) -> pd.DataFrame:
+    """Read all wait_times from midnight LA-local today through now.
+
+    Used exclusively for morning_crowd_index — the main df only looks back
+    LOOKBACK_MINUTES, which falls short of the morning window after ~10am.
+    """
+    midnight_utc = now_la.replace(
+        hour=0, minute=0, second=0, microsecond=0
+    ).astimezone(timezone.utc)
+    rows = []
+    query = (
+        db.collection("wait_times")
+        .where("timestamp_utc", ">=", midnight_utc)
+        .select(["ride_id", "wait_minutes", "status", "timestamp_utc"])
+    )
+    for doc in query.stream():
+        d = doc.to_dict()
+        if d:
+            rows.append(d)
+    if not rows:
+        return pd.DataFrame()
+    df = pd.DataFrame(rows)
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+    return df
+
+
+def _compute_morning_crowd_index(
+    morning_df: pd.DataFrame,
+    now_la: datetime,
+    morning_baselines: dict,
+    hol: dict,
+) -> float | None:
+    """Compute today's morning crowd index.
+
+    Returns None when fewer than 120 minutes of park data exist for today
+    (cold start — LightGBM will handle the null and fall back to day-type patterns).
+    """
+    if morning_df.empty:
+        return None
+
+    operating = morning_df[
+        (morning_df["status"] == "OPERATING") & morning_df["wait_minutes"].notna()
+    ]
+    if operating.empty:
+        return None
+
+    park_open = operating["timestamp_utc"].min()
+    now_utc = now_la.astimezone(timezone.utc)
+    elapsed = (now_utc - park_open.to_pydatetime()).total_seconds() / 60
+    if elapsed < 120:
+        return None
+
+    morning_cutoff = park_open + pd.Timedelta(minutes=120)
+    window = operating[
+        (operating["timestamp_utc"] >= park_open) &
+        (operating["timestamp_utc"] <= morning_cutoff)
+    ]
+    if window.empty:
+        return None
+
+    actual_median = float(window["wait_minutes"].median())
+
+    js_dow = (now_la.weekday() + 1) % 7
+    if hol["is_holiday"]:
+        day_type = "holiday"
+    elif js_dow in (0, 6):
+        day_type = "weekend"
+    else:
+        day_type = "weekday"
+
+    key = f"{day_type}_{now_la.month}"
+    expected = morning_baselines.get(key)
+    if not expected:
+        return None
+
+    return round(actual_median / float(expected), 3)
+
+
+def _read_current_weather(db: firestore.Client) -> dict:
+    """Return current weather features from the most recent weather_snapshots doc.
+
+    Falls back to neutral values (mild, dry) if no doc is found.
+    """
+    docs = list(
+        db.collection("weather_snapshots")
+        .order_by("timestamp_utc", direction=firestore.Query.DESCENDING)
+        .limit(1)
+        .stream()
+    )
+    if docs:
+        d = docs[0].to_dict()
+        precip = d.get("precipitation_mm") or 0.0
+        code = d.get("weather_code") or 0
+        return {
+            "temp_current_f": float(d.get("temperature_f") or 65.0),
+            "is_raining_now": float(precip > 0 or code >= 61),
+        }
+    return {"temp_current_f": 65.0, "is_raining_now": 0.0}
+
+
+def _fetch_daily_weather_forecast(lat: float, lon: float, tz: str) -> dict:
+    """Fetch today's high temp and rain flag from Open-Meteo daily forecast.
+
+    Falls back to neutral values if the API call fails.
+    """
+    import urllib.request
+    url = (
+        f"https://api.open-meteo.com/v1/forecast"
+        f"?latitude={lat}&longitude={lon}"
+        f"&daily=temperature_2m_max,precipitation_sum"
+        f"&temperature_unit=fahrenheit"
+        f"&timezone={tz.replace('/', '%2F')}"
+        f"&forecast_days=1"
+    )
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        temp_high = data["daily"]["temperature_2m_max"][0]
+        precip = data["daily"]["precipitation_sum"][0] or 0.0
+        return {
+            "temp_high_f": float(temp_high) if temp_high is not None else 75.0,
+            "will_rain": float(precip > 0),
+        }
+    except Exception as exc:
+        log.warning("Weather forecast fetch failed: %s — using defaults", exc)
+        return {"temp_high_f": 75.0, "will_rain": 0.0}
+
 
 def _read_recent(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
     log.info("Reading wait_times since %s", cutoff.isoformat())
@@ -206,6 +339,7 @@ def _build_trajectory_row(
         "wait_lag_3":                      float(lag3),
         "hour_of_day":                     int(last["hour_of_day"]),
         "day_of_week":                     int(last["day_of_week"]),
+        "week_of_year":                    int(last["timestamp_utc"].isocalendar().week),
         "month":                           int(last["month"]),
         "is_holiday":                      bool(last["is_holiday"]),
         "is_holiday_weekend":              bool(last["is_holiday_weekend"]),
@@ -314,6 +448,8 @@ def _build_full_day(
     hol: dict,
     closures_today: list[dict] | None = None,
     traj_preds: dict[int, float] | None = None,
+    daily_weather: dict | None = None,
+    morning_crowd_index: float | None = None,
 ) -> list[dict]:
     """Run the day-profile model for all 34 half-hour slots.
 
@@ -337,7 +473,10 @@ def _build_full_day(
             "ride_id_cat":                      ride_id,
             "hour_of_day":                      start_min // 60,
             "day_of_week":                      js_dow,
+            "week_of_year":                     now_la.isocalendar().week,
             "month":                            now_la.month,
+            "temp_high_f":                      (daily_weather or {}).get("temp_high_f", 75.0),
+            "morning_crowd_index":              morning_crowd_index,
             "is_holiday":                       hol["is_holiday"],
             "is_holiday_weekend":               hol["is_holiday_weekend"],
             "days_until_next_holiday":          hol["days_until_next_holiday"],
@@ -346,6 +485,7 @@ def _build_full_day(
         })
 
     X_profile = pd.DataFrame(rows)[DAY_PROFILE_FEATURE_COLS]
+    X_profile["morning_crowd_index"] = X_profile["morning_crowd_index"].astype(float)
     X_profile["ride_id_cat"] = pd.Categorical(X_profile["ride_id_cat"], categories=ride_id_cats)
     preds = day_profile_model.predict(X_profile)
     slots = [
@@ -373,6 +513,39 @@ def _build_full_day(
     return slots
 
 
+# ── Reversion inference ───────────────────────────────────────────────────────
+
+_REVERSION_BREAKPOINTS = [0.05, 0.10, 0.15, 0.25, 0.50, 0.75, 0.85, 0.90, 0.95]
+_REVERSION_PCT_KEYS    = ["p5", "p10", "p15", "p25", "p50", "p75", "p85", "p90", "p95"]
+
+
+def _compute_pct_rank(
+    wait: float,
+    ride_id: str,
+    hour: int,
+    day_type: str,
+    buckets: dict,
+) -> float:
+    """Interpolate current wait into [0,1] percentile rank using pre-computed bucket breakpoints.
+    Falls back to 0.5 (neutral) when the bucket is absent or has no breakpoints."""
+    key = f"{ride_id}__{hour}_{day_type}"
+    b = buckets.get(key)
+    if not b:
+        return 0.5
+    breakpoints = list(zip(_REVERSION_BREAKPOINTS, [b.get(k, 0) for k in _REVERSION_PCT_KEYS]))
+    if wait <= breakpoints[0][1]:
+        return breakpoints[0][0]
+    if wait >= breakpoints[-1][1]:
+        return breakpoints[-1][0]
+    for i in range(len(breakpoints) - 1):
+        pct_lo, val_lo = breakpoints[i]
+        pct_hi, val_hi = breakpoints[i + 1]
+        if val_lo <= wait <= val_hi:
+            t = (wait - val_lo) / (val_hi - val_lo) if val_hi > val_lo else 0.5
+            return round(pct_lo + t * (pct_hi - pct_lo), 3)
+    return 0.5
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -386,7 +559,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
-        traj_models, day_profile_model, ride_id_cats, status_cats = _load_models(model_dir)
+        traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets = _load_models(model_dir)
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -407,6 +580,13 @@ def main() -> int:
         today_closures = _read_today_closures(db, now_la)
         log.info("Read today's closures for %d rides", len(today_closures))
 
+        # Current weather (trajectory features) + daily forecast (day-profile features).
+        current_weather = _read_current_weather(db)
+        daily_weather = _fetch_daily_weather_forecast(33.8121, -117.9190, "America/Los_Angeles")
+        log.info("Weather — current: %.1f°F rain=%s | forecast high: %.1f°F will_rain=%s",
+                 current_weather["temp_current_f"], bool(current_weather["is_raining_now"]),
+                 daily_weather["temp_high_f"], bool(daily_weather["will_rain"]))
+
         # Park-wide crowd proxy — median operating wait at the most recent poll.
         # Matches the training-time computation in the notebook.
         latest_ts = df["timestamp_utc"].max()
@@ -419,6 +599,11 @@ def main() -> int:
             else df["wait_minutes"].median()
         )
         log.info("park_crowd_median: %.1f min", park_crowd_median)
+
+        # Morning crowd index — requires a full 120-min morning window; null during cold start.
+        morning_df = _read_morning_waits(db, now_la)
+        morning_crowd_index = _compute_morning_crowd_index(morning_df, now_la, morning_baselines, hol)
+        log.info("morning_crowd_index: %s", morning_crowd_index)
 
         prediction_docs = []
         for ride_id, ride_df in df.groupby("ride_id"):
@@ -443,7 +628,38 @@ def main() -> int:
                 ride_id, now_la, day_profile_model, ride_id_cats, hol,
                 closures_today=today_closures.get(ride_id),
                 traj_preds=traj_preds,
+                daily_weather=daily_weather,
+                morning_crowd_index=morning_crowd_index,
             )
+
+            # Reversion probability — day_type must match training-time classify_day_type
+            feat_dow = int(feat_row["day_of_week"])  # JS convention: Sun=0, Sat=6
+            if hol["is_holiday"]:          rev_day_type = "holiday"
+            elif feat_dow in (0, 6):       rev_day_type = "weekend"
+            else:                          rev_day_type = "weekday"
+
+            pct_rank = _compute_pct_rank(
+                float(feat_row["wait_minutes"]),
+                ride_id,
+                int(feat_row["hour_of_day"]),
+                rev_day_type,
+                percentile_buckets,
+            )
+            wait_delta_1 = float(feat_row["wait_minutes"]) - float(feat_row["wait_lag_1"])
+
+            X_rev = pd.DataFrame([{
+                "pct_rank":           pct_rank,
+                "wait_delta_1":       wait_delta_1,
+                "hour_of_day":        feat_row["hour_of_day"],
+                "day_of_week":        feat_row["day_of_week"],
+                "week_of_year":       feat_row["week_of_year"],
+                "park_crowd_median":  park_crowd_median,
+                "is_holiday":         feat_row["is_holiday"],
+                "is_holiday_weekend": feat_row["is_holiday_weekend"],
+                "ride_id_cat":        ride_id,
+            }])
+            X_rev["ride_id_cat"] = pd.Categorical(X_rev["ride_id_cat"], categories=ride_id_cats)
+            reversion_prob = round(float(reversion_model.predict(X_rev)[0]), 3)
 
             prediction_docs.append({
                 "ride_id":        ride_id,
@@ -464,6 +680,8 @@ def main() -> int:
                 "trend_delta_30": trend_delta_30,
                 "confidence":     confidence,
                 "full_day":       full_day,
+                "reversion_prob": reversion_prob,
+                "pct_rank":       pct_rank,
             })
 
         log.info("Built predictions for %d rides", len(prediction_docs))

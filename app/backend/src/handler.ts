@@ -31,6 +31,9 @@ import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreRide } from './scoring/score';
+import { scoreVerdict } from './scoring/layer2';
+import type { Verdict, VerdictInfo } from './types';
+import { walkingMinutes } from './recommendations/walkingDistance';
 import { buildRecommendations } from './recommendations/handler';
 import { personaCacheKey } from './recommendations/persona';
 import {
@@ -237,7 +240,12 @@ export function resolveCategories(meta: RideMetadata | null): RideCategory[] {
   return [...cats];
 }
 
-export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promise<ParkData> {
+export async function fetchPark(
+  parkSlug: ParkSlug,
+  referenceDate?: Date,
+  userLat: number | null = null,
+  userLng: number | null = null,
+): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
     const cached = parkCache.get(parkSlug);
@@ -348,7 +356,42 @@ export async function fetchPark(parkSlug: ParkSlug, referenceDate?: Date): Promi
         })(),
         fullDayForecast,
       };
-      ride.score = scoreRide(ride);
+      // Authoritative verdict from the two-layer engine (Layer 1 deal math +
+      // Layer 2 worth/absolute/star). Drives the badge and the deterministic
+      // "why" reasons.
+      const vres = scoreVerdict(ride);
+      let verdict: Verdict = vres.verdict;
+      let reasons = vres.reasons;
+
+      // Reversion adjustment: downgrade 'go'/'star' → neutral when the ride is
+      // anomalously low (pct_rank ≤ P15), the model expects a spike, and the
+      // user is too far away to beat it to the ride.
+      if (
+        (verdict === 'go' || verdict === 'star') &&
+        (mlPred?.pct_rank ?? 1) <= 0.15 &&
+        (mlPred?.reversion_prob ?? 0) > 0.35 &&
+        userLat !== null && userLng !== null
+      ) {
+        const walkMins = walkingMinutes(
+          { lat: userLat, lng: userLng },
+          { lat: ride.lat, lng: ride.lng },
+        );
+        if (walkMins !== null && walkMins > 15) {
+          verdict = 'neutral';
+          reasons = { ...reasons, primary: 'none', star: false };
+        }
+      }
+
+      const verdictInfo: VerdictInfo = { verdict, reasons };
+      ride.verdict = verdictInfo;
+
+      // Legacy `score` still populates the old "why" fields consumed by
+      // promptBuilder / DebugCard until those migrate to `verdict.reasons`.
+      // Badge is overridden to the authoritative two-layer verdict so the chip
+      // and the new reasons can never disagree.
+      let rideScore = scoreRide(ride);
+      rideScore = { ...rideScore, badge: verdict === 'neutral' ? null : verdict };
+      ride.score = rideScore;
       return ride;
     })
   );
@@ -566,13 +609,16 @@ export async function handler(
     }
   }
 
+  const userLat = parseFloat(event.queryStringParameters?.user_lat ?? '') || null;
+  const userLng = parseFloat(event.queryStringParameters?.user_lng ?? '') || null;
+
   // Premium gate: non-entitled callers get current-state data only; the
   // predictive fields are nulled out. Resolved once per request.
   const entitled = await resolveEntitlement(event);
 
   if (route.kind === 'park') {
     try {
-      const data = await fetchPark(route.slug, referenceDate);
+      const data = await fetchPark(route.slug, referenceDate, userLat, userLng);
       return jsonResponse(200, entitled ? data : stripParkData(data));
     } catch (err) {
       const status = err instanceof UpstreamError ? err.statusCode : 502;
@@ -585,7 +631,7 @@ export async function handler(
   const entries: (ParkData | ParkError)[] = await Promise.all(
     PARK_ORDER.map(async (slug): Promise<ParkData | ParkError> => {
       try {
-        const data = await fetchPark(slug, referenceDate);
+        const data = await fetchPark(slug, referenceDate, userLat, userLng);
         return entitled ? data : stripParkData(data);
       } catch {
         return shapeParkError(slug, 'UPSTREAM_UNAVAILABLE');
@@ -944,6 +990,7 @@ async function handleUserUpsert(
       userId: uid,
       freeTripClaimed: record.freeTripClaimed,
       bypass: record.bypass,
+      debugMode: record.debugMode ?? false,
       isNew,
       trip,
     };
@@ -968,6 +1015,7 @@ async function handleUserMe(
       userId: uid,
       freeTripClaimed: record.freeTripClaimed,
       bypass: record.bypass,
+      debugMode: record.debugMode ?? false,
       isNew: false,
       trip,
     };

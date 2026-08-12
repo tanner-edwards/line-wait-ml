@@ -59,11 +59,9 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
       score: scoreValue,
       badge: scoreValue >= 2 ? 'go' : null,
       factors: {
-        vsAvg: null,
-        vsRange: null,
-        projectedChange: null,
-        nearTermChange: null,
-        rapidChange: null,
+        zone: 'judgment', typical: null, worthWeight: null, valueMinutes: null,
+        betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+        reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
       },
     },
   };

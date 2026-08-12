@@ -37,21 +37,55 @@ export interface RideStats {
 
 export type Badge = 'star' | 'go' | 'caution' | 'skip' | null;
 
-export interface FactorBreakdown {
-  vsAvg:           { delta: number; points: number } | null;
-  vsRange:         { pct: number;  points: number } | null;
-  projectedChange: { delta: number; points: number } | null;
-  nearTermChange:  { delta: number; points: number } | null;
-  // ≥40% swing from the previous observed wait (previous must have been
-  // OPERATING — excludes reopens from DOWN). Override: fires 'go'/'skip'
-  // badge even when score-based factors don't reach the ±2 threshold.
-  rapidChange:     { delta: number; points: number } | null;
+export type VerdictZone = 'opportunity' | 'judgment' | 'skip' | 'suppressed';
+export type VerdictTrajectory = 'rising' | 'falling' | 'trough' | 'peak' | 'stable' | null;
+
+// The two-axis verdict breakdown — the "why" behind the badge. Mirrors the
+// backend VerdictBreakdown; the UI is a pure renderer of it.
+export interface VerdictBreakdown {
+  zone:              VerdictZone;
+  typical:           number | null;
+  worthWeight:       number | null;
+  valueMinutes:      number | null;
+  betterWindowWait:  number | null;   // best wait reachable later today
+  betterWindowInMin: number | null;   // how far out that window is (minutes)
+  recoverableNet:    number | null;   // reachability-decayed savings vs that window
+  reachableSoon:     boolean;
+  climb:             boolean;
+  trajectory:        VerdictTrajectory;
+  // ≥40% swing from the previous OPERATING snapshot — real-time event override.
+  rapidChange:       { delta: number; points: number } | null;
 }
 
 export interface ScoreResult {
   score:   number;
   badge:   Badge;
-  factors: FactorBreakdown;
+  factors: VerdictBreakdown;
+}
+
+// Two-layer verdict reasons — mirrors the backend VerdictReasons. Drives the
+// deterministic "why this recommendation" line (hero card). `primary` is the
+// machine-readable driver; the UI maps it to a sentence (see utils/whyLine).
+export type VerdictReason =
+  | 'rare-low' | 'todays-low' | 'below-usual'
+  | 'at-ceiling' | 'high-vs-usual' | 'dropping-soon' | 'high-but-steady'
+  | 'filler' | 'trivial-drop' | 'short-to-skip' | 'none';
+
+export interface VerdictReasons {
+  primary:      VerdictReason;
+  current:      number;
+  typical:      number | null;
+  todayP30:     number | null;
+  todayP80:     number | null;
+  p10:          number | null;
+  p90:          number | null;
+  beatableSoon: boolean;
+  star:         boolean;
+}
+
+export interface VerdictInfo {
+  verdict: 'go' | 'star' | 'skip' | 'neutral';
+  reasons: VerdictReasons;
 }
 
 export interface RecentSnapshot {
@@ -110,6 +144,8 @@ export interface Ride {
   // Optional in the type because closed/legacy fixtures may not carry it;
   // the live backend always emits it on every ride.
   score?: ScoreResult;
+  // Authoritative two-layer verdict + deterministic "why" reasons.
+  verdict?: VerdictInfo | null;
   fullDayForecast?: FullDaySlot[] | null;
   closureProfile?: ClosureProfile | null;
   // Persona-vocabulary categories resolved server-side; drives the persona
@@ -273,6 +309,9 @@ export interface UserResponse {
   userId: string;
   freeTripClaimed: boolean;
   bypass: boolean;
+  // Server-controlled — gates visibility of the Profile "Debug" section.
+  // Flipped by hand in Firestore; no client action can set it.
+  debugMode: boolean;
   isNew: boolean;
   trip: TripRecord | null;
 }

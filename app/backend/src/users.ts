@@ -25,6 +25,7 @@ export async function upsertUser(
     createdAt: new Date().toISOString(),
     freeTripClaimed: false,
     bypass: false,
+    debugMode: false,
   };
   await ref.set(record);
   return { record, isNew: true };
@@ -181,12 +182,14 @@ export async function buildUserResponse(
     createdAt: new Date().toISOString(),
     freeTripClaimed: false,
     bypass: false,
+    debugMode: false,
   };
 
   return {
     userId: uid,
     freeTripClaimed: record.freeTripClaimed,
     bypass: record.bypass,
+    debugMode: record.debugMode ?? false,
     isNew,
     trip,
   };

@@ -87,8 +87,8 @@ Resources:
       StageName: prod
       Cors:
         AllowOrigin: !Sub "'${CorsOrigin}'"
-        AllowHeaders: "'x-api-key, content-type'"
-        AllowMethods: "'GET, POST, OPTIONS'"
+        AllowHeaders: "'x-api-key, content-type, authorization'"
+        AllowMethods: "'GET, POST, DELETE, OPTIONS'"
 
   WaitsApiKey:
     Type: AWS::ApiGateway::ApiKey

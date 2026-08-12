@@ -71,8 +71,16 @@ describe('stripPremiumFromRide', () => {
         score: 3,
         badge: 'star',
         factors: {
-          vsAvg: null, vsRange: null, projectedChange: null,
-          nearTermChange: null, rapidChange: null,
+          zone: 'opportunity', typical: null, worthWeight: null, valueMinutes: null,
+          betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
+          reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
+        },
+      },
+      verdict: {
+        verdict: 'star',
+        reasons: {
+          primary: 'rare-low', current: 5, typical: 30, todayP30: 20, todayP80: 55,
+          p10: 10, p90: 60, beatableSoon: false, star: true,
         },
       },
       fullDayForecast: [{ timeSlot: '08:00-08:30', startMinutes: 480, wait: 20, sampleCount: 5 }],
@@ -108,11 +116,33 @@ describe('stripPremiumFromRide', () => {
     expect(stripPremiumFromRide(r).score?.badge).toBe('skip');
   });
 
+  it('strips the two-layer verdict: star→go, rare-low→todays-low, reason numbers nulled', () => {
+    const stripped = stripPremiumFromRide(fullRide());
+    expect(stripped.verdict?.verdict).toBe('go');
+    expect(stripped.verdict?.reasons.primary).toBe('todays-low');
+    expect(stripped.verdict?.reasons.star).toBe(false);
+    // raw predictive numbers behind the "why" are removed for non-entitled users
+    expect(stripped.verdict?.reasons.typical).toBeNull();
+    expect(stripped.verdict?.reasons.p10).toBeNull();
+    expect(stripped.verdict?.reasons.p90).toBeNull();
+    expect(stripped.verdict?.reasons.todayP30).toBeNull();
+    expect(stripped.verdict?.reasons.todayP80).toBeNull();
+  });
+
+  it('leaves a non-star verdict label unchanged', () => {
+    const r = fullRide();
+    r.verdict = { ...r.verdict!, verdict: 'skip', reasons: { ...r.verdict!.reasons, primary: 'at-ceiling', star: false } };
+    expect(stripPremiumFromRide(r).verdict?.verdict).toBe('skip');
+    expect(stripPremiumFromRide(r).verdict?.reasons.primary).toBe('at-ceiling');
+  });
+
   it('does not mutate the input ride', () => {
     const r = fullRide();
     stripPremiumFromRide(r);
     expect(r.rideStats).not.toBeNull();
     expect(r.score?.badge).toBe('star');
+    expect(r.verdict?.verdict).toBe('star');
+    expect(r.verdict?.reasons.typical).toBe(30);
   });
 });
 
