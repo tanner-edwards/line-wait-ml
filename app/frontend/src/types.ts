@@ -80,6 +80,8 @@ export interface VerdictReasons {
   p10:          number | null;
   p90:          number | null;
   beatableSoon: boolean;
+  betterWindowWait:  number | null;
+  betterWindowInMin: number | null;
   star:         boolean;
 }
 

@@ -40,6 +40,7 @@ import { scheduleReopenReminder } from '../utils/scheduleReminder';
 import { Tile, TileLabel } from './ride-detail/Tile';
 import { RideDetailHeader } from './ride-detail/RideDetailHeader';
 import { whyLine } from '../utils/whyLine';
+import { DebugCard } from './DebugCard';
 import { ReasonCard } from './ride-detail/ReasonCard';
 import { TrendGraph } from './ride-detail/TrendGraph';
 import { TrendCaption } from './ride-detail/TrendCaption';
@@ -140,7 +141,9 @@ function DetailBody({
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
-  const rawBadge = ride.score?.badge ?? null;
+  // Badge = the authoritative two-layer verdict (neutral → no chip).
+  const rawVerdict = ride.verdict?.verdict ?? null;
+  const rawBadge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
   // Star badge is a paid feature — downgrade to 'go' when no active trip.
   const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
 
@@ -321,6 +324,13 @@ function DetailBody({
       )}
 
       <RideAlertHistory entries={rideNotifs} />
+
+      {debugMode && ride.verdict ? (
+        <Tile>
+          <TileLabel>Recommendation factors (debug)</TileLabel>
+          <DebugCard ride={ride} />
+        </Tile>
+      ) : null}
 
       {debugMode && !isDown && ((ride.recentHistory && ride.recentHistory.length > 0) || buckets) ? (
         <Tile>

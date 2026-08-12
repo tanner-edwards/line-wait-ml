@@ -1,17 +1,12 @@
 import React, { useState } from 'react';
 import { LayoutChangeEvent, StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Polyline } from 'react-native-svg';
-import { Ride, ScoreResult } from '../types';
+import { Ride } from '../types';
 import { formatBucketTimeSlot, formatHHMM } from '../timestamp';
 import { colors } from '../theme/tokens';
 
 interface DebugCardProps {
   ride: Ride;
-  result: ScoreResult;
-}
-
-function pts(n: number): string {
-  return n > 0 ? `+${n}` : `${n}`;
 }
 
 function BucketCol({
@@ -36,18 +31,12 @@ function BucketCol({
   );
 }
 
-function FactorRow({ label, value, points, skipped }: {
-  label: string;
-  value: string;
-  points: number;
-  skipped?: boolean;
-}) {
-  const color = skipped ? '#aaa' /* TODO: tokenize */ : points > 0 ? '#1a7f37' /* TODO: tokenize */ : points < 0 ? colors.skip : '#666'; // TODO: tokenize
+// Simple label / value row for the verdict-reason breakdown.
+function KVRow({ label, value, muted }: { label: string; value: string; muted?: boolean }) {
   return (
     <View style={styles.factorRow}>
       <Text style={styles.factorLabel}>{label}</Text>
-      <Text style={[styles.factorValue, skipped && styles.skipped]}>{value}</Text>
-      <Text style={[styles.factorPoints, { color }]}>{skipped ? '—' : pts(points)}</Text>
+      <Text style={[styles.factorValue, muted && styles.skipped]}>{value}</Text>
     </View>
   );
 }
@@ -112,37 +101,31 @@ function Sparkline({ values }: { values: (number | null)[] }) {
   );
 }
 
-export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement {
+const round = (n: number | null): string => (n == null ? '—' : `${Math.round(n)}`);
+
+export function DebugCard({ ride }: DebugCardProps): React.ReactElement {
   const ha = ride.historicalAverage;
   const rs = ride.rideStats;
-  const { factors, score, badge } = result;
 
-  // Two-axis verdict breakdown (the "why").
-  const f = factors;
-  const zoneValue = f.zone;
-  const typicalValue = f.typical != null ? `${f.typical} min typical for now` : '—';
-  const windowValue = f.betterWindowWait != null
-    ? `${f.betterWindowWait} min${f.betterWindowInMin != null ? ` @ ${(f.betterWindowInMin / 60).toFixed(1)}h out` : ''}`
-    : '—';
-  const savingsValue = f.recoverableNet != null
-    ? `${Math.round(f.recoverableNet)} min saved by waiting`
-    : '—';
-  const trendValue = f.trajectory ?? 'flat / unknown';
-  const rapidValue = f.rapidChange != null
-    ? `${Math.round(f.rapidChange.delta * 100)}% vs last poll`
-    : 'none';
+  // The two-layer verdict + its reasons — the same engine driving the badge,
+  // the card "why" line, and the AI recs. This is the "why at a glance."
+  const verdict = ride.verdict?.verdict ?? 'neutral';
+  const r = ride.verdict?.reasons ?? null;
 
-  const scoreSign = score > 0 ? '+' : '';
   const badgeLabel =
-    badge === 'star' ? '★ STAR' :
-    badge === 'go'   ? '✓ GO'   :
-    badge === 'skip' ? '✕ SKIP' :
-                       'no badge';
+    verdict === 'star' ? '★ STAR' :
+    verdict === 'go'   ? '✓ GO'   :
+    verdict === 'skip' ? '✕ SKIP' :
+                         '· NEUTRAL';
   const badgeColor =
-    badge === 'star' ? '#d4af37' : // TODO: tokenize
-    badge === 'go'   ? '#1a7f37' : // TODO: tokenize
-    badge === 'skip' ? colors.skip :
-                       colors.textTertiary;
+    verdict === 'star' ? colors.star :
+    verdict === 'go'   ? colors.go :
+    verdict === 'skip' ? colors.skip :
+                         colors.textTertiary;
+
+  const windowValue = r?.betterWindowWait != null
+    ? `${Math.round(r.betterWindowWait)} min${r.betterWindowInMin != null ? ` @ ${(r.betterWindowInMin / 60).toFixed(1)}h out` : ''}`
+    : 'none reachable';
 
   // recentHistory is most-recent-first: [0]=t-20, [1]=t-40
   const tMinus20 = ride.recentHistory?.[0] ?? null;
@@ -161,6 +144,14 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
 
   return (
     <View style={styles.card} testID={`debug-card-${ride.id}`}>
+
+      {/* Verdict + primary reason — the headline "why" */}
+      <View style={styles.verdictRow}>
+        <Text style={[styles.verdictBadge, { color: badgeColor }]}>{badgeLabel}</Text>
+        <Text style={styles.verdictReason}>{r ? r.primary : 'no verdict'}</Text>
+      </View>
+
+      <View style={styles.divider} />
 
       {/* 7-column bucket row: t-40 | t-20 | now | +30 | +60 | +90 | +120 */}
       <View style={styles.bucketsRow}>
@@ -201,21 +192,12 @@ export function DebugCard({ ride, result }: DebugCardProps): React.ReactElement 
 
       <View style={styles.divider} />
 
-      {/* Verdict breakdown (two-axis) */}
-      <FactorRow label="zone" value={zoneValue} points={0} skipped={false} />
-      <FactorRow label="typical" value={typicalValue} points={0} skipped={f.typical == null} />
-      <FactorRow label="best window" value={windowValue} points={0} skipped={f.betterWindowWait == null} />
-      <FactorRow label="savings" value={savingsValue} points={0} skipped={f.recoverableNet == null} />
-      <FactorRow label="trend" value={trendValue} points={0} skipped={f.trajectory == null} />
-      <FactorRow label="rapid" value={rapidValue} points={0} skipped={f.rapidChange == null} />
-
-      <View style={styles.divider} />
-
-      {/* Verdict */}
-      <View style={styles.verdictRow}>
-        <Text style={styles.verdictScore}>Score {scoreSign}{score}</Text>
-        <Text style={[styles.verdictBadge, { color: badgeColor }]}>{badgeLabel}</Text>
-      </View>
+      {/* Verdict reason breakdown — the inputs that produced the verdict above */}
+      <KVRow label="typical" value={r ? `${round(r.typical)} min for now` : '—'} muted={!r?.typical} />
+      <KVRow label="today" value={r ? `p30 ${round(r.todayP30)} · p80 ${round(r.todayP80)}` : '—'} muted={r?.todayP30 == null} />
+      <KVRow label="window" value={windowValue} muted={r?.betterWindowWait == null} />
+      <KVRow label="beatable" value={r ? (r.beatableSoon ? 'yes — shorter window soon' : 'no') : '—'} />
+      <KVRow label="rare" value={r ? (r.star ? 'yes — near its floor' : 'no') : '—'} muted={!r?.star} />
 
     </View>
   );
@@ -295,18 +277,12 @@ const styles = StyleSheet.create({
   factorLabel: {
     fontSize: 11,
     color: '#999', // TODO: tokenize
-    width: 44,
+    width: 64,
   },
   factorValue: {
     flex: 1,
     fontSize: 11,
     color: '#444', // TODO: tokenize
-  },
-  factorPoints: {
-    fontSize: 12,
-    fontWeight: '700',
-    width: 28,
-    textAlign: 'right',
   },
   skipped: {
     color: '#bbb', // TODO: tokenize
@@ -316,16 +292,16 @@ const styles = StyleSheet.create({
   verdictRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  verdictScore: {
-    fontSize: 12,
-    color: '#666', // TODO: tokenize
-    fontWeight: '600',
+    gap: 8,
   },
   verdictBadge: {
     fontSize: 14,
     fontWeight: '700',
+  },
+  verdictReason: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.textSecondary,
   },
 
   divider: {

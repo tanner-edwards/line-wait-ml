@@ -168,6 +168,8 @@ export interface VerdictReasons {
   p10:          number | null;   // ride's all-time floor (day-type)
   p90:          number | null;   // ride's all-time ceiling (day-type)
   beatableSoon: boolean;         // a meaningfully-lower window is reachable soon
+  betterWindowWait:  number | null;  // wait at the best reachable window later today (null if none)
+  betterWindowInMin: number | null;  // minutes-from-now of that window
   star:         boolean;
 }
 
@@ -222,7 +224,7 @@ export interface Ride {
   score?: ScoreResult;
   // Authoritative two-layer verdict + deterministic "why" reasons. Additive
   // alongside `score` during the migration off the old engine.
-  verdict?: VerdictInfo;
+  verdict?: VerdictInfo | null;
   // 30-min historical-average slots from ~7 AM to midnight. Null when
   // the ride has no historical data at all. Individual slots with
   // wait: null indicate the park was closed during that window historically.

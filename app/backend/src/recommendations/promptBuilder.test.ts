@@ -1,5 +1,5 @@
 import { buildSystemPrompt, buildUserMessage, DEFAULT_PERSONA, PromptContext, SYSTEM_PROMPT } from './promptBuilder';
-import { Ride, HistoricalAverage, RideStats, ScoreResult } from '../types';
+import { Ride, HistoricalAverage, RideStats, VerdictInfo } from '../types';
 
 function makeRide(overrides: Partial<Ride> = {}): Ride {
   return {
@@ -15,7 +15,7 @@ function makeRide(overrides: Partial<Ride> = {}): Ride {
     lat: null,
     lng: null,
     closedAt: null,
-    score: makeScore(),
+    verdict: makeVerdict(),
     ...overrides,
   };
 }
@@ -34,14 +34,13 @@ function makeHA(): HistoricalAverage {
   };
 }
 
-function makeScore(): ScoreResult {
+function makeVerdict(): VerdictInfo {
   return {
-    score: 2,
-    badge: 'go',
-    factors: {
-      zone: 'judgment', typical: 40, worthWeight: 1, valueMinutes: 8,
-      betterWindowWait: 55, betterWindowInMin: 120, recoverableNet: -3,
-      reachableSoon: true, climb: false, trajectory: 'stable', rapidChange: null,
+    verdict: 'go',
+    reasons: {
+      primary: 'below-usual', current: 45, typical: 40,
+      todayP30: 35, todayP80: 70, p10: 20, p90: 80,
+      beatableSoon: true, betterWindowWait: 55, betterWindowInMin: 120, star: false,
     },
   };
 }
@@ -124,8 +123,9 @@ describe('buildUserMessage', () => {
     expect(msg).toContain('wait=45min');
     expect(msg).toContain('walk=5min');
     expect(msg).toContain('verdict=go');
-    expect(msg).toContain('score=2');
-    expect(msg).toContain('zone=judgment');
+    expect(msg).toContain('reason=below-usual');
+    expect(msg).toContain('beatableSoon=true');
+    expect(msg).toContain('bestWindow=55@2.0h');
     expect(msg).toContain('range=[p10=20 p90=80');
     expect(msg).toContain('t+0=40(n=27)');
     expect(msg).toContain('t+120=60(n=27)');
@@ -142,7 +142,7 @@ describe('buildUserMessage', () => {
     const ride = makeRide({
       historicalAverage: null,
       rideStats: null,
-      score: undefined,
+      verdict: null,
     });
     const msg = buildUserMessage(makeContext({ rides: [{ ride, walkMinutes: 5, walkYards: 400 }] }), 5);
     expect(msg).toContain('buckets=null');

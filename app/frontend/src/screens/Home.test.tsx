@@ -10,6 +10,7 @@ import { DailyContextProvider } from '../context/DailyContextContext';
 import { PersonaProvider } from '../context/PersonaContext';
 import { DeviceProvider } from '../context/DeviceContext';
 import { NotificationDetailProvider } from '../context/NotificationDetailContext';
+import { DebugModeProvider } from '../context/DebugModeContext';
 
 // AsyncStorage's native module is unavailable in jest; use the library's
 // official in-memory mock per its testing docs.
@@ -38,7 +39,9 @@ function renderHome() {
           <LocationProvider>
             <RideProvider>
               <NotificationDetailProvider>
-                <Home />
+                <DebugModeProvider>
+                  <Home />
+                </DebugModeProvider>
               </NotificationDetailProvider>
             </RideProvider>
           </LocationProvider>

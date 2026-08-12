@@ -308,10 +308,13 @@ function stripCodeFences(text: string): string {
  * assigns a generic one-liner.
  */
 export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
+  // No LLM: rank by verdict (star > go > neutral > skip), then shorter walk.
+  const RANK: Record<string, number> = { star: 3, go: 2, neutral: 1, skip: 0 };
+  const rank = (r: RideForPrompt) => RANK[r.ride.verdict?.verdict ?? 'neutral'] ?? 1;
   const sorted = [...candidates].sort((a, b) => {
-    const sa = a.ride.score?.score ?? 0;
-    const sb = b.ride.score?.score ?? 0;
-    return sb - sa;
+    const d = rank(b) - rank(a);
+    if (d !== 0) return d;
+    return (a.walkMinutes ?? Infinity) - (b.walkMinutes ?? Infinity);
   });
   return sorted.slice(0, BATCH_SIZE).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,

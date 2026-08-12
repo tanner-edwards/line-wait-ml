@@ -48,7 +48,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const isOperating = ride.status === 'OPERATING';
   const isDown = ride.status === 'DOWN';
   const { hasActiveTrip } = useTrip();
-  const rawBadge = ride.score?.badge ?? null;
+  // Badge = the authoritative two-layer verdict (neutral → no chip).
+  const rawVerdict = ride.verdict?.verdict ?? null;
+  const rawBadge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
   const badge = !hasActiveTrip && rawBadge === 'star' ? 'go' : rawBadge;
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;

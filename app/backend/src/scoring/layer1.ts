@@ -38,6 +38,8 @@ export interface DealResult {
   bigBeatableSoon: boolean;                    // a BIG lower window is reachable soon ("about to drop")
   flatDay: boolean;                            // today's range too flat for Frame B
   todayP30: number | null; todayP80: number | null; typical: number | null;
+  betterWindowWait: number | null;             // wait at the best reachability-weighted window (null if none)
+  betterWindowInMin: number | null;            // minutes-from-now of that window
 }
 
 function slotStart(r: Ride): number | null {
@@ -86,6 +88,7 @@ export function dealVerdict(ride: Ride): DealResult {
   const empty: DealResult = {
     verdict: 'neutral', frameAGo: false, frameASkip: false, frameBGo: false, frameBSkip: false,
     ceiling: false, beatableSoon: false, bigBeatableSoon: false, flatDay: false, todayP30: null, todayP80: null, typical,
+    betterWindowWait: null, betterWindowInMin: null,
   };
   if (cur == null || ride.status !== 'OPERATING' || !st) return empty;
 
@@ -99,15 +102,20 @@ export function dealVerdict(ride: Ride): DealResult {
   const curve = remainingCurve(ride);
   const waits = curve.map(c => c.wait).sort((a, b) => a - b);
   let todayP30: number | null = null, todayP80: number | null = null;
+  let betterWindowWait: number | null = null, betterWindowInMin: number | null = null;
   let frameBGo = false, frameBSkip = false, beatableSoon = false, bigBeatableSoon = false, flatDay = false;
   if (waits.length >= 2) {
     const spread = waits[waits.length - 1] - waits[0];
     flatDay = spread < FLAT_SPREAD_MIN;
     todayP30 = percentile(waits, GO_TODAY_PCTL);
     todayP80 = percentile(waits, SKIP_TODAY_PCTL);
-    // reachability-decayed best improvement over the remaining curve
+    // reachability-decayed best improvement over the remaining curve — keep the
+    // window that yields it (wait + minutes-from-now) for the "come back later" story.
     let bestEff = 0;
-    for (const c of curve) bestEff = Math.max(bestEff, (cur - c.wait) * decay(c.dt));
+    for (const c of curve) {
+      const eff = (cur - c.wait) * decay(c.dt);
+      if (eff > bestEff) { bestEff = eff; betterWindowWait = c.wait; betterWindowInMin = c.dt; }
+    }
     beatableSoon = bestEff >= SKIP_BEATABLE_MIN;
     bigBeatableSoon = bestEff >= SKIP_BIG_BEATABLE_MIN;
     // GO can fire even on a flat day — if current sits at/below the bottom of
@@ -140,5 +148,5 @@ export function dealVerdict(ride: Ride): DealResult {
     verdict = 'skip';
   }
 
-  return { verdict, frameAGo, frameASkip, frameBGo, frameBSkip, ceiling, beatableSoon, bigBeatableSoon, flatDay, todayP30, todayP80, typical };
+  return { verdict, frameAGo, frameASkip, frameBGo, frameBSkip, ceiling, beatableSoon, bigBeatableSoon, flatDay, todayP30, todayP80, typical, betterWindowWait, betterWindowInMin };
 }

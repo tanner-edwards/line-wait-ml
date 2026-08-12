@@ -49,8 +49,11 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   }
 
   const isOperating = ride.status === 'OPERATING';
+  // scoreResult retained only for the trend arrow's trajectory (not in verdict).
   const scoreResult = ride.score ?? SUPPRESSED_SCORE;
-  const badge = scoreResult.badge;
+  // Badge = the authoritative two-layer verdict (neutral → no chip).
+  const rawVerdict = ride.verdict?.verdict ?? null;
+  const badge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
   const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
     && (rec.arrivalWait === null || rec.arrivalWait <= 15);
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.

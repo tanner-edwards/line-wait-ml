@@ -64,6 +64,15 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
         reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
       },
     },
+    // Fallback ranking is verdict-based: higher scoreValue → higher verdict tier.
+    verdict: {
+      verdict: scoreValue >= 5 ? 'go' : scoreValue >= 2 ? 'neutral' : 'skip',
+      reasons: {
+        primary: 'none', current: currentWait ?? 0, typical: null,
+        todayP30: null, todayP80: null, p10: null, p90: null,
+        beatableSoon: false, betterWindowWait: null, betterWindowInMin: null, star: false,
+      },
+    },
   };
 }
 
@@ -320,7 +329,7 @@ describe('buildRecommendations — degraded paths', () => {
     const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
 
     expect(res.degraded).toBe(true);
-    // top-by-score order: b(5) before a(3); curr excluded as nearest ride
+    // verdict-tier order: b(go) before a(neutral); curr excluded as nearest ride
     expect(res.recommendations.map(r => r.rideId)).toEqual(['b', 'a']);
     expect(res.recommendations[0].oneLiner).toBe('Recommended based on current waits.');
   });

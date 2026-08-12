@@ -91,6 +91,8 @@ export function scoreVerdict(ride: Ride): VerdictResult {
     p10: st?.p10 ?? null,
     p90: st?.p90 ?? null,
     beatableSoon: deal.beatableSoon,
+    betterWindowWait: deal.betterWindowWait,
+    betterWindowInMin: deal.betterWindowInMin,
     star,
   };
 

@@ -17,7 +17,8 @@
       "bundleIdentifier": "com.tannere.club32",
       "deploymentTarget": "15.0",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Club 32 uses your location to find your nearest ride and calculate walk times."
+        "NSLocationWhenInUseUsageDescription": "Club 32 uses your location to find your nearest ride and calculate walk times.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {

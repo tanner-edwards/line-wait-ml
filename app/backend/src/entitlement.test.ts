@@ -80,7 +80,7 @@ describe('stripPremiumFromRide', () => {
         verdict: 'star',
         reasons: {
           primary: 'rare-low', current: 5, typical: 30, todayP30: 20, todayP80: 55,
-          p10: 10, p90: 60, beatableSoon: false, star: true,
+          p10: 10, p90: 60, beatableSoon: false, betterWindowWait: null, betterWindowInMin: null, star: true,
         },
       },
       fullDayForecast: [{ timeSlot: '08:00-08:30', startMinutes: 480, wait: 20, sampleCount: 5 }],

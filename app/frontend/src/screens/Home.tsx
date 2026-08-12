@@ -28,6 +28,7 @@ import { ArrowUpDown } from 'lucide-react-native';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
+import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { usePersona } from '../context/PersonaContext';
 import { filterByDailyParks } from '../utils/parkFilter';
@@ -42,6 +43,7 @@ export function Home() {
   const { context: dailyContext } = useDailyContext();
   const { openDetail } = useNotificationDetail();
   const { persona } = usePersona();
+  const { debugMode } = useDebugMode();
 
   // Build once per render; rows look up via Set.has() for O(1) per-row.
   const mustDoSet = React.useMemo(
@@ -116,14 +118,20 @@ export function Home() {
       <GradientHeader
         title="Live Waits"
         subtitle={
-          <Pressable onPress={() => setShowTimeTravelModal(true)} testID="time-travel-trigger">
-            <Text
-              style={timeTravelAt ? gradientHeaderTextStyles.subtitleActive : gradientHeaderTextStyles.subtitle}
-              testID="last-update"
-            >
-              {timeTravelAt ? `Time set to: ${timeTravelLabel}` : `Last update: ${lastUpdate}`}
+          debugMode ? (
+            <Pressable onPress={() => setShowTimeTravelModal(true)} testID="time-travel-trigger">
+              <Text
+                style={timeTravelAt ? gradientHeaderTextStyles.subtitleActive : gradientHeaderTextStyles.subtitle}
+                testID="last-update"
+              >
+                {timeTravelAt ? `Time set to: ${timeTravelLabel}` : `Last update: ${lastUpdate}`}
+              </Text>
+            </Pressable>
+          ) : (
+            <Text style={gradientHeaderTextStyles.subtitle} testID="last-update">
+              {`Last update: ${lastUpdate}`}
             </Text>
-          </Pressable>
+          )
         }
         right={
           <>
