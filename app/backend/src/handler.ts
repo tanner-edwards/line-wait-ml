@@ -30,7 +30,6 @@ import { loadPredictions, MLPredictionDoc } from './mlPredictions';
 import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
-import { scoreRide } from './scoring/score';
 import { scoreVerdict } from './scoring/layer2';
 import type { Verdict, VerdictInfo } from './types';
 import { walkingMinutes } from './recommendations/walkingDistance';
@@ -384,14 +383,6 @@ export async function fetchPark(
 
       const verdictInfo: VerdictInfo = { verdict, reasons };
       ride.verdict = verdictInfo;
-
-      // Legacy `score` still populates the old "why" fields consumed by
-      // promptBuilder / DebugCard until those migrate to `verdict.reasons`.
-      // Badge is overridden to the authoritative two-layer verdict so the chip
-      // and the new reasons can never disagree.
-      let rideScore = scoreRide(ride);
-      rideScore = { ...rideScore, badge: verdict === 'neutral' ? null : verdict };
-      ride.score = rideScore;
       return ride;
     })
   );

@@ -2,9 +2,19 @@ import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { TrendingDown, TrendingUp } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
-import { VerdictTrajectory } from '../types';
+import { Prediction, VerdictTrajectory } from '../types';
 
 export type RowTrendDirection = 'up' | 'down';
+
+/**
+ * Row trend comes straight from the ML prediction's trend, gated by confidence
+ * (absent or low-confidence → silent). Single source of truth for the trend
+ * arrow now that the old score.factors.trajectory feed is gone.
+ */
+export function predictionTrajectory(prediction: Prediction | null | undefined): VerdictTrajectory {
+  if (!prediction || prediction.confidence === 'low') return null;
+  return prediction.trend;
+}
 
 /**
  * Map the server verdict's ML trajectory to a row arrow direction. This is the

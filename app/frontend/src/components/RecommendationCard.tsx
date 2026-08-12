@@ -11,24 +11,14 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { AlertTriangle, ChevronRight, Footprints } from 'lucide-react-native';
-import { Recommendation, Ride, ScoreResult } from '../types';
+import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
 import { Pill } from './Pill';
-import { TrendArrow, trajectoryDirection } from './TrendArrow';
+import { TrendArrow, trajectoryDirection, predictionTrajectory } from './TrendArrow';
 import { WalkPill } from './WalkPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
-
-const SUPPRESSED_SCORE: ScoreResult = {
-  score: 0,
-  badge: null,
-  factors: {
-    zone: 'suppressed', typical: null, worthWeight: null, valueMinutes: null,
-    betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
-    reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
-  },
-};
 
 const TREND_LABEL = { down: 'Dropping', up: 'Rising' } as const;
 
@@ -49,8 +39,6 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   }
 
   const isOperating = ride.status === 'OPERATING';
-  // scoreResult retained only for the trend arrow's trajectory (not in verdict).
-  const scoreResult = ride.score ?? SUPPRESSED_SCORE;
   // Badge = the authoritative two-layer verdict (neutral → no chip).
   const rawVerdict = ride.verdict?.verdict ?? null;
   const badge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
@@ -61,7 +49,7 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   const showBadge = badge !== null && !showWalkOn;
   // Trend — single source of truth is the server verdict's trajectory. No local
   // recompute; Steady / absent renders nothing.
-  const trend = isOperating ? trajectoryDirection(scoreResult.factors.trajectory) : null;
+  const trend = isOperating ? trajectoryDirection(predictionTrajectory(ride.prediction)) : null;
 
   const waitDisplay = rec.arrivalWait !== null
     ? `${roundWait(rec.arrivalWait)}`

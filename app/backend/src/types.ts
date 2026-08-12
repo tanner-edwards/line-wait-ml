@@ -103,41 +103,9 @@ export interface RideStats {
   sampleCount: number;
 }
 
-// --- Scoring (moved server-side as of v2; single source of truth for UI + LLM) ---
+// --- Verdict (two-layer engine; single source of truth for UI + LLM) ---
 
 export type Badge = 'star' | 'go' | 'skip' | null;
-
-// Which of the three zones (anchored on rideStats.p10/p90) the current wait
-// landed in. 'suppressed' = data too thin / degenerate to judge.
-export type VerdictZone = 'opportunity' | 'judgment' | 'skip' | 'suppressed';
-
-// Trajectory sourced from the ML prediction.trend, confidence-gated. Null when
-// no prediction or confidence is 'low'. Replaces the old F3/F4/trendDirection
-// recomputations as the single trajectory signal.
-export type VerdictTrajectory = 'rising' | 'falling' | 'trough' | 'peak' | 'stable' | null;
-
-// The three-zone verdict breakdown — the source of truth for the detail view's
-// "why". See ~/.claude/specs/line-wait-ml/verdict-function-spec.md.
-export interface VerdictBreakdown {
-  zone:             VerdictZone;     // axis-1 rank label: opportunity(≤p10) / judgment / skip(>p90)
-  typical:          number | null;   // true historical avg for this slot (baseline, not ML-swapped)
-  worthWeight:      number | null;   // p50-derived magnitude amplifier
-  valueMinutes:     number | null;   // signed opportunity magnitude (worth-weighted)
-  betterWindowWait: number | null;   // AXIS 2: wait at the best reachability-weighted window
-  betterWindowInMin: number | null;  // AXIS 2: how far out that window is (minutes)
-  recoverableNet:   number | null;   // AXIS 2: reachability-DECAYED savings vs that window
-  reachableSoon:    boolean;         // that window is inside the near (≤2h) horizon
-  climb:            boolean;         // AXIS 2: forecast says it's about to rise (window closing)
-  trajectory:       VerdictTrajectory;
-  // ≥40% swing from the previous OPERATING snapshot — real-time event override.
-  rapidChange:      { delta: number; points: number } | null;
-}
-
-export interface ScoreResult {
-  score:   number;              // signed worth-weighted magnitude (cross-ride ranking currency)
-  badge:   Badge;               // the verdict; null === Neutral (renders no chip)
-  factors: VerdictBreakdown;    // the "why", for the detail view + LLM prompt
-}
 
 // ── Two-layer verdict (Layer 1 deal math + Layer 2 worth/absolute/star) ──
 // The authoritative verdict. `verdict` drives the badge (neutral → no chip);
@@ -218,12 +186,8 @@ export interface Ride {
   // ML-predicted reopen time based on per-ride closure duration history.
   // Set for DOWN rides where a profile exists and the prediction is in the future.
   predictedReopenAt?: string | null;
-  // Always present on the wire response; optional in the type to allow
-  // the pre-scoring assembly stage in handler.ts to build a Ride and
-  // then attach the score result.
-  score?: ScoreResult;
-  // Authoritative two-layer verdict + deterministic "why" reasons. Additive
-  // alongside `score` during the migration off the old engine.
+  // Authoritative two-layer verdict + deterministic "why" reasons. Optional in
+  // the type so the pre-scoring assembly stage can build a Ride and attach it.
   verdict?: VerdictInfo | null;
   // 30-min historical-average slots from ~7 AM to midnight. Null when
   // the ride has no historical data at all. Individual slots with

@@ -260,10 +260,9 @@ describe('handler — per-park endpoint', () => {
     const result = await handler(buildEvent('/v0/waits/disneyland'));
     const body = JSON.parse(result.body) as ParkData;
     for (const ride of body.rides) {
-      expect(ride.score).toBeDefined();
-      expect(typeof ride.score!.score).toBe('number');
-      expect(ride.score!.factors).toBeDefined();
-      expect(['star', 'go', 'skip', null]).toContain(ride.score!.badge);
+      expect(ride.verdict).toBeDefined();
+      expect(ride.verdict!.reasons).toBeDefined();
+      expect(['star', 'go', 'skip', 'neutral']).toContain(ride.verdict!.verdict);
     }
   });
 
@@ -396,13 +395,13 @@ describe('handler — premium gating', () => {
       expect(ride.closureProfile ?? null).toBeNull();
       expect(ride.predictedReopenAt ?? null).toBeNull();
       // ...star downgraded so a free user never sees the opportunity badge.
-      expect(ride.score?.badge).not.toBe('star');
+      expect(ride.verdict?.verdict).not.toBe('star');
     }
     // Free / current-state fields survive.
     const space = body.rides.find(r => r.name === 'Hyperspace Mountain')!;
     expect(space.currentWait).toBe(55);
     expect(space.land).toBe('Tomorrowland');
-    expect(space.score).toBeDefined();
+    expect(space.verdict).toBeDefined();
   });
 
   it('keeps premium fields on /v0/waits when the caller IS entitled', async () => {
@@ -425,7 +424,7 @@ describe('handler — premium gating', () => {
       if ('error' in park) continue;
       for (const ride of park.rides) {
         expect(ride.rideStats).toBeNull();
-        expect(ride.score?.badge).not.toBe('star');
+        expect(ride.verdict?.verdict).not.toBe('star');
       }
     }
   });

@@ -142,7 +142,7 @@ export function flattenSorted(
         const bOpen = b.status === 'OPERATING';
         if (aOpen !== bOpen) return aOpen ? -1 : 1;
         // Primary: badge rank.
-        const diff = badgeRank(a.score?.badge) - badgeRank(b.score?.badge);
+        const diff = badgeRank(a.verdict?.verdict) - badgeRank(b.verdict?.verdict);
         if (diff !== 0) return diff;
         // Persona: personalize within the opportunity tier (higher score first).
         // No-op for a null/empty persona, preserving the non-personalized order.
@@ -160,7 +160,7 @@ export function flattenSorted(
         return a.name.localeCompare(b.name);
       }
       if (sortBy === 'badge') {
-        const diff = badgeRank(a.score?.badge) - badgeRank(b.score?.badge);
+        const diff = badgeRank(a.verdict?.verdict) - badgeRank(b.verdict?.verdict);
         return diff !== 0 ? diff : a.name.localeCompare(b.name);
       }
       if (sortBy === 'wait') {

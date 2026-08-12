@@ -16,7 +16,7 @@ import { Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
-import { TrendArrow, trajectoryDirection } from './TrendArrow';
+import { TrendArrow, trajectoryDirection, predictionTrajectory } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { haversineMeters, rideWaitLabel } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
@@ -57,7 +57,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
 
   // Trend — single source of truth is the server verdict's trajectory. No local
   // recompute; Steady / absent renders nothing.
-  const trend = isOperating ? trajectoryDirection(ride.score?.factors.trajectory ?? null) : null;
+  const trend = isOperating ? trajectoryDirection(predictionTrajectory(ride.prediction)) : null;
 
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip
   // (a walk-on IS the truest "go"), but a star always wins.

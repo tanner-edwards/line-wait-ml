@@ -132,12 +132,9 @@ export async function resolveEntitlement(event: APIGatewayProxyEvent): Promise<b
 // recentHistory, closedAt, persona facts) are left intact. Never mutates the
 // input — park responses are served from a shared TTL cache.
 export function stripPremiumFromRide(ride: Ride): Ride {
-  const score = ride.score
-    ? { ...ride.score, badge: ride.score.badge === 'star' ? ('go' as const) : ride.score.badge }
-    : ride.score;
-  // Mirror the score treatment on the two-layer verdict: keep the coarse label
-  // (star → go), but null the raw predictive numbers behind the "why" reasons —
-  // those are the same premium detail we strip via rideStats/fullDayForecast.
+  // Keep the coarse verdict label (star → go), but null the raw predictive
+  // numbers behind the "why" reasons — the same premium detail we strip via
+  // rideStats/fullDayForecast.
   const verdict = ride.verdict
     ? {
         verdict: ride.verdict.verdict === 'star' ? ('go' as const) : ride.verdict.verdict,
@@ -156,7 +153,6 @@ export function stripPremiumFromRide(ride: Ride): Ride {
     fullDayForecast: null,
     closureProfile: null,
     predictedReopenAt: null,
-    score,
     verdict,
   };
 }

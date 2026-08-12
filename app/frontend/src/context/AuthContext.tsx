@@ -56,6 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
         appleId: firebaseUser.uid,
         email: firebaseUser.email ?? null,
       });
+      console.log('[AuthContext DIAG] uid=', firebaseUser.uid, 'isAnonymous=', firebaseUser.isAnonymous, 'debugMode=', record.debugMode);
       setUserRecord(record);
     } catch (err) {
       console.warn('[AuthContext] user sync failed:', err);
@@ -68,6 +69,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
       if (firebaseUser && !firebaseUser.isAnonymous) {
         await syncUserRecord(firebaseUser);
       } else {
+        console.log('[AuthContext DIAG] no synced userRecord — uid=', firebaseUser?.uid, 'isAnonymous=', firebaseUser?.isAnonymous);
         setUserRecord(null);
       }
       setLoading(false);

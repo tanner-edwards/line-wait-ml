@@ -23,8 +23,8 @@ function opportunityOrder(rides: Ride[], persona: Persona | null): string[] {
     .map(i => (i.kind === 'ride' ? i.ride.name : ''));
 }
 
-const GO = { badge: 'go' } as Ride['score'];
-const STAR = { badge: 'star' } as Ride['score'];
+const GO = { verdict: 'go' } as Ride['verdict'];
+const STAR = { verdict: 'star' } as Ride['verdict'];
 
 function makeRide(over: Partial<Ride> = {}): Ride {
   const base: Ride = {
@@ -216,8 +216,8 @@ describe('personaScore', () => {
 describe('flattenSorted — persona level', () => {
   it('reorders within an opportunity tier by persona (must-do floats up)', () => {
     const rides = [
-      makeRide({ id: 'a', name: 'Alpha', score: GO }),
-      makeRide({ id: 'b', name: 'Bravo', score: GO }),
+      makeRide({ id: 'a', name: 'Alpha', verdict: GO }),
+      makeRide({ id: 'b', name: 'Bravo', verdict: GO }),
     ];
     // No persona → alphabetical within tier.
     expect(opportunityOrder(rides, null)).toEqual(['Alpha', 'Bravo']);
@@ -227,8 +227,8 @@ describe('flattenSorted — persona level', () => {
 
   it('never lets persona cross an opportunity tier boundary', () => {
     const rides = [
-      makeRide({ id: 'star', name: 'StarRide', score: STAR }),        // better tier, not a must-do
-      makeRide({ id: 'go', name: 'GoRide', score: GO }),              // worse tier, IS a must-do
+      makeRide({ id: 'star', name: 'StarRide', verdict: STAR }),        // better tier, not a must-do
+      makeRide({ id: 'go', name: 'GoRide', verdict: GO }),              // worse tier, IS a must-do
     ];
     // Must-do GoRide gets +100 but STAR still outranks GO — badge wins.
     expect(opportunityOrder(rides, makePersona({ mustDoRideIds: ['go'] }))).toEqual(['StarRide', 'GoRide']);
@@ -236,8 +236,8 @@ describe('flattenSorted — persona level', () => {
 
   it('ranks more category matches higher within a tier', () => {
     const rides = [
-      makeRide({ id: 'one', name: 'OneMatch', score: GO, categories: ['thrills'] }),
-      makeRide({ id: 'two', name: 'TwoMatch', score: GO, categories: ['thrills', 'immersive'] }),
+      makeRide({ id: 'one', name: 'OneMatch', verdict: GO, categories: ['thrills'] }),
+      makeRide({ id: 'two', name: 'TwoMatch', verdict: GO, categories: ['thrills', 'immersive'] }),
     ];
     expect(opportunityOrder(rides, makePersona({ ridePreferences: ['thrills', 'immersive'] })))
       .toEqual(['TwoMatch', 'OneMatch']);
@@ -245,8 +245,8 @@ describe('flattenSorted — persona level', () => {
 
   it('empty persona reproduces the non-personalized order', () => {
     const rides = [
-      makeRide({ id: 'a', name: 'Zeta', score: GO }),
-      makeRide({ id: 'b', name: 'Alpha', score: GO }),
+      makeRide({ id: 'a', name: 'Zeta', verdict: GO }),
+      makeRide({ id: 'b', name: 'Alpha', verdict: GO }),
     ];
     expect(opportunityOrder(rides, makePersona())).toEqual(opportunityOrder(rides, null));
   });

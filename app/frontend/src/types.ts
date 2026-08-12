@@ -33,35 +33,13 @@ export interface RideStats {
   sampleCount: number;
 }
 
-// --- Scoring (computed server-side as of v2; UI is a pure renderer) ---
+// --- Verdict (two-layer engine; UI is a pure renderer) ---
 
 export type Badge = 'star' | 'go' | 'caution' | 'skip' | null;
 
-export type VerdictZone = 'opportunity' | 'judgment' | 'skip' | 'suppressed';
+// ML trajectory, confidence-gated. Drives the row trend arrow. Null when no
+// prediction or low confidence.
 export type VerdictTrajectory = 'rising' | 'falling' | 'trough' | 'peak' | 'stable' | null;
-
-// The two-axis verdict breakdown — the "why" behind the badge. Mirrors the
-// backend VerdictBreakdown; the UI is a pure renderer of it.
-export interface VerdictBreakdown {
-  zone:              VerdictZone;
-  typical:           number | null;
-  worthWeight:       number | null;
-  valueMinutes:      number | null;
-  betterWindowWait:  number | null;   // best wait reachable later today
-  betterWindowInMin: number | null;   // how far out that window is (minutes)
-  recoverableNet:    number | null;   // reachability-decayed savings vs that window
-  reachableSoon:     boolean;
-  climb:             boolean;
-  trajectory:        VerdictTrajectory;
-  // ≥40% swing from the previous OPERATING snapshot — real-time event override.
-  rapidChange:       { delta: number; points: number } | null;
-}
-
-export interface ScoreResult {
-  score:   number;
-  badge:   Badge;
-  factors: VerdictBreakdown;
-}
 
 // Two-layer verdict reasons — mirrors the backend VerdictReasons. Drives the
 // deterministic "why this recommendation" line (hero card). `primary` is the
@@ -143,9 +121,6 @@ export interface Ride {
   closedAt?: string | null;
   // ML-predicted reopen time based on per-ride closure duration history.
   predictedReopenAt?: string | null;
-  // Optional in the type because closed/legacy fixtures may not carry it;
-  // the live backend always emits it on every ride.
-  score?: ScoreResult;
   // Authoritative two-layer verdict + deterministic "why" reasons.
   verdict?: VerdictInfo | null;
   fullDayForecast?: FullDaySlot[] | null;

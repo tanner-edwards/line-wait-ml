@@ -55,15 +55,6 @@ function makeRide(id: string, name: string, currentWait: number | null, scoreVal
     lat: null,
     lng: null,
     closedAt: null,
-    score: {
-      score: scoreValue,
-      badge: scoreValue >= 2 ? 'go' : null,
-      factors: {
-        zone: 'judgment', typical: null, worthWeight: null, valueMinutes: null,
-        betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
-        reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
-      },
-    },
     // Fallback ranking is verdict-based: higher scoreValue → higher verdict tier.
     verdict: {
       verdict: scoreValue >= 5 ? 'go' : scoreValue >= 2 ? 'neutral' : 'skip',
@@ -209,8 +200,8 @@ describe('fallbackRecs', () => {
     expect(fallbackRecs(candidates)).toHaveLength(5);
   });
 
-  it('handles candidates without a score (treats as 0)', () => {
-    const ride: Ride = { ...makeRide('a', 'A', 10), score: undefined };
+  it('handles candidates without a verdict (treats as neutral)', () => {
+    const ride: Ride = { ...makeRide('a', 'A', 10), verdict: null };
     const recs = fallbackRecs([{ ride, walkMinutes: 3, walkYards: 240 }]);
     expect(recs).toHaveLength(1);
     expect(recs[0].rideId).toBe('a');

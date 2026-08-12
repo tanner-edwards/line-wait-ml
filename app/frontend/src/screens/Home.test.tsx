@@ -3,7 +3,7 @@ import { RefreshControl } from 'react-native';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Home } from './Home';
 import * as api from '../api';
-import { CombinedResponse, HistoricalAverage, Ride, ScoreResult, VerdictTrajectory } from '../types';
+import { CombinedResponse, HistoricalAverage, Ride, Prediction } from '../types';
 import { RideProvider } from '../context/RideContext';
 import { LocationProvider } from '../context/LocationContext';
 import { DailyContextProvider } from '../context/DailyContextContext';
@@ -316,24 +316,19 @@ describe('Home — v1 historical-context indicators', () => {
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
   });
 
-  // The row trend is now sourced from the server verdict's trajectory — no
-  // local bucket recompute. Only the trajectory field matters here.
-  const scoreWithTrajectory = (trajectory: VerdictTrajectory): ScoreResult => ({
-    score: 0,
-    badge: null,
-    factors: {
-      zone: 'judgment', typical: null, worthWeight: null, valueMinutes: null,
-      betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
-      reachableSoon: false, climb: false, trajectory, rapidChange: null,
-    },
+  // The row trend is sourced from the ML prediction's trend, gated by
+  // confidence. Only the trend field matters here (confidence 'high' so it
+  // isn't gated out).
+  const predictionWithTrend = (trend: Prediction['trend']): Prediction => ({
+    t10: 0, t20: 0, t30: 0, t40: 0, t50: 0, t60: 0, t90: 0, t120: 0, t150: 0,
+    trend, trendDelta30: 0, confidence: 'high', updatedAt: 't',
   });
 
   it('shows Dropping ↓ when the verdict trajectory is falling', async () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 50, prediction: null,
-        score: scoreWithTrajectory('falling'),
+        status: 'OPERATING', currentWait: 50, prediction: predictionWithTrend('falling'),
       })
     );
     renderHome();
@@ -347,8 +342,7 @@ describe('Home — v1 historical-context indicators', () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 30, prediction: null,
-        score: scoreWithTrajectory('rising'),
+        status: 'OPERATING', currentWait: 30, prediction: predictionWithTrend('rising'),
       })
     );
     renderHome();
@@ -362,8 +356,7 @@ describe('Home — v1 historical-context indicators', () => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 30, prediction: null,
-        score: scoreWithTrajectory('stable'),
+        status: 'OPERATING', currentWait: 30, prediction: predictionWithTrend('stable'),
       })
     );
     renderHome();
@@ -380,7 +373,6 @@ describe('Home — v1 historical-context indicators', () => {
       singleRideResponse({
         id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
         status: 'OPERATING', currentWait: 10, prediction: null,
-        score: scoreWithTrajectory(null),
       })
     );
     renderHome();

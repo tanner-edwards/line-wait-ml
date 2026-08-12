@@ -67,15 +67,6 @@ describe('stripPremiumFromRide', () => {
       recentHistory: [{ timestamp: 't', minutesAgo: 5, wait: 40, status: 'OPERATING' }],
       lat: 1, lng: 2, closedAt: null,
       predictedReopenAt: '2026-07-15T21:00:00Z',
-      score: {
-        score: 3,
-        badge: 'star',
-        factors: {
-          zone: 'opportunity', typical: null, worthWeight: null, valueMinutes: null,
-          betterWindowWait: null, betterWindowInMin: null, recoverableNet: null,
-          reachableSoon: false, climb: false, trajectory: null, rapidChange: null,
-        },
-      },
       verdict: {
         verdict: 'star',
         reasons: {
@@ -99,7 +90,7 @@ describe('stripPremiumFromRide', () => {
     expect(stripped.fullDayForecast).toBeNull();
     expect(stripped.closureProfile).toBeNull();
     expect(stripped.predictedReopenAt).toBeNull();
-    expect(stripped.score?.badge).toBe('go');
+    expect(stripped.verdict?.verdict).toBe('go');   // star → go for non-entitled
   });
 
   it('leaves free/current-state fields intact', () => {
@@ -110,10 +101,10 @@ describe('stripPremiumFromRide', () => {
     expect(stripped.lat).toBe(1);
   });
 
-  it('leaves non-star badges unchanged', () => {
+  it('leaves non-star verdicts unchanged', () => {
     const r = fullRide();
-    r.score = { ...r.score!, badge: 'skip' };
-    expect(stripPremiumFromRide(r).score?.badge).toBe('skip');
+    r.verdict = { ...r.verdict!, verdict: 'skip' };
+    expect(stripPremiumFromRide(r).verdict?.verdict).toBe('skip');
   });
 
   it('strips the two-layer verdict: star→go, rare-low→todays-low, reason numbers nulled', () => {
@@ -140,7 +131,6 @@ describe('stripPremiumFromRide', () => {
     const r = fullRide();
     stripPremiumFromRide(r);
     expect(r.rideStats).not.toBeNull();
-    expect(r.score?.badge).toBe('star');
     expect(r.verdict?.verdict).toBe('star');
     expect(r.verdict?.reasons.typical).toBe(30);
   });
