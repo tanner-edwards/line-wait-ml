@@ -15,7 +15,7 @@
 
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import Svg, { Circle, Line, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 import { roundWait } from '../../utils/roundWait';
 import { Badge } from '../../types';
@@ -47,11 +47,23 @@ interface Props {
 // red on neutral rides (e.g. Pirates at 25 within a 5–30 range) and contradicted
 // the badge. Neutral (no badge) → brand; the dot's position still carries the
 // "where in range" information without a false skip signal.
+//
+// A 'star' badge keeps the green fill (it's still a "go" underneath) — only
+// the marker becomes a gold star shape instead of a circle. Filling the whole
+// bar gold read as a caution/warning color rather than a rare positive signal.
 const BADGE_FILL: Record<'go' | 'skip' | 'star', string> = {
   go: colors.go,
   skip: colors.skip,
-  star: colors.star,
+  star: colors.go,
 };
+
+const STAR_MARKER_COLOR = colors.star;
+
+// Lucide "Star" path, 24x24 viewBox — reused here instead of the Lucide
+// component so it can be drawn as a native SVG node inside this chart's Svg.
+const STAR_PATH_D =
+  'M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z';
+const STAR_MARKER_SIZE = 16; // rendered width/height in track-coordinate units
 
 export interface RangeLayout {
   innerLeft: number;
@@ -62,6 +74,8 @@ export interface RangeLayout {
   dotFloatingRight: boolean;
   typicalX: number | null;
   typicalInBounds: boolean;
+  typicalFloatingLeft: boolean;
+  typicalFloatingRight: boolean;
   typicalLabelX: number | null;
   typicalLabelY: number;
   svgH: number;
@@ -97,6 +111,8 @@ export function computeLayout(
   const rawTypicalX = typicalRatio != null ? innerLeft + typicalRatio * totalW : null;
   const typicalX    = rawTypicalX  != null ? Math.max(7, Math.min(TR_W - 7, rawTypicalX)) : null;
   const typicalInBounds = rawTypicalX != null && rawTypicalX >= innerLeft && rawTypicalX <= innerRight;
+  const typicalFloatingLeft  = rawTypicalX != null && rawTypicalX < innerLeft;
+  const typicalFloatingRight = rawTypicalX != null && rawTypicalX > innerRight;
 
   // Label: nudge away from track endpoints when in-bounds; anchor near tick when floating.
   const typicalLabelX = typicalX != null
@@ -105,15 +121,17 @@ export function computeLayout(
       : Math.max(22, Math.min(TR_W - 22, typicalX))
     : null;
 
-  // Drop typical label to a second row only when in-bounds and crowding an endpoint label.
-  const typicalDropped = typicalInBounds && typicalLabelX != null && (
+  // Drop the typical label to a second row when it crowds an endpoint label —
+  // including when it floats out of bounds (a small overshoot lands its label
+  // right on top of the p10/p90 label, so the float gap does NOT separate them).
+  const typicalDropped = typicalLabelX != null && (
     typicalLabelX - innerLeft < PROX || innerRight - typicalLabelX < PROX
   );
 
   return {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
-    typicalX, typicalInBounds, typicalLabelX,
+    typicalX, typicalInBounds, typicalFloatingLeft, typicalFloatingRight, typicalLabelX,
     typicalLabelY: typicalDropped ? LABEL_Y + 14 : LABEL_Y,
     svgH: typicalDropped ? TR_H + 14 : TR_H,
   };
@@ -136,7 +154,7 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
   const {
     innerLeft, innerRight, totalW,
     dotX, dotFloatingLeft, dotFloatingRight,
-    typicalX, typicalLabelX, typicalLabelY, svgH,
+    typicalX, typicalFloatingLeft, typicalFloatingRight, typicalLabelX, typicalLabelY, svgH,
   } = computeLayout(rP10, rP90, rCurrent, rTypical);
 
   return (
@@ -181,7 +199,7 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
             {/* Fill carries the verdict: only drawn when there's a badge, so a
                 neutral ride never shows an alarming full/partial bar — just the
                 position dot on an empty track. skip → long red, go/star → short
-                green/gold, neutral → no fill. */}
+                green, neutral → no fill. */}
             {dotX != null && !dotFloatingLeft && badge != null ? (
               <Rect
                 x={innerLeft} y={TRACK_TOP_Y}
@@ -189,6 +207,26 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
                 height={TRACK_H}
                 rx={TRACK_H / 2}
                 fill={fillColor}
+              />
+            ) : null}
+
+            {/* Dashed connector — typical floats left of the track */}
+            {typicalX != null && typicalFloatingLeft ? (
+              <Line
+                x1={typicalX} x2={innerLeft}
+                y1={TRACK_CY} y2={TRACK_CY}
+                stroke={colors.textTertiary} strokeWidth={1.5}
+                strokeDasharray="3 4" opacity={0.5}
+              />
+            ) : null}
+
+            {/* Dashed connector — typical floats right of the track */}
+            {typicalX != null && typicalFloatingRight ? (
+              <Line
+                x1={innerRight} x2={typicalX}
+                y1={TRACK_CY} y2={TRACK_CY}
+                stroke={colors.textTertiary} strokeWidth={1.5}
+                strokeDasharray="3 4" opacity={0.5}
               />
             ) : null}
 
@@ -228,9 +266,20 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
               </SvgText>
             ) : null}
 
-            {/* Current wait dot */}
+            {/* Current wait marker — a gold star for a rare 'star' opportunity,
+                otherwise a plain dot in the badge color. */}
             {dotX != null ? (
-              <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
+              badge === 'star' ? (
+                <Path
+                  d={STAR_PATH_D}
+                  fill={STAR_MARKER_COLOR}
+                  stroke="white"
+                  strokeWidth={1}
+                  transform={`translate(${dotX - STAR_MARKER_SIZE / 2} ${TRACK_CY - STAR_MARKER_SIZE / 2}) scale(${STAR_MARKER_SIZE / 24})`}
+                />
+              ) : (
+                <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
+              )
             ) : null}
           </Svg>
           </>

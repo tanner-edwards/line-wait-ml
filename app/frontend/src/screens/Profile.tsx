@@ -1,8 +1,10 @@
 // Profile tab — card-grouped sections, iOS Settings pattern.
 // Three sections: Your Visit | Notifications | Debug
-// Debug section only renders when the server-controlled userRecord.debugMode
-// flag is on (set by hand in Firestore) — it's the user's access point for
-// debug mode and the ride-picker GPS override in Recommendations.
+// Debug section only renders for the server-controlled userRecord.debugMode
+// flag (set by hand in Firestore) or an anonymous session — the web build's
+// only sign-in path is anonymous, so that's just this developer in practice.
+// It's the access point for debug mode and the ride-picker GPS override in
+// Recommendations.
 
 import React, { useState } from 'react';
 import {
@@ -17,6 +19,7 @@ import {
   View,
 } from 'react-native';
 import { PaywallScreen } from './PaywallScreen';
+import { FeedbackScreen } from './FeedbackScreen';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useDebugMode } from '../context/DebugModeContext';
@@ -110,6 +113,7 @@ export function Profile(): React.ReactElement {
   const [logsOpen, setLogsOpen] = useState(false);
   const [parkPickerOpen, setParkPickerOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   if (!persona) {
     return (
@@ -235,6 +239,16 @@ export function Profile(): React.ReactElement {
           </Text>
         ) : null}
 
+        {/* ── Feedback ───────────────────────────────── */}
+        <SectionHeader title="Feedback" />
+        <Card flush style={styles.sectionCard}>
+          <TapEditRow
+            label="Feedback"
+            value="Share your thoughts"
+            onPress={() => setFeedbackOpen(true)}
+          />
+        </Card>
+
         {/* ── Account ────────────────────────────────── */}
         <SectionHeader title="Account" />
         <Card flush style={styles.sectionCard}>
@@ -303,8 +317,10 @@ export function Profile(): React.ReactElement {
           </Pressable>
         </Card>
 
-        {/* ── Debug (server-gated: userRecord.debugMode) ── */}
-        {userRecord?.debugMode ? (
+        {/* ── Debug (server-gated: userRecord.debugMode, or anonymous — the
+              web build has no other sign-in path, so anonymous is just this
+              developer) ── */}
+        {(userRecord?.debugMode || user?.isAnonymous) ? (
           <>
             <SectionHeader title="Debug" />
             <Card flush style={styles.debugSectionCard}>
@@ -354,6 +370,14 @@ export function Profile(): React.ReactElement {
         onRequestClose={() => setPaywallOpen(false)}
       >
         <PaywallScreen onClose={() => setPaywallOpen(false)} />
+      </Modal>
+      <Modal
+        visible={feedbackOpen}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setFeedbackOpen(false)}
+      >
+        <FeedbackScreen onClose={() => setFeedbackOpen(false)} />
       </Modal>
     </SafeAreaView>
   );

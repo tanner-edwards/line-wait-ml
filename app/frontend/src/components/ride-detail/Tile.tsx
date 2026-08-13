@@ -3,11 +3,11 @@
 // small uppercase label and arbitrary children below.
 
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, radius } from '../../theme/tokens';
 
-export function Tile({ children }: { children: React.ReactNode }): React.ReactElement {
-  return <View style={styles.tile}>{children}</View>;
+export function Tile({ children, style }: { children: React.ReactNode; style?: StyleProp<ViewStyle> }): React.ReactElement {
+  return <View style={[styles.tile, style]}>{children}</View>;
 }
 
 export function TileLabel({ children }: { children: React.ReactNode }): React.ReactElement {

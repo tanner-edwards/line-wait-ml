@@ -178,13 +178,21 @@ describe('computeLayout — typical label drop (proximity)', () => {
     expect(l.svgH).toBe(TR_H + 14);
   });
 
-  it('no drop when typical is floating left of track (gap already separates labels)', () => {
+  it('drops the label AND flags the float when typical is below range (floats left)', () => {
     const l = computeLayout(20, 60, 30, 5);
-    expect(l.typicalLabelY).toBe(LABEL_Y);
+    expect(l.typicalFloatingLeft).toBe(true);
+    expect(l.typicalLabelY).toBe(LABEL_Y + 14);   // a small overshoot lands the label on the p10 label
   });
 
-  it('no drop when typical is floating right of track', () => {
+  it('drops the label AND flags the float when typical is above range (floats right)', () => {
     const l = computeLayout(20, 60, 30, 80);
-    expect(l.typicalLabelY).toBe(LABEL_Y);
+    expect(l.typicalFloatingRight).toBe(true);
+    expect(l.typicalLabelY).toBe(LABEL_Y + 14);
+  });
+
+  it('reproduces the reported case: current 35, p10 20 / p90 40, typical 45 → floats right with a connector', () => {
+    const l = computeLayout(20, 40, 35, 45);
+    expect(l.typicalFloatingRight).toBe(true);     // typical past p90 → dashed connector renders
+    expect(l.typicalLabelY).toBe(LABEL_Y + 14);    // "usually 45" no longer overlaps "40"
   });
 });

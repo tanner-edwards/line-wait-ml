@@ -10,7 +10,7 @@
 //   ─────────────────────────────────────────────────────────────────
 //   Row 7  Watch button — right-aligned, alone
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Bell, CheckCircle, Footprints, Star, Zap } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
@@ -35,9 +35,6 @@ interface Props {
   anchorWait: number | null;
   showWalkOn: boolean;
   badge: Badge;
-  // Deterministic "why this recommendation" line; null when there's nothing to
-  // explain (plain neutral) — in that case no "?" trigger is shown.
-  whyText: string | null;
   walkMins: number | null;
   isWatching: boolean;
   rideId: string;
@@ -64,7 +61,6 @@ export function RideDetailHeader({
   anchorWait,
   showWalkOn,
   badge,
-  whyText,
   walkMins,
   isWatching,
   rideId,
@@ -79,7 +75,6 @@ export function RideDetailHeader({
 }: Props): React.ReactElement {
   const subtitle = [land, parkName].filter(Boolean).join(' · ');
   const showRangeBar = hasActiveTrip && !isDown && rideStats != null;
-  const [showWhy, setShowWhy] = useState(false);
 
   return (
     <View style={styles.card}>
@@ -92,22 +87,11 @@ export function RideDetailHeader({
         {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
       </View>
 
-      {/* Row 3 — Badge + a "?" that discloses WHY we made this call. The "?"
-          explains the recommendation, so it sits by the badge (not the wait
-          number). When there's no badge (a high-but-steady neutral), the "?"
-          stands alone. Tapping it reveals a one-line why below, bumping the
-          rest of the card down. Hidden entirely when there's nothing to explain. */}
-      {(badge || whyText) ? (
+      {/* Row 3 — Badge, centered (omitted when no badge). The "why" reasoning
+          lives in the ReasonCard below the header, not here. */}
+      {badge ? (
         <View style={styles.row3}>
-          <View style={styles.row3Inner}>
-            {badge ? badgePill(badge) : null}
-            {whyText ? (
-              <WhyToggle active={showWhy} onPress={() => setShowWhy(v => !v)} />
-            ) : null}
-          </View>
-          {whyText && showWhy ? (
-            <Text style={styles.whyLine}>{whyText}</Text>
-          ) : null}
+          {badgePill(badge)}
         </View>
       ) : null}
 
@@ -178,24 +162,6 @@ export function RideDetailHeader({
         </Pressable>
       </View>
     </View>
-  );
-}
-
-// ── "Why?" disclosure toggle ────────────────────────────────────────────────
-// A quiet outlined "?" that fills in when the explanation is open.
-
-function WhyToggle({ active, onPress }: { active: boolean; onPress: () => void }): React.ReactElement {
-  return (
-    <Pressable
-      onPress={onPress}
-      hitSlop={10}
-      accessibilityRole="button"
-      accessibilityState={{ expanded: active }}
-      accessibilityLabel="Why this recommendation"
-      style={[styles.whyToggle, active ? styles.whyToggleActive : styles.whyToggleIdle]}
-    >
-      <Text style={[styles.whyToggleText, active ? styles.whyToggleTextActive : styles.whyToggleTextIdle]}>?</Text>
-    </Pressable>
   );
 }
 
@@ -304,36 +270,6 @@ const styles = StyleSheet.create({
   row3: {
     alignItems: 'center',
     marginBottom: 12,
-  },
-  row3Inner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  whyToggle: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  whyToggleIdle: {
-    borderWidth: 1.5,
-    borderColor: colors.textTertiary,
-    backgroundColor: 'transparent',
-  },
-  whyToggleActive: {
-    backgroundColor: colors.textSecondary,
-  },
-  whyToggleText: { fontSize: 11, fontWeight: '700' },
-  whyToggleTextIdle: { color: colors.textTertiary },
-  whyToggleTextActive: { color: colors.textInverse },
-  whyLine: {
-    marginTop: 8,
-    fontSize: 13,
-    color: colors.textSecondary,
-    textAlign: 'center',
-    paddingHorizontal: 16,
   },
   badgePill: {
     flexDirection: 'row',

@@ -20,7 +20,7 @@ const mockedGetUser = getUser as jest.Mock;
 const mockedGetTrip = getTrip as jest.Mock;
 
 function trip(tripStart: string, tripEnd: string): TripRecord {
-  return { uid: 'u1', tripStart, tripEnd, purchasedAt: '2026-01-01T00:00:00Z', source: 'iap' };
+  return { id: 'trip-1', uid: 'u1', tripStart, tripEnd, purchasedAt: '2026-01-01T00:00:00Z', source: 'iap' };
 }
 
 // A fixed "now" in the afternoon UTC so the LA-local date is unambiguous.

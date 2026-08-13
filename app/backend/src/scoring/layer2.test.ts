@@ -46,6 +46,12 @@ describe('Layer 2 — star elevation', () => {
     expect(r.star).toBe(true);
     expect(r.reasons.primary).toBe('rare-low');
   });
+  it('does NOT star a low on a usually-short ride (the Autopia case: p50 < 30)', () => {
+    // 5 min at its floor, but median is only 20 — a low here is common, not rare.
+    const r = scoreVerdict(makeRide({ current: 5, typical: 20, rideStats: stats(5, 20, 35) }));
+    expect(r.verdict).toBe('go');
+    expect(r.star).toBe(false);
+  });
   it('does NOT star when the drop is a small % of a high-scale ride', () => {
     // 70 off an 80-typical ride is only ~12% below → GO, not STAR
     const r = scoreVerdict(makeRide({ current: 62, typical: 80, rideStats: stats(60, 75, 95) }));
@@ -124,18 +130,26 @@ describe('Layer 2 — pass-through of real signals', () => {
     expect(r.reasons.primary).toBe('none');
   });
 
-  it('labels a high-but-not-beatable neutral as "high-but-steady" (the Pirates case)', () => {
-    // At today's peak, but the only lower windows are far out → not a skip, and
-    // NOT silent: the guest needs to know it's high yet not worth avoiding.
+  it('a ride only slightly above typical (under the "busy" bar) stays neutral/silent (Pirates)', () => {
+    // 25 vs typical 22 = ~14% over — under the 20% "busier than usual" bar — and
+    // the lows are hours out. Not a skip, and NOT falsely flagged busy.
     const r = scoreVerdict(makeRide({
       current: 25, typical: 22, rideStats: stats(5, 18, 30),
       fullDayForecast: forecast([
         { dtMin: 30, wait: 24 }, { dtMin: 60, wait: 23 },
-        { dtMin: 120, wait: 22 }, { dtMin: 600, wait: 10 },  // real low is 10h out
+        { dtMin: 120, wait: 22 }, { dtMin: 600, wait: 10 },
       ]),
     }));
     expect(r.verdict).toBe('neutral');
+    expect(r.reasons.primary).toBe('none');
+  });
+
+  it('flags a genuinely-busy ride with no reachable relief as "busy-no-relief"', () => {
+    // 60 vs typical 45 (>20% over), nothing shorter reachable → skip, expectation copy.
+    const r = scoreVerdict(makeRide({ current: 60, typical: 45, rideStats: stats(20, 45, 65) }));
+    expect(r.verdict).toBe('skip');
+    expect(r.deal.frameASkip).toBe(true);
     expect(r.deal.beatableSoon).toBe(false);
-    expect(r.reasons.primary).toBe('high-but-steady');
+    expect(r.reasons.primary).toBe('busy-no-relief');
   });
 });

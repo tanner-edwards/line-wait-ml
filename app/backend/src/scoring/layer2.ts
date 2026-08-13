@@ -25,6 +25,9 @@ export type { Verdict, VerdictReason, VerdictReasons };
 
 // ── Dials (locked from the backtest sweep 2026-08-11) ──
 const WORTH_MIN      = 20;    // p90 below this → filler; timing it is noise → mute badges
+const STAR_P50_MIN   = 25;    // STAR only on genuinely high-demand rides (median wait ≥ this) —
+                              // a low on a usually-short ride (p50 ~20) is common, not a rare find.
+                              // 25 keeps headliners like Smugglers (p50 25); excludes Autopia (20).
 const SKIP_FLOOR     = 15;    // a wait under this is never worth crossing the park to avoid
 const STAR_DROP_PCT  = 0.30;  // STAR needs current ≥ this fraction below its typical-for-now
 const GO_MIN_DROP    = 5;     // a Frame-A GO with a sub-5-min drop is trivial → mute
@@ -62,6 +65,7 @@ export function scoreVerdict(ride: Ride): VerdictResult {
     //     drop stars on a 30-typical ride but not on an 80-typical one.
     if (
       verdict === 'go' && worthy &&
+      st.p50 >= STAR_P50_MIN &&                   // genuinely high-demand — a low here IS rare
       cur <= st.p10 &&
       typical != null && cur <= (1 - STAR_DROP_PCT) * typical
     ) {
@@ -108,16 +112,14 @@ function primaryReason(
   if (star) return 'rare-low';
   if (verdict === 'go') return deal.frameBGo ? 'todays-low' : 'below-usual';
   if (verdict === 'skip') {
-    if (deal.ceiling) return 'at-ceiling';          // overpriced vs its own ceiling
-    if (deal.frameASkip) return 'high-vs-usual';    // corroborated: also high vs typical
-    return 'dropping-soon';                         // near its usual, but about to fall hard
+    const busy = deal.frameASkip || deal.ceiling;   // genuinely high for THIS ride
+    // Normal-vs-typical but plummeting → "about to drop".
+    if (!busy && deal.bigBeatableSoon) return 'dropping-soon';
+    // Busy: reachability picks the copy — eases soon vs won't ease up today.
+    if (deal.beatableSoon) return deal.ceiling ? 'at-ceiling' : 'high-vs-usual';
+    return 'busy-no-relief';
   }
-  // neutral — a suppressed badge keeps its suppression reason; otherwise, if the
-  // ride is high/at today's peak AND nothing better is reachable, say so — that's
-  // the "looks skippable but isn't" case that confuses guests. Guard on
-  // !beatableSoon: if a better window IS coming it's NOT steady (that'd be a
-  // contradiction — and under the new rule a big drop is already a skip).
-  if (muted) return muted;
-  if (!deal.beatableSoon && (deal.ceiling || deal.frameBSkip || deal.frameASkip)) return 'high-but-steady';
-  return 'none';
+  // neutral — only a suppressed badge carries a reason; a plain neutral (incl.
+  // "high for today but not actually busy", e.g. top of a flat/low day) is silent.
+  return muted ?? 'none';
 }

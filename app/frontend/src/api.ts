@@ -293,6 +293,27 @@ export async function purchaseTrip(
   return (body as { trip: TripRecord }).trip;
 }
 
+// tripId is resolved server-side (most-recent trip for the caller's uid) —
+// not sent by the client.
+export async function submitFeedback(
+  idToken: string,
+  input: {
+    predictionTrust: number | null;
+    predictionTrustNote: string | null;
+    clarity: number | null;
+    clarityNote: string | null;
+    usability: number | null;
+    usabilityNote: string | null;
+    outcomeImpact: number | null;
+    outcomeImpactNote: string | null;
+    repeatIntent: number | null;
+    repeatIntentNote: string | null;
+    overallFreeText: string | null;
+  }
+): Promise<void> {
+  await authedPostJson('/v1/feedback', idToken, input);
+}
+
 export async function deleteAccount(idToken: string): Promise<void> {
   if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
   let res: Response;

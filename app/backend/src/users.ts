@@ -86,7 +86,9 @@ export async function claimFreeTrip(
   const user = userSnap.data() as UserRecord;
   if (user.freeTripClaimed) throw new Error('Free trip already claimed');
 
+  const tripRef = db.collection('trips').doc();
   const trip: TripRecord = {
+    id: tripRef.id,
     uid,
     tripStart,
     tripEnd,
@@ -95,7 +97,7 @@ export async function claimFreeTrip(
   };
 
   const batch = db.batch();
-  batch.set(db.collection('trips').doc(), trip);
+  batch.set(tripRef, trip);
   batch.update(userRef, { freeTripClaimed: true });
   // Write the durable ledger entry — survives account deletion.
   batch.set(claimedRef, { uid, claimedAt: new Date().toISOString() });
@@ -145,7 +147,9 @@ export async function validatePromoCode(
     .get();
   if (!existingSnap.empty) throw new Error('You have already used this promo code');
 
+  const tripRef = db.collection('trips').doc();
   const trip: TripRecord = {
+    id: tripRef.id,
     uid,
     tripStart,
     tripEnd,
@@ -155,7 +159,7 @@ export async function validatePromoCode(
   };
 
   const batch = db.batch();
-  batch.set(db.collection('trips').doc(), trip);
+  batch.set(tripRef, trip);
   batch.update(codeRef, { timesUsed: promo.timesUsed + 1 });
   await batch.commit();
 

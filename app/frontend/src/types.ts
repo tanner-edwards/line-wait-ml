@@ -46,7 +46,7 @@ export type VerdictTrajectory = 'rising' | 'falling' | 'trough' | 'peak' | 'stab
 // machine-readable driver; the UI maps it to a sentence (see utils/whyLine).
 export type VerdictReason =
   | 'rare-low' | 'todays-low' | 'below-usual'
-  | 'at-ceiling' | 'high-vs-usual' | 'dropping-soon' | 'high-but-steady'
+  | 'at-ceiling' | 'high-vs-usual' | 'dropping-soon' | 'busy-no-relief'
   | 'filler' | 'trivial-drop' | 'short-to-skip' | 'none';
 
 export interface VerdictReasons {
@@ -275,6 +275,7 @@ export interface NotificationLogEntry {
 // --- Accounts + paywall (mirrors backend src/types.ts) ---
 
 export interface TripRecord {
+  id: string; // Firestore doc id
   tripStart: string;   // YYYY-MM-DD
   tripEnd: string;     // YYYY-MM-DD
   purchasedAt: string; // ISO

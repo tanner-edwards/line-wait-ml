@@ -43,8 +43,10 @@ import {
   RideMetadata,
   TripDuration,
   UserResponse,
+  FeedbackRecord,
 } from './types';
 import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode } from './users';
+import { submitFeedback } from './feedback';
 import {
   resolveEntitlement,
   stripPremiumFromRide,
@@ -457,6 +459,7 @@ type RouteKind =
   | { kind: 'user-trip-purchase' }
   | { kind: 'promo-validate' }
   | { kind: 'promo-check' }
+  | { kind: 'feedback-submit' }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -479,6 +482,9 @@ function routeFromPath(
     }
     if (path.endsWith('/v1/promo/validate')) {
       return { kind: 'promo-validate' };
+    }
+    if (path.endsWith('/v1/feedback')) {
+      return { kind: 'feedback-submit' };
     }
     if (path.endsWith('/v1/devices')) {
       return { kind: 'device-register' };
@@ -565,6 +571,10 @@ export async function handler(
 
   if (route.kind === 'promo-check') {
     return handlePromoCheck(event);
+  }
+
+  if (route.kind === 'feedback-submit') {
+    return handleFeedbackSubmit(event);
   }
 
   if (route.kind === 'device-register') {
@@ -1041,6 +1051,61 @@ async function handleUserTrip(
   try {
     const trip = await getTrip(uid);
     return jsonResponse(200, { trip });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+const FEEDBACK_RATING_FIELDS = [
+  'predictionTrust', 'clarity', 'usability', 'outcomeImpact', 'repeatIntent',
+] as const;
+const FEEDBACK_NOTE_FIELDS = [
+  'predictionTrustNote', 'clarityNote', 'usabilityNote', 'outcomeImpactNote', 'repeatIntentNote',
+] as const;
+
+async function handleFeedbackSubmit(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: Record<string, unknown>;
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const ratings: Record<string, number | null> = {};
+  for (const key of FEEDBACK_RATING_FIELDS) {
+    const value = body[key];
+    if (value === undefined || value === null) {
+      ratings[key] = null;
+    } else if (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5) {
+      ratings[key] = value;
+    } else {
+      return jsonResponse(400, errorBody('BAD_REQUEST', `${key} must be an integer 1-5, or omitted`));
+    }
+  }
+
+  const notes: Record<string, string | null> = {};
+  for (const key of FEEDBACK_NOTE_FIELDS) {
+    const value = body[key];
+    notes[key] = typeof value === 'string' ? value : null;
+  }
+
+  const overallFreeText = typeof body.overallFreeText === 'string' ? body.overallFreeText : null;
+
+  try {
+    const trip = await getTrip(uid);
+    await submitFeedback(uid, {
+      tripId: trip?.id ?? null,
+      ...ratings,
+      ...notes,
+      overallFreeText,
+    } as Omit<FeedbackRecord, 'userId' | 'timestamp' | 'appVersion'>);
+    return jsonResponse(200, { ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));

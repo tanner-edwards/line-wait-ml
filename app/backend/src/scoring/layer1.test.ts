@@ -71,12 +71,12 @@ describe('ceiling_beatable SKIP (LOCKED)', () => {
     expect(r.ceiling).toBe(true);
     expect(r.beatableSoon).toBe(true);
   });
-  it('NEUTRAL at its ceiling when nothing better is coming (can\'t beat it → not a skip)', () => {
+  it('SKIPS at its ceiling even with no relief coming (busier than usual — union trigger)', () => {
     const r = dealVerdict(makeRide({
       current: 60, typical: 40, rideStats: stats(20, 40, 55),
       fullDayForecast: forecast([{ dtMin: 30, wait: 58 }, { dtMin: 60, wait: 59 }]),
     }));
-    expect(r.verdict).toBe('neutral');
+    expect(r.verdict).toBe('skip');      // reachability no longer gates it → Layer 2 copy = "won't ease"
     expect(r.ceiling).toBe(true);
     expect(r.beatableSoon).toBe(false);
   });
@@ -108,13 +108,14 @@ describe('"about to drop" SKIP (big reachable fall, no Frame-A corroboration)', 
 });
 
 describe('flat-day guard (skip side only)', () => {
-  it('a corroborated high on a FLAT remaining range does NOT skip', () => {
+  it('a today-peak on a FLAT day that is NOT above its typical does NOT skip (Space Mountain case)', () => {
     const r = dealVerdict(makeRide({
-      current: 50, typical: 40, rideStats: stats(20, 50, 80), // above typical, below p90
+      current: 50, typical: 55, rideStats: stats(20, 55, 80), // 50 is BELOW its typical 55, below p90
       fullDayForecast: forecast([{ dtMin: 30, wait: 48 }, { dtMin: 60, wait: 50 }]), // spread 2 < 10
     }));
     expect(r.flatDay).toBe(true);
-    expect(r.frameBSkip).toBe(false);
+    expect(r.frameASkip).toBe(false);   // not above its usual → not "busier than usual"
+    expect(r.frameBSkip).toBe(false);   // flat guard suppresses today-peak
     expect(r.verdict).toBe('neutral');
   });
   it('but a Frame-B GO still fires on a flat range (now is the low)', () => {

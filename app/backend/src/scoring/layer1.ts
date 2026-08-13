@@ -17,7 +17,13 @@ const MARGIN_PCT        = 0.20;  // "meaningful" move vs typical (relative only;
 const GO_TODAY_PCTL     = 0.30;  // GO if current ≤ this percentile of today's remaining waits
 const SKIP_TODAY_PCTL   = 0.80;  // SKIP needs current ≥ this pctl of today (tighter than GO = asymmetry)
 const FLAT_SPREAD_MIN   = 10;    // if today's remaining range spans < this, Frame B is silent (flat day)
-const SKIP_BEATABLE_MIN = 15;    // reachability-decayed minutes a better window must save to justify skip
+const SKIP_BEATABLE_MIN = 10;    // reachability-decayed minutes a better window must save to justify skip
+                                 // (10 is meaningful — a quarter of a 40-min wait; a few add up to a whole ride)
+                                 // NOTE: this "meaningful reachable decline" bar is FLAT 10 min for every ride.
+                                 // Deferred idea: make it a SLIDING SCALE off the ride's demand (e.g. p90 / rideStats).
+                                 // A 10-min drop is a quarter of a p90≈40 ride but only an eighth of a p90≈80 ride, so a
+                                 // smaller ride arguably deserves a lower bar and a bigger ride a higher one.
+                                 // Decision: keep flat at 10 for now; revisit the sliding scale if we start flip-flopping this the other way.
 const SKIP_BIG_BEATABLE_MIN = 25; // a BIG reachable drop justifies a skip even without Frame-A corroboration ("about to drop")
 const ML_MAX_HORIZON    = 240;   // ML curve owns 0–4h; forecast owns beyond
 
@@ -132,19 +138,21 @@ export function dealVerdict(ride: Ride): DealResult {
   let verdict: DealVerdict = 'neutral';
   if (frameAGo || frameBGo) {
     verdict = 'go';
-  } else if (ceiling && beatableSoon) {
-    // LOCKED 2026-08-11 (ceiling_beatable): at/above the p90 ceiling is only a
-    // SKIP when a better window is actually reachable. A ride pinned at its
-    // ceiling all day (busy day, no relief coming) is NOT a skip — you can't do
-    // better, so it's neutral. Backtest: this cut bad skips 27% → 10%.
-    verdict = 'skip';
-  } else if (frameASkip && frameBSkip && beatableSoon) {
-    verdict = 'skip';                                    // corroborated high + a better window is coming
-  } else if (frameBSkip && bigBeatableSoon) {
-    // "About to drop" — high for today AND a BIG reachable drop is coming, even
-    // if current is near its historical typical (Frame A doesn't corroborate).
-    // Catches the Tiana case: 45 now, ML falling to ~7 within a few hours.
-    // Backtest: +3.6k skips at 74% good / 8% bad — a strict win.
+  } else if (frameASkip || ceiling || (frameBSkip && bigBeatableSoon)) {
+    // "Busier than usual" (union trigger). Fires when the wait is genuinely high
+    // for THIS ride — ≥20% above its typical (frameASkip) OR at/above its p90
+    // ceiling — OR it's about to drop hard (frameBSkip + a big reachable fall).
+    //
+    // Reachability NO LONGER gates this (it used to, via the ceiling_beatable
+    // lock). It now only picks the Layer-2 copy: "eases off soon" when a better
+    // window is reachable, "won't ease up today" when it isn't. Flagging an
+    // unavoidable-high ride is expectation-setting ("it's steep, plan for it"),
+    // not "avoid" — and it kills the false-security case where a genuinely long
+    // wait showed no chip and read as "fine".
+    //
+    // Note "high for today" alone (frameBSkip without frameASkip/ceiling/big drop)
+    // does NOT flag: the top of a flat, low day (e.g. a ride sitting at its own
+    // median) isn't "busy". So worth/absolute guards stay in Layer 2.
     verdict = 'skip';
   }
 

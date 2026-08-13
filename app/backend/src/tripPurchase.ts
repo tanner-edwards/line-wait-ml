@@ -121,7 +121,9 @@ export async function purchaseTrip(
   }
 
   const db = getFirestore();
+  const tripRef = db.collection('trips').doc();
   const trip: TripRecord = {
+    id: tripRef.id,
     uid,
     tripStart,
     tripEnd,
@@ -131,7 +133,7 @@ export async function purchaseTrip(
   };
 
   await Promise.all([
-    db.collection('trips').add(trip),
+    tripRef.set(trip),
     db.collection('users').doc(uid).update({ freeTripClaimed: true }),
   ]);
 

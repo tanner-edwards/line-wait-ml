@@ -11,7 +11,7 @@ interface DebugModeContextValue {
 const DebugModeContext = createContext<DebugModeContextValue | null>(null);
 
 export function DebugModeProvider({ children }: { children: React.ReactNode }) {
-  const { userRecord } = useAuth();
+  const { user, userRecord } = useAuth();
   const [localDebugMode, setLocalDebugMode] = useState(false);
   const [loading, setLoading] = useState(true);
 
@@ -34,8 +34,11 @@ export function DebugModeProvider({ children }: { children: React.ReactNode }) {
 
   // Server-controlled: a stale local toggle from before this account lost
   // (or never had) debugMode access can't re-enable debug features on its own —
-  // both the Firestore flag AND the local switch have to be on.
-  const debugMode = (userRecord?.debugMode ?? false) && localDebugMode;
+  // both an allow (Firestore flag OR anonymous — the web build has no other
+  // sign-in path, so anonymous is just this developer) AND the local switch
+  // have to be on.
+  const serverAllowsDebug = (userRecord?.debugMode ?? false) || (user?.isAnonymous ?? false);
+  const debugMode = serverAllowsDebug && localDebugMode;
 
   return (
     <DebugModeContext.Provider value={{ debugMode, loading, setDebugMode }}>

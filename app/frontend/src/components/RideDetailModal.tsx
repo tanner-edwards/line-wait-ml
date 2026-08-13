@@ -150,9 +150,14 @@ function DetailBody({
   // "Why this recommendation" line — deterministic, from the same numbers as
   // the badge. rare-low is a paid elevation (like star), so downgrade it to the
   // plain today's-low reason when there's no active trip.
-  const rawPrimary = ride.verdict?.reasons?.primary ?? 'none';
-  const whyPrimary = !hasActiveTrip && rawPrimary === 'rare-low' ? 'todays-low' : rawPrimary;
-  const whyText = whyLine(whyPrimary);
+  const whyText = (() => {
+    const r = ride.verdict?.reasons;
+    if (!r) return null;
+    const reasons = !hasActiveTrip && r.primary === 'rare-low'
+      ? { ...r, primary: 'todays-low' as const }
+      : r;
+    return whyLine(reasons, ride.id);
+  })();
 
   const isWatching = persona ? persona.mustDoRideIds.includes(ride.id) : false;
   const onToggleWatch = () => {
@@ -217,25 +222,12 @@ function DetailBody({
   const baselineBuckets = ride.historicalBaseline?.buckets;
   const bucket0Wait = (baselineBuckets?.[0]?.wait ?? buckets?.[0]?.wait) ?? null;
 
-  // Prediction-based range: p10/p90 across the full day's forecast so the bar
-  // shows "where are you in today's complete arc." Falls back to historical
-  // rideStats when forecast is unavailable.
-  const rideStats = useMemo(() => {
-    const forecast = ride.fullDayForecast;
-    if (!forecast) return ride.rideStats ?? null;
-    const waits = forecast
-      .filter(s => s.wait !== null)
-      .map(s => s.wait as number)
-      .sort((a, b) => a - b);
-    if (waits.length < 5) return ride.rideStats ?? null;
-    const pct = (p: number) => {
-      const idx = (p / 100) * (waits.length - 1);
-      const lo = Math.floor(idx);
-      const hi = Math.ceil(idx);
-      return waits[lo] + (waits[hi] - waits[lo]) * (idx - lo);
-    };
-    return { p10: pct(10), p50: pct(50), p90: pct(90), sampleCount: waits.length };
-  }, [ride.fullDayForecast, ride.rideStats]);
+  // The Today's Range bar uses the SAME historical p10/p90 the verdict reasons
+  // over (ride.rideStats) — not today's forecast percentiles — so the bar and
+  // the badge speak one frame. (Previously the bar showed today's forecast arc,
+  // which conflicted with the verdict's historical ceiling: a wait could read
+  // "at today's peak" on the bar yet be a fine deal vs the ride's normal range.)
+  const rideStats = ride.rideStats ?? null;
 
   // Star always wins; walkOn beats go/skip otherwise.
   const showWalkOn = walkOn && badge !== 'star';
@@ -263,7 +255,6 @@ function DetailBody({
           anchorWait={anchorWait}
           showWalkOn={showWalkOn}
           badge={badge}
-          whyText={whyText}
           walkMins={walkMins}
           isWatching={isWatching}
           rideId={ride.id}
@@ -284,7 +275,7 @@ function DetailBody({
         ) : null}
       </Tile>
 
-      <ReasonCard oneLiner={oneLiner} />
+      <ReasonCard oneLiner={oneLiner} whyText={whyText} badge={badge} />
 
       {/* Closure tile — shown for DOWN rides only, outside the paywall gate
           so free users still see "Down since X". */}

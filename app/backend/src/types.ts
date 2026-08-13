@@ -118,10 +118,10 @@ export type VerdictReason =
   | 'rare-low'      // STAR — near its best all day AND well below typical-for-now
   | 'todays-low'    // GO — lowest wait left today
   | 'below-usual'   // GO — below its usual for right now
-  | 'at-ceiling'    // SKIP — at/above its ceiling, a shorter window is reachable
-  | 'high-vs-usual' // SKIP — above usual + near today's peak, better window coming
+  | 'at-ceiling'    // SKIP — busy (at/above ceiling) AND a shorter window is reachable soon
+  | 'high-vs-usual' // SKIP — busier than usual AND a shorter window is reachable soon
   | 'dropping-soon' // SKIP — about to drop hard (big reachable fall), even if near its usual
-  | 'high-but-steady' // NEUTRAL — high/at today's peak, but no better window is reachable → hold
+  | 'busy-no-relief'// SKIP — busier than usual, and it won't ease up today (expectation-setting)
   | 'filler'        // NEUTRAL — looked like a deal but it's an always-short ride
   | 'trivial-drop'  // NEUTRAL — below usual, but the drop is too small to matter
   | 'short-to-skip' // NEUTRAL — high for the ride, but too short a wait to avoid
@@ -357,6 +357,7 @@ export interface UserRecord {
 }
 
 export interface TripRecord {
+  id: string; // Firestore doc id
   uid: string;
   tripStart: string;   // YYYY-MM-DD
   tripEnd: string;     // YYYY-MM-DD
@@ -376,4 +377,24 @@ export interface UserResponse {
   debugMode: boolean;
   isNew: boolean;
   trip: TripRecord | null;
+}
+
+// --- Beta feedback ---
+
+export interface FeedbackRecord {
+  userId: string;
+  tripId: string | null;
+  timestamp: string; // ISO, set server-side on write
+  appVersion: null;  // deferred — always null for now
+  predictionTrust: number | null;     // 1-5
+  predictionTrustNote: string | null;
+  clarity: number | null;             // 1-5
+  clarityNote: string | null;
+  usability: number | null;           // 1-5
+  usabilityNote: string | null;
+  outcomeImpact: number | null;       // 1-5
+  outcomeImpactNote: string | null;
+  repeatIntent: number | null;        // 1-5
+  repeatIntentNote: string | null;
+  overallFreeText: string | null;
 }

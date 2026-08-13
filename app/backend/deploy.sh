@@ -117,12 +117,17 @@ PARAMETER_OVERRIDES=(
 if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
   PARAMETER_OVERRIDES+=("BedrockBudgetAlarmEmail=$BEDROCK_BUDGET_ALARM_EMAIL")
 fi
-# Opt-in ONLY for a dev/demo backend: unlocks premium for anonymous users
-# (the web sign-in path). Leave unset for prod so the paywall holds — the
-# template default is 'false'.
-if [[ "${ALLOW_ANONYMOUS_PREMIUM:-}" == "true" ]]; then
-  PARAMETER_OVERRIDES+=("AllowAnonymousPremium=true")
-  echo "==> WARNING: AllowAnonymousPremium=true — anonymous users get premium. Dev/demo only, never prod."
+# Defaults to 'true': this is a single-user personal build and the web
+# sign-in path is anonymous-only, so anonymous == the developer in practice —
+# see DebugModeContext.tsx. Anyone else who found the URL would also get free
+# premium, though, so set ALLOW_ANONYMOUS_PREMIUM=false before this script to
+# turn it off for a given deploy.
+ALLOW_ANONYMOUS_PREMIUM="${ALLOW_ANONYMOUS_PREMIUM:-true}"
+PARAMETER_OVERRIDES+=("AllowAnonymousPremium=$ALLOW_ANONYMOUS_PREMIUM")
+if [[ "$ALLOW_ANONYMOUS_PREMIUM" == "true" ]]; then
+  echo "==> AllowAnonymousPremium=true (default) — anonymous users get premium."
+else
+  echo "==> AllowAnonymousPremium=false — anonymous users get free tier only."
 fi
 
 echo "==> sam deploy"

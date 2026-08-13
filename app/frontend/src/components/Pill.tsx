@@ -2,7 +2,7 @@
 //
 // Icon mode (no label): renders a Lucide icon in the variant's color.
 //   star    → Star (filled gold)
-//   go      → CircleCheck (green)
+//   go      → CircleCheck (filled green, white check)
 //   caution → AlertTriangle (filled orange)
 //   skip    → OctagonX (red)
 //
@@ -46,7 +46,7 @@ export function Pill({ variant, label, testID }: PillProps): React.ReactElement 
     return (
       <View style={[styles.pill, { backgroundColor: PILL_BG[variant] }]} testID={testID}>
         {variant === 'go' ? (
-          <CircleCheck size={10} color={colors.go} style={styles.pillIcon} />
+          <CircleCheck size={10} color="white" fill={colors.go} style={styles.pillIcon} />
         ) : variant === 'caution' ? (
           <AlertTriangle size={10} color={colors.caution} fill={colors.caution} style={styles.pillIcon} />
         ) : null}
@@ -66,7 +66,7 @@ export function Pill({ variant, label, testID }: PillProps): React.ReactElement 
   if (variant === 'go') {
     return (
       <View style={styles.icon} testID={testID ?? 'badge-go'}>
-        <CircleCheck size={20} color={colors.go} />
+        <CircleCheck size={20} color="white" fill={colors.go} />
       </View>
     );
   }
