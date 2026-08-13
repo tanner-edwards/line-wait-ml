@@ -11,6 +11,18 @@ on:
           - backend
           - frontend
         default: both
+      allow_anonymous_premium:
+        description: >
+          Unlock premium (predictive) data for anonymous users. This is a
+          single-user personal build and the web sign-in path is
+          anonymous-only, so 'true' is what's wanted by default — anyone
+          else who found the deployed URL would also get free premium
+          though, so set 'false' here to turn the paywall back on.
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
 
 jobs:
   deploy-backend:
@@ -60,6 +72,7 @@ jobs:
               "CorsOrigin=${{ steps.cors.outputs.origin }}" \
               "FirebaseServiceAccountJson=$FIREBASE_JSON_B64" \
               "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}" \
+              "AllowAnonymousPremium=${{ github.event.inputs.allow_anonymous_premium }}" \
             --no-confirm-changeset
 
   deploy-frontend:

@@ -10,7 +10,8 @@
     "collect": "node collect.js",
     "deploy:models": "gsutil cp models/day_profile.txt gs://club32-models/ && gsutil cp models/morning_baselines.json gs://club32-models/ && gsutil cp models/feature_categories.json gs://club32-models/ && gsutil cp models/reversion_model.txt gs://club32-models/ && gsutil cp models/ride_percentile_buckets.json gs://club32-models/",
     "deploy:cron": "cd cron && gcloud builds submit --tag gcr.io/llm-wait-times/club32-predict-cron . && gcloud run jobs update club32-predict-cron --image gcr.io/llm-wait-times/club32-predict-cron --region us-west1 --project llm-wait-times",
-    "deploy:all": "npm run deploy:models && npm run deploy:cron"
+    "deploy:all": "npm run deploy:models && npm run deploy:cron",
+    "deploy:app": "gh workflow run deploy.yml"
   },
   "dependencies": {
     "firebase-admin": "^12.7.0",
