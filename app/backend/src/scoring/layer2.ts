@@ -25,6 +25,8 @@ export type { Verdict, VerdictReason, VerdictReasons };
 
 // ── Dials (locked from the backtest sweep 2026-08-11) ──
 const WORTH_MIN      = 20;    // p90 below this → filler; timing it is noise → mute badges
+const EASE_WINDOW_MAX = 180;  // a lower window within ~3h reads as "eases soon" (copy only)
+const EASE_MIN_DROP   = 5;    // ...and the window must be at least this many minutes lower
 const STAR_P50_MIN   = 25;    // STAR only on genuinely high-demand rides (median wait ≥ this) —
                               // a low on a usually-short ride (p50 ~20) is common, not a rare find.
                               // 25 keeps headliners like Smugglers (p50 25); excludes Autopia (20).
@@ -87,7 +89,7 @@ export function scoreVerdict(ride: Ride): VerdictResult {
   const star = verdict === 'star';
 
   const reasons: VerdictReasons = {
-    primary: primaryReason(verdict, star, deal, muted),
+    primary: primaryReason(verdict, star, deal, muted, cur),
     current: cur ?? 0,
     typical,
     todayP30: deal.todayP30,
@@ -108,6 +110,7 @@ function primaryReason(
   star: boolean,
   deal: DealResult,
   muted: 'filler' | 'trivial-drop' | 'short-to-skip' | null,
+  cur: number | null,
 ): VerdictReason {
   if (star) return 'rare-low';
   if (verdict === 'go') return deal.frameBGo ? 'todays-low' : 'below-usual';
@@ -115,8 +118,14 @@ function primaryReason(
     const busy = deal.frameASkip || deal.ceiling;   // genuinely high for THIS ride
     // Normal-vs-typical but plummeting → "about to drop".
     if (!busy && deal.bigBeatableSoon) return 'dropping-soon';
-    // Busy: reachability picks the copy — eases soon vs won't ease up today.
-    if (deal.beatableSoon) return deal.ceiling ? 'at-ceiling' : 'high-vs-usual';
+    // Copy split keys off the FORECAST, not the skip-worth bar: does a lower
+    // window actually come within reach (≥5 min lower, ≤3h out)? If so, "eases
+    // ${when}"; only a genuinely pinned ride claims it won't ease. (A modest
+    // near-term decline was wrongly reading as "no relief" — the Alice case.)
+    const easesSoon = deal.betterWindowWait != null && deal.betterWindowInMin != null
+      && deal.betterWindowInMin <= EASE_WINDOW_MAX
+      && cur != null && (cur - deal.betterWindowWait) >= EASE_MIN_DROP;
+    if (easesSoon) return deal.ceiling ? 'at-ceiling' : 'high-vs-usual';
     return 'busy-no-relief';
   }
   // neutral — only a suppressed badge carries a reason; a plain neutral (incl.

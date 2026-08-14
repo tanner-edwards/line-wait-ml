@@ -50,9 +50,12 @@ export function whyLine(reasons: VerdictReasons, rideId: string): string | null 
       `Dropping to a much shorter wait ${when}`,
       `About to fall off ${when}. Worth holding for`,
     ],
+    // No forward claim ("rest of today" / "holding all day") — the forecast may
+    // still show a late drop, and we don't want the copy to contradict it. The
+    // ABSENCE of an "eases in ~X" clause is what signals no near relief.
     'busy-no-relief': [
-      'Busier than usual, with no relief the rest of today',
-      "About as busy as it gets, and it's holding all day",
+      'Busier than usual right now',
+      'About as busy as this ride gets right now',
     ],
   };
   const opts = V[reasons.primary];

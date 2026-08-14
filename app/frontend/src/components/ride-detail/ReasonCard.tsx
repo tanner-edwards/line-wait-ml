@@ -18,14 +18,17 @@ interface Props {
   badge: Badge;              // verdict badge — tints the deterministic case to match the chip
 }
 
-// Badge-matched tint + dot so the deterministic "why" reads as belonging to the
-// verdict chip above it. Neutral (no badge, e.g. high-but-steady) → gray.
-const ACCENT: Record<'go' | 'star' | 'skip', { bg: string; dot: string }> = {
-  go:   { bg: colors.goBg,   dot: colors.go },
-  star: { bg: colors.starBg, dot: colors.star },
-  skip: { bg: colors.skipBg, dot: colors.skip },
+// Badge-matched colored left border + a soft background tint. The bg is a SOLID
+// hex = the badge color composited onto WHITE at ~10% — not a transparent tint,
+// so the cream canvas behind the card can't show through and darken it.
+const ACCENT: Record<'go' | 'star' | 'skip', { bar: string; bg: string }> = {
+  go:   { bar: colors.go,   bg: '#ECF2F0' },   // go (61,124,101) on white @10%
+  // Star runs richer (~22%) than go/skip: gold shares the cream canvas's warmth,
+  // so a 10% tint blends in — it needs a clearer gold to separate from the sheet.
+  star: { bar: colors.star, bg: '#F3E8CD' },   // star (201,148,29) on white @~22%
+  skip: { bar: colors.skip, bg: '#F8EBEA' },   // skip (184,58,42) on white @10%
 };
-const NEUTRAL_ACCENT = { bg: colors.cautionBg, dot: colors.textTertiary };
+const NEUTRAL_ACCENT = { bar: colors.textTertiary, bg: '#F3F5F5' }; // neutral on white @10%
 
 export function ReasonCard({ oneLiner, whyText, badge }: Props): React.ReactElement | null {
   const isAI = !!oneLiner;
@@ -37,15 +40,13 @@ export function ReasonCard({ oneLiner, whyText, badge }: Props): React.ReactElem
   const accent = badge && badge !== 'caution' ? ACCENT[badge] : NEUTRAL_ACCENT;
 
   return (
-    <Tile style={isAI ? undefined : { backgroundColor: accent.bg }}>
+    <Tile style={isAI ? undefined : { borderLeftColor: accent.bar, borderLeftWidth: 3, backgroundColor: accent.bg }}>
       <View style={styles.row}>
         {isAI ? (
           <View style={styles.iconContainer}>
             <Sparkles size={16} color={colors.brand} />
           </View>
-        ) : (
-          <View style={[styles.dot, { backgroundColor: accent.dot }]} />
-        )}
+        ) : null}
         <Text style={styles.text}>{text}</Text>
       </View>
     </Tile>
@@ -65,14 +66,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(10,107,90,0.08)',
     alignItems: 'center',
     justifyContent: 'center',
-    flexShrink: 0,
-  },
-  // Small badge-colored dot for the deterministic "why" (in place of Sparkles).
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginTop: 5,
     flexShrink: 0,
   },
   text: {

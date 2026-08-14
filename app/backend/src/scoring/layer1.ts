@@ -136,7 +136,11 @@ export function dealVerdict(ride: Ride): DealResult {
 
   // ── Combine — GO wins on conflict (never skip a ride that won't get better) ──
   let verdict: DealVerdict = 'neutral';
-  if (frameAGo || frameBGo) {
+  if (frameBGo || (frameAGo && !frameBSkip)) {
+    // GO = today's low (frameBGo, always wins) OR below its historical usual —
+    // but NOT when it's also at TODAY'S peak (frameBSkip). On a slow day the whole
+    // ride sits below its historical usual, so "below usual" isn't a special *now*;
+    // if it's literally today's high point, don't call it a good time (Astro case).
     verdict = 'go';
   } else if (frameASkip || ceiling || (frameBSkip && bigBeatableSoon)) {
     // "Busier than usual" (union trigger). Fires when the wait is genuinely high

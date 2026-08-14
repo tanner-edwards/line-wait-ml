@@ -152,4 +152,16 @@ describe('Layer 2 — pass-through of real signals', () => {
     expect(r.deal.beatableSoon).toBe(false);
     expect(r.reasons.primary).toBe('busy-no-relief');
   });
+
+  it('a busy ride that eases modestly within reach says "eases", not "won\'t ease" (Alice case)', () => {
+    // 30 at its ceiling, forecast declines to ~20 in ~1.5h — under the 10-min
+    // beatable bar, but a real decline. Copy must not claim "no relief".
+    const r = scoreVerdict(makeRide({
+      current: 30, typical: 20, rideStats: stats(10, 20, 30),
+      fullDayForecast: forecast([{ dtMin: 60, wait: 24 }, { dtMin: 90, wait: 20 }, { dtMin: 120, wait: 20 }]),
+    }));
+    expect(r.verdict).toBe('skip');
+    expect(r.deal.beatableSoon).toBe(false);   // sub-10 decayed drop
+    expect(r.reasons.primary).toBe('at-ceiling');
+  });
 });
