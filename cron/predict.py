@@ -58,7 +58,7 @@ FULL_DAY_SLOTS = [
 ]
 
 TRAJECTORY_FEATURE_COLS = [
-    "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3",
+    "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3", "wait_delta_1",
     "park_crowd_median",
     "hour_of_day", "day_of_week", "week_of_year", "month",
     "is_holiday", "is_holiday_weekend",
@@ -337,6 +337,7 @@ def _build_trajectory_row(
         "wait_lag_1":                      float(lag1),
         "wait_lag_2":                      float(lag2),
         "wait_lag_3":                      float(lag3),
+        "wait_delta_1":                    float(last["wait_minutes"]) - float(lag1),
         "hour_of_day":                     int(last["hour_of_day"]),
         "day_of_week":                     int(last["day_of_week"]),
         "week_of_year":                    int(last["timestamp_utc"].isocalendar().week),

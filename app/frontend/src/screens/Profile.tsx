@@ -375,6 +375,7 @@ export function Profile(): React.ReactElement {
         visible={feedbackOpen}
         animationType="slide"
         presentationStyle="formSheet"
+        allowSwipeDismissal={false}
         onRequestClose={() => setFeedbackOpen(false)}
       >
         <FeedbackScreen onClose={() => setFeedbackOpen(false)} />

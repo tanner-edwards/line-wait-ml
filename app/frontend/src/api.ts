@@ -19,14 +19,22 @@ export class ApiError extends Error {
   }
 }
 
-export async function fetchWaits(at?: string, idToken?: string | null): Promise<CombinedResponse> {
+export async function fetchWaits(
+  at?: string,
+  idToken?: string | null,
+  userLat?: number | null,
+  userLng?: number | null,
+): Promise<CombinedResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
   }
 
-  const url = at
-    ? `${BASE_URL}/v0/waits?at=${encodeURIComponent(at)}`
-    : `${BASE_URL}/v0/waits`;
+  const params = new URLSearchParams();
+  if (at) params.set('at', at);
+  if (userLat != null) params.set('user_lat', String(userLat));
+  if (userLng != null) params.set('user_lng', String(userLng));
+  const qs = params.toString();
+  const url = qs ? `${BASE_URL}/v0/waits?${qs}` : `${BASE_URL}/v0/waits`;
 
   // Server-side paywall: the token identifies the user so the backend can
   // include premium (predictive) fields for entitled users. Absent token →

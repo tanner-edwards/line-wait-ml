@@ -17,6 +17,7 @@ import { ApiError, fetchWaits } from '../api';
 import { CombinedResponse, Ride } from '../types';
 import { erroredParks } from '../grouping';
 import { useAuth } from './AuthContext';
+import { useLocation } from './LocationContext';
 
 const REFRESH_INTERVAL_MS = 10 * 60 * 1000;
 const STALE_FOREGROUND_THRESHOLD_MS = 10 * 60 * 1000;
@@ -53,6 +54,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   // for entitled users. Held in a ref so `refresh` stays stable (its identity
   // feeds the interval/foreground effects) while always reading the latest.
   const { user, getIdToken } = useAuth();
+  const { coords } = useLocation();
   const getIdTokenRef = useRef(getIdToken);
   useEffect(() => {
     getIdTokenRef.current = getIdToken;
@@ -66,7 +68,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       const fetchedAt = new Date().toISOString();
       try {
         const token = await getIdTokenRef.current();
-        const fresh = await fetchWaits(at, token);
+        const fresh = await fetchWaits(at, token, coords?.lat ?? null, coords?.lng ?? null);
         setData(fresh);
         lastFetchedAtMs.current = Date.now();
         if (mode !== 'initial') setLastRefreshedAt(fetchedAt);

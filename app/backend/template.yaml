@@ -307,6 +307,14 @@ Resources:
             Method: get
             Auth:
               ApiKeyRequired: true
+        FeedbackSubmit:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/feedback
+            Method: post
+            Auth:
+              ApiKeyRequired: true
     Metadata:
       BuildMethod: esbuild
       BuildProperties:
