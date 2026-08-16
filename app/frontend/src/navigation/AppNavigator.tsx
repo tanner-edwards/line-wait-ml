@@ -81,13 +81,18 @@ export function AppNavigator(): React.ReactElement {
   );
 }
 
+// React Navigation respects safe-area insets automatically on native, so the
+// extra height + paddingBottom below is web/PWA-only — mobile browser chrome
+// doesn't get that automatic inset handling, so the bar sits too close to the
+// bottom there. Applying it to native as well double-counts the home
+// indicator inset and pushes the bar too far up.
 const styles = {
   tabBar: {
-    height: Platform.OS === 'ios' ? 107 : 87,
+    height: Platform.OS === 'web' ? 87 : Platform.OS === 'ios' ? 92 : 72,
     paddingTop: 10,
   },
   tabBarItem: {
     paddingVertical: 4,
-    paddingBottom: 15,
+    paddingBottom: Platform.OS === 'web' ? 15 : 0,
   },
 };

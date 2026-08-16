@@ -17,7 +17,7 @@ Club 32 is an AI-powered Disney park companion that tells you what to do *next*,
 
 ## The four user moments
 
-Every feature should serve at least one of these. If it doesn't, don't build it. Full detail in `docs/user-moments.md`.
+Every feature should serve at least one of these. If it doesn't, don't build it. Full detail in `internal-docs/user-moments.md`.
 
 | # | Moment | Failure mode |
 |---|--------|-------------|
