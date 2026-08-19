@@ -71,6 +71,12 @@ export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement
   const [draft, setDraft] = useState<Persona | null>(persona);
   useEffect(() => { setDraft(persona); }, [field, persona]);
 
+  // Must-do search query also lives at this level — it needs to be pinned via
+  // the Sheet's `pinnedBody` slot (outside the scrollable body), and filters
+  // both the picks and suggestions lists inside MustDoField.
+  const [mustDoQuery, setMustDoQuery] = useState('');
+  useEffect(() => { setMustDoQuery(''); }, [field]);
+
   const handleSave = async () => {
     if (!draft) return;
     await setPersona(draft);
@@ -84,6 +90,15 @@ export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement
       size="tall"
       title={field ? TITLES[field] : ''}
       testID="persona-modal"
+      pinnedBody={
+        field === 'mustDoRideIds' ? (
+          <SearchField
+            value={mustDoQuery}
+            onChangeText={setMustDoQuery}
+            placeholder="Search rides…"
+          />
+        ) : undefined
+      }
       footer={
         <View style={styles.footer}>
           <Pressable onPress={onClose} style={styles.cancelButton} testID="persona-modal-cancel">
@@ -101,7 +116,7 @@ export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement
     >
       <BottomSheetScrollView contentContainerStyle={styles.bodyContent}>
         {field && draft
-          ? renderField(field, draft, setDraft as React.Dispatch<React.SetStateAction<Persona>>)
+          ? renderField(field, draft, setDraft as React.Dispatch<React.SetStateAction<Persona>>, mustDoQuery)
           : null}
       </BottomSheetScrollView>
     </Sheet>
@@ -111,7 +126,8 @@ export function PersonaFieldModal({ field, onClose }: Props): React.ReactElement
 function renderField(
   field: PersonaField,
   draft: Persona,
-  setDraft: React.Dispatch<React.SetStateAction<Persona>>
+  setDraft: React.Dispatch<React.SetStateAction<Persona>>,
+  mustDoQuery: string
 ): React.ReactElement {
   switch (field) {
     case 'tripDuration':
@@ -152,6 +168,7 @@ function renderField(
                 key={opt.value}
                 title={opt.title}
                 subtitle={opt.subtitle}
+                icon={opt.icon}
                 selected={selected}
                 onPress={() =>
                   setDraft(d => {
@@ -167,7 +184,7 @@ function renderField(
         </>
       );
     case 'mustDoRideIds':
-      return <MustDoField draft={draft} setDraft={setDraft} />;
+      return <MustDoField draft={draft} setDraft={setDraft} query={mustDoQuery} />;
     case 'accessibilityNeeds':
       return (
         <>
@@ -194,6 +211,7 @@ function renderField(
                 key={opt.value}
                 title={opt.title}
                 subtitle={opt.subtitle}
+                icon={opt.icon}
                 selected={has}
                 onPress={handle}
               />
@@ -207,20 +225,25 @@ function renderField(
 function MustDoField({
   draft,
   setDraft,
+  query,
 }: {
   draft: Persona;
   setDraft: React.Dispatch<React.SetStateAction<Persona>>;
+  query: string;
 }): React.ReactElement {
   const { data } = useRides();
-  const [query, setQuery] = useState('');
   const rides: Ride[] = data ? data.parks.flatMap(p => ('rides' in p ? p.rides : [])) : [];
   const selectedIds = draft.mustDoRideIds;
 
-  const pickedRides = selectedIds
+  const q = query.trim().toLowerCase();
+
+  // Filtered by the search query too, so searching for an already-picked
+  // ride surfaces it here instead of requiring a scroll through every pick.
+  const allPicked = selectedIds
     .map(id => rides.find(r => r.id === id))
     .filter((r): r is Ride => r !== undefined);
+  const pickedRides = q ? allPicked.filter(r => r.name.toLowerCase().includes(q)) : allPicked;
 
-  const q = query.trim().toLowerCase();
   const candidatePool = rides.filter(r => !selectedIds.includes(r.id));
   const suggested = q
     ? candidatePool
@@ -239,13 +262,6 @@ function MustDoField({
 
   return (
     <>
-      <View style={styles.searchWrap}>
-        <SearchField
-          value={query}
-          onChangeText={setQuery}
-          placeholder="🔍  Search rides…"
-        />
-      </View>
       {pickedRides.length > 0 && (
         <>
           <SectionHeader title={`Your picks (${pickedRides.length})`} />
@@ -261,14 +277,24 @@ function MustDoField({
         </>
       )}
       <SectionHeader title={q ? 'Matches' : pickedRides.length > 0 ? 'More to add' : 'All rides'} />
-      {suggested.map(ride => (
-        <RowButton
-          key={ride.id}
-          title={ride.name}
-          selected={false}
-          onPress={() => toggle(ride.id)}
-        />
-      ))}
+      {suggested.length === 0 ? (
+        <Text style={styles.emptyText}>
+          {q
+            ? pickedRides.length > 0
+              ? 'Already in your picks above.'
+              : `No rides match "${query.trim()}".`
+            : "You've picked all our suggestions — search above for more."}
+        </Text>
+      ) : (
+        suggested.map(ride => (
+          <RowButton
+            key={ride.id}
+            title={ride.name}
+            selected={false}
+            onPress={() => toggle(ride.id)}
+          />
+        ))
+      )}
     </>
   );
 }
@@ -309,12 +335,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  searchWrap: {
-    marginBottom: 12,
-  },
   modalDivider: {
     height: 1,
     backgroundColor: colors.border,
     marginVertical: 12,
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textTertiary,
+    paddingVertical: 12,
   },
 });

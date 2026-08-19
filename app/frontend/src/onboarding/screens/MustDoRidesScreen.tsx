@@ -48,13 +48,15 @@ export function MustDoRidesScreen(): React.ReactElement {
 
   // "Your picks" section: every ride the user has selected so far, in
   // selection order so the most-recently added shows up at the bottom.
-  const pickedRides = useMemo(
-    () =>
-      selectedIds
-        .map(id => rides.find(r => r.id === id))
-        .filter((r): r is Ride => r !== undefined),
-    [selectedIds, rides]
-  );
+  // Filtered by the search query too, so searching for an already-picked
+  // ride surfaces it here instead of requiring a scroll through every pick.
+  const pickedRides = useMemo(() => {
+    const all = selectedIds
+      .map(id => rides.find(r => r.id === id))
+      .filter((r): r is Ride => r !== undefined);
+    const q = query.trim().toLowerCase();
+    return q ? all.filter(r => r.name.toLowerCase().includes(q)) : all;
+  }, [selectedIds, rides, query]);
 
   // Suggested / search section: unselected rides only. Tapping one moves it
   // up into "Your picks" and removes it here, so the bottom list shrinks as
@@ -88,16 +90,15 @@ export function MustDoRidesScreen(): React.ReactElement {
       subtitle="Skip if you're flexible. Search the full catalog if you don't see one below."
       bottomLabel={selectedIds.length === 0 ? 'Skip' : 'Continue'}
       onBottomPress={advance}
-    >
-      <View style={styles.search}>
+      pinnedContent={
         <SearchField
           value={query}
           onChangeText={setQuery}
-          placeholder="🔍  Search rides…"
+          placeholder="Search rides…"
           testID="must-do-search"
         />
-      </View>
-
+      }
+    >
       {pickedRides.length > 0 && (
         <>
           <Text style={styles.sectionHeader} testID="must-do-picks-header">
@@ -122,7 +123,9 @@ export function MustDoRidesScreen(): React.ReactElement {
       {suggestedRides.length === 0 ? (
         <Text style={styles.emptyText}>
           {isSearching
-            ? `No rides match "${query.trim()}".`
+            ? pickedRides.length > 0
+              ? 'Already in your picks above.'
+              : `No rides match "${query.trim()}".`
             : "You've picked all our suggestions — search above for more."}
         </Text>
       ) : (
@@ -141,9 +144,6 @@ export function MustDoRidesScreen(): React.ReactElement {
 }
 
 const styles = StyleSheet.create({
-  search: {
-    marginBottom: 16,
-  },
   sectionHeader: {
     fontSize: 12,
     fontWeight: '700',

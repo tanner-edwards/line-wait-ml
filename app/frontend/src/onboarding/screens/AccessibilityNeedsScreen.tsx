@@ -1,4 +1,5 @@
 import React from 'react';
+import { Accessibility, Baby, Brain, HeartPulse, LucideIcon } from 'lucide-react-native';
 import { AccessibilityNeed } from '../../types';
 import { useOnboardingDraft } from '../OnboardingDraftContext';
 import { usePersona } from '../../context/PersonaContext';
@@ -9,11 +10,12 @@ export const ACCESSIBILITY_OPTIONS: {
   value: AccessibilityNeed;
   title: string;
   subtitle?: string;
+  icon?: LucideIcon;
 }[] = [
-  { value: 'stroller',    title: '🛒 Stroller',                subtitle: "We'll flag rides that need a transfer" },
-  { value: 'wheelchair',  title: '♿ Wheelchair or scooter',   subtitle: 'Mobility-friendly attractions surface first' },
-  { value: 'pregnant',    title: '🤰 Pregnant',                subtitle: "We'll avoid hard drops, big spins, and rough thrills" },
-  { value: 'sensory',     title: '🧠 Sensory / DAS',           subtitle: 'Flag strobes, loud audio, sudden drops' },
+  { value: 'stroller',    title: 'Stroller',                icon: Baby,          subtitle: "We'll flag rides that need a transfer" },
+  { value: 'wheelchair',  title: 'Wheelchair or scooter',    icon: Accessibility, subtitle: 'Mobility-friendly attractions surface first' },
+  { value: 'pregnant',    title: 'Pregnant',                 icon: HeartPulse,    subtitle: "We'll avoid hard drops, big spins, and rough thrills" },
+  { value: 'sensory',     title: 'Sensory / DAS',            icon: Brain,         subtitle: 'Flag strobes, loud audio, sudden drops' },
   { value: 'none',        title: "Nope, we're all good" },
 ];
 
@@ -58,6 +60,7 @@ export function AccessibilityNeedsScreen(): React.ReactElement {
           key={opt.value}
           title={opt.title}
           subtitle={opt.subtitle}
+          icon={opt.icon}
           selected={selected.includes(opt.value)}
           onPress={() => toggle(opt.value)}
           testID={`accessibility-${opt.value}`}

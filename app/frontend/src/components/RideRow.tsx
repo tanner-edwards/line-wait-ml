@@ -61,8 +61,10 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
 
   // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip
   // (a walk-on IS the truest "go"), but a star always wins.
-  const showWalkOn = walkOn && badge !== 'star';
-  const showBadge = badge !== null && !showWalkOn;
+  // "Walk On" is the wait-value relabel, not a verdict — independent of the
+  // badge. A walk-on ride still shows its real badge (or none if it's a filler).
+  const showWalkOn = walkOn;
+  const showBadge = badge !== null;
 
   const showRow2 = walkMins != null || trend !== null;
 

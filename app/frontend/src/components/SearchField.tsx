@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
-import { X } from 'lucide-react-native';
+import { Search, X } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 
 interface Props {
@@ -20,6 +20,7 @@ export function SearchField({
 }: Props): React.ReactElement {
   return (
     <View style={[styles.container, containerStyle]}>
+      <Search size={16} color={colors.textTertiary} style={styles.searchIcon} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
@@ -48,9 +49,14 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.bg,
+    backgroundColor: colors.surface,
     borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: colors.border,
     paddingHorizontal: 14,
+  },
+  searchIcon: {
+    marginRight: 8,
   },
   input: {
     flex: 1,

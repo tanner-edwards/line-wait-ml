@@ -23,16 +23,29 @@ function pick(options: string[], rideId: string): string {
   return options[Math.abs(h) % options.length];
 }
 
+// Minutes you'd save by going now vs the busy part of the day (today's p80 −
+// current), rounded to 5. Null unless it's a meaningful (≥10 min) payoff — this
+// is a BENEFIT figure, not a raw wait value, so it's fair to surface.
+function savingsMin(reasons: VerdictReasons): number | null {
+  if (reasons.todayP80 == null || reasons.current == null) return null;
+  const s = reasons.todayP80 - reasons.current;
+  return s >= 10 ? Math.round(s / 5) * 5 : null;
+}
+
 export function whyLine(reasons: VerdictReasons, rideId: string): string | null {
   const when = whenClause(reasons.betterWindowInMin);
+  const save = savingsMin(reasons);
   const V: Partial<Record<VerdictReason, string[]>> = {
     'rare-low': [
-      'This is as low as this ride ever gets',
-      "A rare low. It won't be shorter than this",
+      'Well below its usual wait right now',
+      'A rare low for this ride right now',
     ],
-    'todays-low': [
-      "About the lowest it'll be the rest of today",
-      'The best window left today',
+    'todays-low': save != null ? [
+      `Going now saves ~${save} min vs the busy stretch`,
+      `A good window now. Saves ~${save} min vs peak times`,
+    ] : [
+      "About the lowest it'll be for a while",
+      'A good window right now',
     ],
     'below-usual': [
       'Lighter than usual right now',

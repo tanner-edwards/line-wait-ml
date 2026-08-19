@@ -230,7 +230,10 @@ function DetailBody({
   const rideStats = ride.rideStats ?? null;
 
   // Star always wins; walkOn beats go/skip otherwise.
-  const showWalkOn = walkOn && badge !== 'star';
+  // "Walk On" is a wait-value relabel (Disney's 5 min really means walk-on), NOT
+  // a verdict — so it's independent of the badge. A walk-on ride still shows its
+  // real badge (or none, if it's just a commonly-short filler).
+  const showWalkOn = walkOn;
 
   const walkMins = userCoords ? walkMinsBetween(userCoords, ride) : null;
 

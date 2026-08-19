@@ -54,6 +54,12 @@ export interface SheetProps {
    * Cancel/Save.
    */
   footer?: React.ReactNode;
+  /**
+   * Rendered between the title and the scrollable body, outside the scroll
+   * container — stays put while `children` scrolls beneath it (e.g. a
+   * search field). Uses the same horizontal padding as the title.
+   */
+  pinnedBody?: React.ReactNode;
   children: React.ReactNode;
   testID?: string;
 }
@@ -77,6 +83,7 @@ export function Sheet({
   headerRight,
   headerLeft,
   footer,
+  pinnedBody,
   children,
   testID,
 }: SheetProps): React.ReactElement {
@@ -182,6 +189,8 @@ export function Sheet({
       footerComponent={footer ? renderFooter : undefined}
       backgroundStyle={{ backgroundColor: sheetColor ?? colors.bg }}
     >
+      {pinnedBody ? <View style={styles.pinnedBody}>{pinnedBody}</View> : null}
+
       {/* Fixed-height sheets: render the child scroll container
           (BottomSheetScrollView / BottomSheetFlatList) directly so gorhom can
           coordinate its scrolling with the drag gesture — wrapping it in a
@@ -227,6 +236,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.md,
     paddingHorizontal: spacing.base,
     marginTop: spacing.md,
+  },
+  pinnedBody: {
+    paddingHorizontal: spacing.base,
+    marginBottom: spacing.md,
   },
   title: {
     fontSize: 22,

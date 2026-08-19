@@ -89,9 +89,14 @@ export async function buildRecommendations(
 
   // Candidate set: operating rides in the same park, excluding the nearest
   // ride AND any ride IDs the client says it already has from a prior batch.
+  // A 'skip' verdict is excluded here too — a ride we're telling the user to
+  // avoid right now shouldn't also appear as a recommendation, even when it
+  // has a genuine future-window story (e.g. "at ceiling now, drops in 2.5h").
+  // That "wait and come back" narrative belongs in the ride's own detail
+  // view, not in a list presented as "go here now."
   const excluded = new Set([currentRideId, ...(req.excludeRideIds ?? [])].filter(Boolean));
   const candidates: RideForPrompt[] = park.rides
-    .filter(r => r.status === 'OPERATING' && !excluded.has(r.id))
+    .filter(r => r.status === 'OPERATING' && !excluded.has(r.id) && r.verdict?.verdict !== 'skip')
     .map(ride => {
       const otherMeta = lookupRideMetadata(metadataMap, ride.id);
       return {

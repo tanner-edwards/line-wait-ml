@@ -3,8 +3,8 @@
 // Same two-row skeleton as RideRow but with more padding and an AI copy
 // paragraph (Row 3) + walk-time pill (Row 4).
 //
-// Row 1: [Ride name] ←→ [Arrival wait + "min" + ChevronRight]
-// Row 2: [Optional Badge] ←→ [Trend label + TrendArrow]
+// Row 1: [Optional Badge] [Ride name] ←→ [Arrival wait + "min" + ChevronRight]
+// Row 2: [Trend label + TrendArrow]
 // Row 3: AI copy paragraph
 // Row 4: Walk-time pill
 
@@ -44,9 +44,10 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   const badge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
   const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
     && (rec.arrivalWait === null || rec.arrivalWait <= 15);
-  // Badge precedence: star > walkOn > go > skip. Walk On beats go/skip, not star.
-  const showWalkOn = walkOnRaw && badge !== 'star';
-  const showBadge = badge !== null && !showWalkOn;
+  // "Walk On" is just the wait-value relabel; the badge is the verdict. They're
+  // independent — a walk-on ride shows both its badge (if any) and "Walk On".
+  const showWalkOn = walkOnRaw;
+  const showBadge = badge !== null;
   // Trend — single source of truth is the server verdict's trajectory. No local
   // recompute; Steady / absent renders nothing.
   const trend = isOperating ? trajectoryDirection(predictionTrajectory(ride.prediction)) : null;
@@ -69,6 +70,7 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
       <Card variant={cardVariant} accent={cardAccent}>
         {/* Row 1 */}
         <View style={styles.row1}>
+          {showBadge ? <Pill variant={badge!} /> : null}
           <View style={styles.nameRow}>
             <Text style={styles.rideName}>{ride.name}</Text>
             {rec.restrictionNote ? (
@@ -93,20 +95,11 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
           </View>
         </View>
 
-        {/* Row 2 */}
-        {(showBadge || trend) ? (
+        {/* Row 2 — trend only; badge now lives in Row 1 next to the title */}
+        {trend ? (
           <View style={styles.row2}>
-            <View style={styles.badgeRow}>
-              {showBadge ? <Pill variant={badge!} /> : null}
-            </View>
-            <View style={styles.trendRow}>
-              {trend ? (
-                <>
-                  <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
-                  <TrendArrow direction={trend} />
-                </>
-              ) : null}
-            </View>
+            <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
+            <TrendArrow direction={trend} />
           </View>
         ) : null}
 
@@ -196,16 +189,7 @@ const styles = StyleSheet.create({
   row2: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     marginTop: spacing.sm,
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  trendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
   },
   trendLabel: {
     ...typography.caption,

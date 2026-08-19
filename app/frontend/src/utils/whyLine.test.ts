@@ -2,12 +2,12 @@ import { whyLine } from './whyLine';
 import { VerdictReason, VerdictReasons } from '../types';
 
 // Minimal reasons object with a given primary; betterWindowInMin drives the
-// "when" clause for the relief-skip lines.
-function reasons(primary: VerdictReason, betterWindowInMin: number | null = 120): VerdictReasons {
+// "when" clause; `over` sets current/todayP80 for the savings variant.
+function reasons(primary: VerdictReason, betterWindowInMin: number | null = 120, over: Partial<VerdictReasons> = {}): VerdictReasons {
   return {
     primary, current: 0, typical: null, todayP30: null, todayP80: null,
     p10: null, p90: null, beatableSoon: false, betterWindowWait: null,
-    betterWindowInMin, star: false,
+    betterWindowInMin, star: false, ...over,
   };
 }
 
@@ -32,6 +32,18 @@ describe('whyLine', () => {
     // 120 min → "~2h", 30 min → "~30 min"; no wait-minute numbers in the copy.
     expect(whyLine(reasons('at-ceiling', 120), 'ride-1')).toMatch(/~2h/);
     expect(whyLine(reasons('high-vs-usual', 30), 'ride-1')).toMatch(/~30 min/);
+  });
+
+  it('surfaces "going now saves ~X min" for a today\'s-low with a meaningful payoff', () => {
+    // current 45, today's busy part (p80) 65 → saves ~20; a benefit figure, not a wait value.
+    const line = whyLine(reasons('todays-low', 120, { current: 45, todayP80: 65 }), 'ride-1');
+    expect(line).toMatch(/saves ~20 min/);
+  });
+
+  it('omits the savings line when the payoff is small (<10 min)', () => {
+    const line = whyLine(reasons('todays-low', 120, { current: 45, todayP80: 50 }), 'ride-1');
+    expect(line).not.toMatch(/saves/);
+    expect(line).toBeTruthy();
   });
 
   it('is stable for a given rideId but can vary across rides', () => {

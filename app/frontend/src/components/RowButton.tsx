@@ -4,18 +4,19 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Check } from 'lucide-react-native';
+import { Check, LucideIcon } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 
 interface Props {
   title: string;
   subtitle?: string;
+  icon?: LucideIcon;
   selected: boolean;
   onPress: () => void;
   testID?: string;
 }
 
-export function RowButton({ title, subtitle, selected, onPress, testID }: Props): React.ReactElement {
+export function RowButton({ title, subtitle, icon: Icon, selected, onPress, testID }: Props): React.ReactElement {
   return (
     <Pressable
       onPress={onPress}
@@ -26,6 +27,11 @@ export function RowButton({ title, subtitle, selected, onPress, testID }: Props)
       ]}
       testID={testID}
     >
+      {Icon ? (
+        <View style={styles.iconArea}>
+          <Icon size={20} color={selected ? colors.brand : colors.textSecondary} />
+        </View>
+      ) : null}
       <View style={styles.text}>
         <Text style={[styles.title, selected && styles.titleSelected]}>{title}</Text>
         {subtitle ? (
@@ -58,6 +64,12 @@ const styles = StyleSheet.create({
   },
   rowPressed: {
     opacity: 0.7,
+  },
+  iconArea: {
+    width: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
   },
   text: {
     flex: 1,

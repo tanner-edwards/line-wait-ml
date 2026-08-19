@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { Baby, Castle, Compass, Drama, LucideIcon, Orbit, Zap } from 'lucide-react-native';
 import { RideCategory } from '../../types';
 import { useOnboardingDraft } from '../OnboardingDraftContext';
 import { OnboardingScreenShell } from './OnboardingScreenShell';
@@ -11,36 +12,43 @@ export const RIDE_CATEGORY_OPTIONS: {
   value: RideCategory;
   title: string;
   subtitle: string;
+  icon: LucideIcon;
 }[] = [
   {
     value: 'thrills',
-    title: '🎢 Thrills',
+    title: 'Thrills',
     subtitle: 'Space Mountain, Big Thunder, Matterhorn, Guardians',
+    icon: Zap,
   },
   {
     value: 'classics',
-    title: '🏰 Classics',
+    title: 'Classics',
     subtitle: 'Pirates, Haunted Mansion, Jungle Cruise, Indiana Jones',
+    icon: Castle,
   },
   {
     value: 'immersive',
-    title: '🌌 Immersive',
+    title: 'Immersive',
     subtitle: 'Rise of the Resistance, Web Slingers, Smugglers Run',
+    icon: Orbit,
   },
   {
     value: 'kid-favorites',
-    title: '👶 Kid favorites',
+    title: 'Kid favorites',
     subtitle: 'Dumbo, Casey Jr., Little Mermaid, King Arthur Carousel',
+    icon: Baby,
   },
   {
     value: 'shows-characters',
-    title: '💃 Shows & characters',
+    title: 'Shows & characters',
     subtitle: 'Fantasmic!, parades, World of Color, character meets',
+    icon: Drama,
   },
   {
     value: 'first-time',
-    title: '✨ First time',
+    title: 'First time',
     subtitle: 'Show me everything iconic',
+    icon: Compass,
   },
 ];
 
@@ -72,6 +80,7 @@ export function RidePreferencesScreen(): React.ReactElement {
           key={opt.value}
           title={opt.title}
           subtitle={opt.subtitle}
+          icon={opt.icon}
           selected={selected.includes(opt.value)}
           onPress={() => toggle(opt.value)}
           testID={`ride-pref-${opt.value}`}

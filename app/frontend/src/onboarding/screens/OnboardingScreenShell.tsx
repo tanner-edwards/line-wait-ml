@@ -27,6 +27,9 @@ interface Props {
   total: number;
   title: string;
   subtitle?: string;
+  /** Rendered below the title/subtitle but outside the ScrollView, so it stays
+   *  pinned in place while `children` scrolls beneath it (e.g. a search field). */
+  pinnedContent?: React.ReactNode;
   bottomLabel: string;
   onBottomPress: () => void;
   bottomDisabled?: boolean;
@@ -38,6 +41,7 @@ export function OnboardingScreenShell({
   total,
   title,
   subtitle,
+  pinnedContent,
   bottomLabel,
   onBottomPress,
   bottomDisabled,
@@ -59,9 +63,13 @@ export function OnboardingScreenShell({
         <View style={styles.backButton} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+      <View style={styles.header}>
         <Text style={styles.title}>{title}</Text>
         {subtitle ? <Text style={styles.subtitle}>{subtitle}</Text> : null}
+        {pinnedContent ? <View style={styles.pinned}>{pinnedContent}</View> : null}
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <View style={styles.content}>{children}</View>
       </ScrollView>
 
@@ -106,6 +114,9 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     paddingHorizontal: 8,
   },
+  header: {
+    paddingHorizontal: spacing.lg,
+  },
   scroll: {
     paddingHorizontal: spacing.lg,
     paddingBottom: spacing.base,
@@ -121,6 +132,9 @@ const styles = StyleSheet.create({
     ...typography.body,
     color: colors.textSecondary,
     marginBottom: spacing.xl,
+  },
+  pinned: {
+    marginBottom: spacing.md,
   },
   content: {
     flex: 1,
