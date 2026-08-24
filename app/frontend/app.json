@@ -2,7 +2,7 @@
   "expo": {
     "name": "Club 32",
     "slug": "club-32",
-    "version": "0.0.1",
+    "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
@@ -13,7 +13,7 @@
       "backgroundColor": "#3D7C65"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.tannere.club32",
       "deploymentTarget": "15.0",
       "infoPlist": {

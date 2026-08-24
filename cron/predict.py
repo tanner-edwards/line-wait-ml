@@ -32,6 +32,7 @@ from google.cloud import storage
 sys.path.insert(0, str(Path(__file__).parent))
 from day_type import holiday_features  # noqa: E402
 from closure_features import CLOSURE_FEATURE_COLS, slot_closure_context, empty_closure_context  # noqa: E402
+import park_schedule  # noqa: E402
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -451,6 +452,7 @@ def _build_full_day(
     traj_preds: dict[int, float] | None = None,
     daily_weather: dict | None = None,
     morning_crowd_index: float | None = None,
+    close_minutes: int | None = None,
 ) -> list[dict]:
     """Run the day-profile model for all 34 half-hour slots.
 
@@ -462,6 +464,12 @@ def _build_full_day(
                 the slots that fall within the T+30–T+240 window are overridden with
                 trajectory values so the full-day curve doesn't jump at the seam where
                 the trajectory model hands off to the day-profile model.
+
+    close_minutes: today's LA-local park close time in minutes-from-midnight
+                   (from park_schedule.get_todays_close_minutes), or None when
+                   unknown. Slots at/after this are nulled — the fixed 7am–11:30pm
+                   grid otherwise predicts straight through a shortened day's
+                   actual close. The frontend already skips wait: null slots.
     """
     # collect.js stores day_of_week in JS convention (Sun=0); convert from Python (Mon=0)
     js_dow = (now_la.weekday() + 1) % 7
@@ -510,6 +518,11 @@ def _build_full_day(
             target_min = ((now_min + h) // 30) * 30
             if target_min in slot_index:
                 slots[slot_index[target_min]]["wait"] = max(0, round(float(traj_preds[h])))
+
+    if close_minutes is not None:
+        for slot in slots:
+            if slot["start_minutes"] >= close_minutes:
+                slot["wait"] = None
 
     return slots
 
@@ -581,6 +594,15 @@ def main() -> int:
         today_closures = _read_today_closures(db, now_la)
         log.info("Read today's closures for %d rides", len(today_closures))
 
+        # Today's close time per park, for masking full_day slots past close.
+        # One read per park (not per ride) — cheap, and None (fail open) when
+        # the schedule doc is missing or there's no OPERATING entry today.
+        park_close_minutes = {
+            park_id: park_schedule.get_todays_close_minutes(db, park_id, now_la)
+            for park_id in df["park_id"].dropna().unique()
+        }
+        log.info("park_close_minutes: %s", park_close_minutes)
+
         # Current weather (trajectory features) + daily forecast (day-profile features).
         current_weather = _read_current_weather(db)
         daily_weather = _fetch_daily_weather_forecast(33.8121, -117.9190, "America/Los_Angeles")
@@ -631,6 +653,7 @@ def main() -> int:
                 traj_preds=traj_preds,
                 daily_weather=daily_weather,
                 morning_crowd_index=morning_crowd_index,
+                close_minutes=park_close_minutes.get(ride_df["park_id"].iloc[0]),
             )
 
             # Reversion probability — day_type must match training-time classify_day_type

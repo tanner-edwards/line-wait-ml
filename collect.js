@@ -58,14 +58,19 @@ async function fetchJson(url) {
   return res.json();
 }
 
-async function currentScheduleWindow(park, now) {
-  let data;
+async function fetchScheduleData(park) {
   try {
-    data = await fetchJson(`${API_BASE}/entity/${park.id}/schedule`);
+    return await fetchJson(`${API_BASE}/entity/${park.id}/schedule`);
   } catch (err) {
+    console.warn(JSON.stringify({ event: 'schedule_fetch_failed', park: park.name, error: String(err) }));
+    return null;
+  }
+}
+
+function scheduleWindowFromData(data, now) {
+  if (!data) {
     // Fail open: assume the park might be open and let the live fetch reveal
     // closures via per-ride status. Better than a data gap on transient API blips.
-    console.warn(JSON.stringify({ event: 'schedule_fetch_failed', park: park.name, error: String(err) }));
     return { type: 'UNKNOWN' };
   }
   const t = now.getTime();
@@ -78,6 +83,30 @@ async function currentScheduleWindow(park, now) {
     }
   }
   return null;
+}
+
+// The /schedule response already returns ~31 days forward. Group by date and
+// upsert one doc per (park, date) so history accumulates permanently as each
+// date ages out of the forward window — no reads, just deterministic set().
+async function writeParkSchedules(db, scheduleFetches) {
+  const collection = db.collection('park_schedules');
+  const batch = db.batch();
+  let opCount = 0;
+  for (const { park, data } of scheduleFetches) {
+    const byDate = new Map();
+    for (const entry of data.schedule || []) {
+      if (!entry.date) continue;
+      const entries = byDate.get(entry.date) ?? [];
+      entries.push({ type: entry.type, openingTime: entry.openingTime ?? null, closingTime: entry.closingTime ?? null });
+      byDate.set(entry.date, entries);
+    }
+    for (const [date, entries] of byDate) {
+      batch.set(collection.doc(`${park.id}_${date}`), { parkId: park.id, parkName: park.name, date, entries });
+      opCount += 1;
+    }
+  }
+  if (opCount > 0) await batch.commit();
+  return opCount;
 }
 
 function temporalParts(now, timezone) {
@@ -170,12 +199,31 @@ async function batchWrite(collection, rows) {
 }
 
 async function collectResort(resort, now) {
-  // 1. Schedule gate per park in this resort
+  const parts = temporalParts(now, resort.timezone);
+  // DLR and WDW are both whole-hour UTC offsets, so UTC minutes == local
+  // minutes here. Fires once per resort per day, on the first run after
+  // local midnight — regardless of whether any park is currently open.
+  const isDailyScheduleWriteWindow = parts.hour === 0 && now.getUTCMinutes() < 10;
+
+  // 1. Schedule fetch + gate per park in this resort
   const openParks = [];
+  const scheduleFetches = [];
   for (const park of resort.parks) {
-    const window = await currentScheduleWindow(park, now);
+    const data = await fetchScheduleData(park);
+    const window = scheduleWindowFromData(data, now);
     if (window) openParks.push({ ...park, scheduleType: window.type });
+    if (data) scheduleFetches.push({ park, data });
   }
+
+  if (isDailyScheduleWriteWindow && scheduleFetches.length > 0) {
+    try {
+      const written = await writeParkSchedules(getFirestore(), scheduleFetches);
+      log('wrote_park_schedules', { resort: resort.id, docs: written });
+    } catch (err) {
+      console.warn(JSON.stringify({ event: 'park_schedule_write_failed', resort: resort.id, error: String(err) }));
+    }
+  }
+
   if (openParks.length === 0) {
     log('skip_closed', { resort: resort.id, at: now.toISOString() });
     return;
@@ -193,7 +241,6 @@ async function collectResort(resort, now) {
   const [live, weather] = await Promise.all([Promise.all(liveFetches), weatherFetch]);
 
   // 3. Build snapshot rows using this resort's timezone + events file
-  const parts = temporalParts(now, resort.timezone);
   const feats = holidayFeatures(now, resort.timezone);
   const eventFeats = localEventFeatures(now, loadEvents(resort.eventsFile), resort.timezone);
   const rows = live.flatMap(({ park, data }) =>
