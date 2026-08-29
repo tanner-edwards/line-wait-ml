@@ -32,7 +32,7 @@ from google.cloud import storage
 sys.path.insert(0, str(Path(__file__).parent))
 from day_type import holiday_features  # noqa: E402
 from closure_features import CLOSURE_FEATURE_COLS, slot_closure_context, empty_closure_context  # noqa: E402
-import park_schedule  # noqa: E402
+from park_schedule import get_todays_hours, minutes_until_close, operating_hours  # noqa: E402
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -46,6 +46,7 @@ DAY_PROFILE_FEATURE_COLS = [
     "temp_high_f", "morning_crowd_index",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
+    "minutes_until_close", "total_operating_hours",
 ] + CLOSURE_FEATURE_COLS
 
 # 34 half-hour slots: 7:00 AM (420 min) to 11:30 PM (1410 min)
@@ -65,6 +66,11 @@ TRAJECTORY_FEATURE_COLS = [
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
     "minutes_since_last_status_change", "closure_duration_minutes",
+    # minutes_until_close / total_operating_hours were tried here and dropped
+    # after a controlled same-data ablation showed no consistent effect at
+    # any horizon (small deltas, no direction by horizon) — unlike day_profile,
+    # where the same ablation showed a clean, consistent improvement. Kept in
+    # DAY_PROFILE_FEATURE_COLS only.
     "ride_id_cat", "status_cat",
 ]
 
@@ -452,6 +458,7 @@ def _build_full_day(
     traj_preds: dict[int, float] | None = None,
     daily_weather: dict | None = None,
     morning_crowd_index: float | None = None,
+    open_minutes: int | None = None,
     close_minutes: int | None = None,
 ) -> list[dict]:
     """Run the day-profile model for all 34 half-hour slots.
@@ -465,15 +472,24 @@ def _build_full_day(
                 trajectory values so the full-day curve doesn't jump at the seam where
                 the trajectory model hands off to the day-profile model.
 
-    close_minutes: today's LA-local park close time in minutes-from-midnight
-                   (from park_schedule.get_todays_close_minutes), or None when
-                   unknown. Slots at/after this are nulled — the fixed 7am–11:30pm
-                   grid otherwise predicts straight through a shortened day's
-                   actual close. The frontend already skips wait: null slots.
+    open_minutes, close_minutes: today's LA-local park hours in minutes-from-
+                   midnight (from park_schedule.get_todays_hours), or None when
+                   unknown. Feed minutes_until_close / total_operating_hours to
+                   the model (NaN when unknown) so it can learn the taper toward
+                   close itself, on top of the hard mask below — slots at/after
+                   close are nulled regardless of what the model predicted, since
+                   the fixed 7am–11:30pm grid otherwise predicts straight through
+                   a shortened day's actual close. The frontend already skips
+                   wait: null slots.
     """
     # collect.js stores day_of_week in JS convention (Sun=0); convert from Python (Mon=0)
     js_dow = (now_la.weekday() + 1) % 7
     ride_closures = closures_today or []
+    day_total_hours = (
+        operating_hours(open_minutes, close_minutes)
+        if open_minutes is not None and close_minutes is not None
+        else None
+    )
 
     rows = []
     for start_min, _ in FULL_DAY_SLOTS:
@@ -490,11 +506,15 @@ def _build_full_day(
             "is_holiday_weekend":               hol["is_holiday_weekend"],
             "days_until_next_holiday":          hol["days_until_next_holiday"],
             "days_since_last_holiday":          hol["days_since_last_holiday"],
+            "minutes_until_close":              minutes_until_close(start_min, close_minutes) if close_minutes is not None else None,
+            "total_operating_hours":            day_total_hours,
             **closure_ctx,
         })
 
     X_profile = pd.DataFrame(rows)[DAY_PROFILE_FEATURE_COLS]
     X_profile["morning_crowd_index"] = X_profile["morning_crowd_index"].astype(float)
+    X_profile["minutes_until_close"] = X_profile["minutes_until_close"].astype(float)
+    X_profile["total_operating_hours"] = X_profile["total_operating_hours"].astype(float)
     X_profile["ride_id_cat"] = pd.Categorical(X_profile["ride_id_cat"], categories=ride_id_cats)
     preds = day_profile_model.predict(X_profile)
     slots = [
@@ -594,14 +614,17 @@ def main() -> int:
         today_closures = _read_today_closures(db, now_la)
         log.info("Read today's closures for %d rides", len(today_closures))
 
-        # Today's close time per park, for masking full_day slots past close.
-        # One read per park (not per ride) — cheap, and None (fail open) when
-        # the schedule doc is missing or there's no OPERATING entry today.
-        park_close_minutes = {
-            park_id: park_schedule.get_todays_close_minutes(db, park_id, now_la)
+        # Today's (open_minutes, close_minutes) per park — one read per park
+        # (not per ride), (None, None) fail-open when the schedule doc is
+        # missing or there's no OPERATING entry today. Feeds day_profile's
+        # minutes_until_close / total_operating_hours (trajectory doesn't use
+        # these — see TRAJECTORY_FEATURE_COLS), and still masks full_day slots
+        # past close regardless of what the model predicts.
+        park_hours = {
+            park_id: get_todays_hours(db, park_id, now_la)
             for park_id in df["park_id"].dropna().unique()
         }
-        log.info("park_close_minutes: %s", park_close_minutes)
+        log.info("park_hours: %s", park_hours)
 
         # Current weather (trajectory features) + daily forecast (day-profile features).
         current_weather = _read_current_weather(db)
@@ -635,6 +658,9 @@ def main() -> int:
                 continue
             feat_row["park_crowd_median"] = park_crowd_median
 
+            park_id = ride_df["park_id"].iloc[0]
+            open_minutes, close_minutes = park_hours.get(park_id, (None, None))
+
             X = pd.DataFrame([feat_row])[TRAJECTORY_FEATURE_COLS]
             X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
             X["status_cat"]  = pd.Categorical(X["status_cat"],  categories=status_cats)
@@ -653,7 +679,8 @@ def main() -> int:
                 traj_preds=traj_preds,
                 daily_weather=daily_weather,
                 morning_crowd_index=morning_crowd_index,
-                close_minutes=park_close_minutes.get(ride_df["park_id"].iloc[0]),
+                open_minutes=open_minutes,
+                close_minutes=close_minutes,
             )
 
             # Reversion probability — day_type must match training-time classify_day_type

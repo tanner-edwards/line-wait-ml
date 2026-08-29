@@ -10,6 +10,9 @@
 //
 // Color is relative to the ride's own predicted range for the day (P10/P90)
 // so that green and red always mean something even on always-busy rides.
+//
+// A left-side y-axis (0 / day's max) gives bar height a fixed scale to read
+// against, so "how tall is that bar" has an actual number, not just a color.
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -44,9 +47,11 @@ const BADGE_PEAK_BG    = 'rgba(184,58,42,0.08)';
 const BADGE_NEUTRAL_BG = 'rgba(10,107,90,0.08)';
 
 // Chart layout.
-const CHART_H   = 72;
-const MIN_BAR_H = 4;
-const DOT_SIZE  = 6;
+const CHART_H    = 72;
+const MIN_BAR_H  = 4;
+const DOT_SIZE   = 6;
+const AXIS_WIDTH = 22; // fits "999m" right-aligned; typical values are 2-3 digits
+const AXIS_GAP   = 4;
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -311,8 +316,14 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null, 
         <Text style={styles.headerSubtitle}>Tap a bar to see details</Text>
       </View>
 
-      {/* Bar chart */}
-      <View style={styles.barsRow}>
+      {/* Chart row: y-axis (0 / day's max) + bars. Gives bar height an actual
+          scale to read against, instead of just a relative color. */}
+      <View style={styles.chartRow}>
+        <View style={styles.axisColumn}>
+          <Text style={styles.axisLabel}>{roundWait(dayMax)}m</Text>
+          <Text style={styles.axisLabel}>0m</Text>
+        </View>
+        <View style={styles.barsRow}>
         {displaySlots.map(slot => {
           const barH     = Math.max(MIN_BAR_H, Math.round((slot.wait / dayMax) * CHART_H));
           const color    = barColor(slot.classification, slot.isPast || slot.isCurrent);
@@ -351,17 +362,21 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null, 
             </Pressable>
           );
         })}
+        </View>
       </View>
 
-      {/* Time labels */}
-      <View style={styles.labelsRow}>
-        {displaySlots.map(slot => (
-          <View key={slot.hourStart} style={styles.labelCell}>
-            <Text style={[styles.timeLabel, slot.isCurrent && styles.nowLabel]} numberOfLines={1}>
-              {slot.isCurrent ? 'now' : formatHourLabel(slot.hourStart)}
-            </Text>
-          </View>
-        ))}
+      {/* Time labels — spacer keeps them aligned under the bars, not the axis */}
+      <View style={styles.labelsOuterRow}>
+        <View style={styles.axisSpacer} />
+        <View style={styles.labelsRow}>
+          {displaySlots.map(slot => (
+            <View key={slot.hourStart} style={styles.labelCell}>
+              <Text style={[styles.timeLabel, slot.isCurrent && styles.nowLabel]} numberOfLines={1}>
+                {slot.isCurrent ? 'now' : formatHourLabel(slot.hourStart)}
+              </Text>
+            </View>
+          ))}
+        </View>
       </View>
 
       {/* Detail card */}
@@ -484,7 +499,30 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  chartRow: {
+    flexDirection: 'row',
+  },
+  axisColumn: {
+    width: AXIS_WIDTH,
+    height: CHART_H,
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    marginRight: AXIS_GAP,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  axisLabel: {
+    fontSize: 9,
+    color: colors.textTertiary,
+  },
+  axisSpacer: {
+    width: AXIS_WIDTH + AXIS_GAP,
+  },
+  labelsOuterRow: {
+    flexDirection: 'row',
+  },
   barsRow: {
+    flex: 1,
     flexDirection: 'row',
     height: CHART_H,
     columnGap: .5,
@@ -512,6 +550,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
   },
   labelsRow: {
+    flex: 1,
     flexDirection: 'row',
     marginTop: 4,
     columnGap: .5,

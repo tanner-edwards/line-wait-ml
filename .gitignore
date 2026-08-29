@@ -8,6 +8,7 @@ firebase-key.json
 *.ipynb
 df_cache.pkl
 weather_cache.pkl
+park_schedules_cache.pkl
 CLAUDE.md
 .aws-sam/
 .expo/

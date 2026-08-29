@@ -36,8 +36,12 @@ export function RootNavigator(): React.ReactElement {
     return <SignInScreen />;
   }
 
-  // Anonymous users (web dev bypass) skip onboarding and the free trip gate.
-  if (!user?.isAnonymous && persona === null) {
+  // Anonymous users always need onboarding too (e.g. beta testers using the
+  // PWA with no account) — persona has to come from somewhere. The only
+  // exception is local dev builds, where skipping it again on every fresh
+  // anonymous web session is a testing convenience; __DEV__ is statically
+  // false in production bundles, so this never applies to real users.
+  if (!(__DEV__ && user?.isAnonymous) && persona === null) {
     return <OnboardingNavigator />;
   }
 
