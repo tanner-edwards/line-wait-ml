@@ -17,7 +17,6 @@
       "bundleIdentifier": "com.tannere.club32",
       "deploymentTarget": "15.0",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Club 32 uses your location to find your nearest ride and calculate walk times.",
         "ITSAppUsesNonExemptEncryption": false
       }
     },
@@ -45,7 +44,13 @@
       "expo-notifications",
       "expo-apple-authentication",
       "@react-native-community/datetimepicker",
-      "expo-iap"
+      "expo-iap",
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Club 32 uses your location to find your nearest ride and calculate walk times."
+        }
+      ]
     ],
     "extra": {
       "eas": {
