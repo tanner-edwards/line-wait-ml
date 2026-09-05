@@ -1,4 +1,4 @@
-import { flattenForList, flattenSorted, rideWaitLabel } from './grouping';
+import { filterItemsByQuery, flattenForList, flattenSorted, rideWaitLabel } from './grouping';
 import { CombinedResponse, Persona, Ride } from './types';
 import { personaScore, typicalHeightInches } from './personaSort';
 
@@ -150,6 +150,42 @@ describe('flattenForList', () => {
     // DCA has no land/ride entries between its header and the end of the list
     const dcaIdx = items.indexOf(dcaHeader!);
     expect(items.slice(dcaIdx + 1)).toEqual([]);
+  });
+});
+
+describe('filterItemsByQuery', () => {
+  const resp: CombinedResponse = {
+    parks: [
+      {
+        park: 'Disneyland',
+        lastUpdated: '2026-05-15T20:00:00Z',
+        rides: [
+          makeRide({ id: '1', name: 'Space Mountain', land: 'Tomorrowland' }),
+          makeRide({ id: '2', name: 'Peter Pan', land: 'Fantasyland' }),
+          makeRide({ id: '3', name: 'Astro Orbitor', land: 'Tomorrowland' }),
+        ],
+      },
+    ],
+  };
+  const items = flattenForList(resp);
+
+  it('returns items unchanged for an empty or whitespace-only query', () => {
+    expect(filterItemsByQuery(items, '')).toBe(items);
+    expect(filterItemsByQuery(items, '   ')).toBe(items);
+  });
+
+  it('drops park/land headers and keeps only matching rides, case-insensitively', () => {
+    const result = filterItemsByQuery(items, 'space');
+    expect(result).toEqual([expect.objectContaining({ kind: 'ride', ride: expect.objectContaining({ name: 'Space Mountain' }) })]);
+  });
+
+  it('matches on a substring anywhere in the name', () => {
+    const result = filterItemsByQuery(items, 'orbit');
+    expect(result.map(i => (i.kind === 'ride' ? i.ride.name : ''))).toEqual(['Astro Orbitor']);
+  });
+
+  it('returns an empty array when nothing matches', () => {
+    expect(filterItemsByQuery(items, 'zzz')).toEqual([]);
   });
 });
 

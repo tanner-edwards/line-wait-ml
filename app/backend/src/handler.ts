@@ -72,6 +72,15 @@ import {
 const CACHE_TTL_MS = 150_000;
 const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
 
+// Explicit user actions (pull-to-refresh, opening a ride detail) can request
+// a fresh upstream read via ?fresh=true, bypassing parkCache. This floor
+// caps how often that bypass can actually reach themeparks.wiki per park —
+// a burst of fresh=true requests (from one user re-tapping, or many users at
+// once) collapses into a single upstream call, then everyone rides the
+// regular parkCache entry it just wrote until the floor clears.
+const FRESH_BYPASS_FLOOR_MS = 20_000;
+const freshBypassFloor = new TTLCache<ParkSlug, true>(FRESH_BYPASS_FLOOR_MS);
+
 // Recommendations cache: same response for the same (park, currentRideId)
 // within a 5-minute window. Catches rapid re-taps and back-button navigation
 // without re-hitting Bedrock.
@@ -246,11 +255,16 @@ export async function fetchPark(
   referenceDate?: Date,
   userLat: number | null = null,
   userLng: number | null = null,
+  forceFresh = false,
 ): Promise<ParkData> {
   // Skip cache for time-travel requests so historical data isn't served stale.
   if (!referenceDate) {
     const cached = parkCache.get(parkSlug);
-    if (cached) return cached;
+    // Serve the cached entry unless the caller explicitly wants fresh data —
+    // UNLESS someone already forced a fresh fetch for this park within the
+    // bypass floor, in which case that entry IS the fresh data.
+    if (cached && (!forceFresh || freshBypassFloor.get(parkSlug))) return cached;
+    if (forceFresh) freshBypassFloor.set(parkSlug, true);
   }
 
   const now = referenceDate ?? new Date();
@@ -612,6 +626,10 @@ export async function handler(
 
   const userLat = parseFloat(event.queryStringParameters?.user_lat ?? '') || null;
   const userLng = parseFloat(event.queryStringParameters?.user_lng ?? '') || null;
+  // Explicit "give me fresh wait times" signal — pull-to-refresh, opening a
+  // ride detail. Bypasses parkCache subject to freshBypassFloor (see
+  // fetchPark). Never set by automatic/background refreshes.
+  const forceFresh = event.queryStringParameters?.fresh === 'true';
 
   // Premium gate: non-entitled callers get current-state data only; the
   // predictive fields are nulled out. Resolved once per request.
@@ -619,7 +637,7 @@ export async function handler(
 
   if (route.kind === 'park') {
     try {
-      const data = await fetchPark(route.slug, referenceDate, userLat, userLng);
+      const data = await fetchPark(route.slug, referenceDate, userLat, userLng, forceFresh);
       return jsonResponse(200, entitled ? data : stripParkData(data));
     } catch (err) {
       const status = err instanceof UpstreamError ? err.statusCode : 502;
@@ -632,7 +650,7 @@ export async function handler(
   const entries: (ParkData | ParkError)[] = await Promise.all(
     PARK_ORDER.map(async (slug): Promise<ParkData | ParkError> => {
       try {
-        const data = await fetchPark(slug, referenceDate, userLat, userLng);
+        const data = await fetchPark(slug, referenceDate, userLat, userLng, forceFresh);
         return entitled ? data : stripParkData(data);
       } catch {
         return shapeParkError(slug, 'UPSTREAM_UNAVAILABLE');
@@ -1243,4 +1261,5 @@ async function handleTripPurchase(
 export function _resetCacheForTests(): void {
   parkCache.clear();
   recsCache.clear();
+  freshBypassFloor.clear();
 }

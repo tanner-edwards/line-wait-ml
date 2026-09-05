@@ -36,15 +36,15 @@ function renderHome() {
     <PersonaProvider>
       <DailyContextProvider>
         <DeviceProvider>
-          <LocationProvider>
-            <RideProvider>
-              <NotificationDetailProvider>
-                <DebugModeProvider>
+          <DebugModeProvider>
+            <LocationProvider>
+              <RideProvider>
+                <NotificationDetailProvider>
                   <Home />
-                </DebugModeProvider>
-              </NotificationDetailProvider>
-            </RideProvider>
-          </LocationProvider>
+                </NotificationDetailProvider>
+              </RideProvider>
+            </LocationProvider>
+          </DebugModeProvider>
         </DeviceProvider>
       </DailyContextProvider>
     </PersonaProvider>

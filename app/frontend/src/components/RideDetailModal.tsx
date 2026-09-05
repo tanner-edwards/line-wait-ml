@@ -15,7 +15,7 @@
 // Opened from a notification history-sheet row tap or service-worker
 // deep-link via NotificationDetailContext.
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import { AlertTriangle, X } from 'lucide-react-native';
@@ -63,8 +63,17 @@ function walkMinsBetween(
 
 export function RideDetailModal(): React.ReactElement {
   const { active, closeDetail, dismissAll } = useNotificationDetail();
-  const { ridesById, data, backgroundRefreshing } = useRides();
+  const { ridesById, data, backgroundRefreshing, refresh } = useRides();
   const { coords } = useLocation();
+
+  // A ride's detail page is a confidence gesture — the wait time shown here
+  // should be checked against Disney at the moment the user actually looks,
+  // not just whatever was last loaded for the list. forceFresh bypasses the
+  // backend's cache (subject to its own short bypass floor); backgroundRefreshing
+  // drives the small header spinner rather than a blocking loading state.
+  useEffect(() => {
+    if (active) void refresh('auto', undefined, true);
+  }, [active?.rideId, refresh]);
 
   const ride = active ? ridesById.get(active.rideId) ?? null : null;
   const parkName = useMemo(() => {

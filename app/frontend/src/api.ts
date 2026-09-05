@@ -24,6 +24,7 @@ export async function fetchWaits(
   idToken?: string | null,
   userLat?: number | null,
   userLng?: number | null,
+  forceFresh?: boolean,
 ): Promise<CombinedResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
@@ -33,6 +34,10 @@ export async function fetchWaits(
   if (at) params.set('at', at);
   if (userLat != null) params.set('user_lat', String(userLat));
   if (userLng != null) params.set('user_lng', String(userLng));
+  // Explicit user action (pull-to-refresh, opening a ride detail) — tells
+  // the backend to bypass its cache, subject to its own bypass floor.
+  // Never set for automatic/background refreshes.
+  if (forceFresh) params.set('fresh', 'true');
   const qs = params.toString();
   const url = qs ? `${BASE_URL}/v0/waits?${qs}` : `${BASE_URL}/v0/waits`;
 

@@ -6,7 +6,7 @@
 //   Out of park → "You don't appear to be in the park" + Retry
 //   Debug mode → ride picker (OPERATING rides only) injects fake GPS coords
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -19,8 +19,9 @@ import {
   View,
 } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import { useFocusEffect } from '@react-navigation/native';
 import { ApiError, fetchRecommendations } from '../api';
-import { DailyContext, ParkSlug, RecommendationsResponse, Ride } from '../types';
+import { DailyContext, ParkSlug, Persona, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
 import { useAuth } from '../context/AuthContext';
 import { usePersona } from '../context/PersonaContext';
@@ -48,6 +49,17 @@ const LOADING_LINES = [
 const DLR_CENTER = { lat: 33.8121, lng: -117.9190 };
 const DCA_CENTER = { lat: 33.8058, lng: -117.9218 };
 
+// Recommendations calls a paid LLM endpoint, so re-fetching is gated behind
+// this unified check rather than firing on every render/focus. Re-fetch only
+// when the tab is focused AND at least one of these has changed since the
+// last fetch: GPS moved 100m+, 5+ minutes elapsed, persona changed, or the
+// daily park scope changed. The API call itself is debounced 1s behind the
+// decision (with an immediate loading state) so a quick accidental tap on
+// the tab doesn't burn a request.
+const GPS_CHANGE_THRESHOLD_M = 100;
+const STALE_MS = 5 * 60 * 1000;
+const FETCH_DEBOUNCE_MS = 1000;
+
 function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] | undefined): ParkSlug {
   if (dailyParks === 'disneyland') return 'disneyland';
   if (dailyParks === 'california-adventure') return 'california-adventure';
@@ -61,7 +73,7 @@ export function Recommendations(): React.ReactElement {
   const { getIdToken } = useAuth();
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
-  const { coords, status, retry, setDebugCoords } = useLocation();
+  const { coords, status, retry, setDebugCoords, clearDebugCoords } = useLocation();
   const { debugMode } = useDebugMode();
   const { openDetail } = useNotificationDetail();
 
@@ -75,6 +87,14 @@ export function Recommendations(): React.ReactElement {
 
   const inFlightAbort = useRef<AbortController | null>(null);
   const loadMoreAbort = useRef<AbortController | null>(null);
+
+  // Baseline for the focus-triggered refetch check — set the moment runFetch
+  // actually commits to a network call (any trigger: auto, retry, pull-to-
+  // refresh), not on every render.
+  const lastFetchCoordsRef = useRef<{ lat: number; lng: number } | null>(null);
+  const lastFetchAtRef = useRef<number | null>(null);
+  const lastFetchPersonaRef = useRef<Persona | null>(null);
+  const lastFetchParkScopeRef = useRef<DailyContext['parks'] | undefined>(undefined);
 
   const loadingLine = useMemo(
     () => LOADING_LINES[Math.floor(Math.random() * LOADING_LINES.length)],
@@ -114,6 +134,11 @@ export function Recommendations(): React.ReactElement {
       return;
     }
 
+    lastFetchCoordsRef.current = { lat, lng };
+    lastFetchAtRef.current = Date.now();
+    lastFetchPersonaRef.current = persona;
+    lastFetchParkScopeRef.current = dailyContext?.parks;
+
     setRecsLoading(true);
     setRecsError(null);
     setLoadMoreError(null);
@@ -137,7 +162,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen, persona, getIdToken]);
+  }, [isParkOpen, persona, dailyContext?.parks, getIdToken]);
 
   const loadMore = useCallback(async () => {
     if (!recs || !coords) return;
@@ -190,13 +215,53 @@ export function Recommendations(): React.ReactElement {
   // debug coords are set, not on every context re-render.
   const coordsKey = coords ? `${coords.lat.toFixed(6)},${coords.lng.toFixed(6)}` : null;
 
-  // Fetch whenever we have a ready location, or when the persona changes.
-  useEffect(() => {
-    if (status !== 'ready' || !coords) return;
-    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
-    void runFetch(coords.lat, coords.lng, park);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [coordsKey, status, persona, dailyContext?.parks]);
+  // Re-check on every focus of this tab (and whenever these deps change while
+  // it stays focused): fetch only if GPS moved 100m+, 5+ min elapsed, persona
+  // changed, or park scope changed since the last fetch. Loading shows
+  // immediately so the tab doesn't feel unresponsive; the actual (costly) API
+  // call is debounced 1s so a quick accidental tap doesn't spend a request.
+  //
+  // TODO: needs test coverage (focus/re-focus, each of the four trigger
+  // conditions individually, debounce-cancel-on-blur-before-1s, and that
+  // staying under all four thresholds does NOT re-fetch). Not added yet —
+  // this screen has no existing test scaffolding, and exercising it properly
+  // needs a NavigationContainer (to drive real focus/blur transitions) plus
+  // Jest fake timers (for the 1s debounce), on top of the existing
+  // useLocation/useRides/usePersona/useDailyContext/useAuth mocks. That setup
+  // cost is more than fits inside this change; flagging rather than skipping
+  // silently.
+  useFocusEffect(
+    useCallback(() => {
+      if (status !== 'ready' || !coords) return;
+      const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
+      if (!isParkOpen(park)) return;
+
+      const now = Date.now();
+      const gpsChanged = !lastFetchCoordsRef.current
+        || haversineMeters(
+          coords.lat, coords.lng,
+          lastFetchCoordsRef.current.lat, lastFetchCoordsRef.current.lng
+        ) >= GPS_CHANGE_THRESHOLD_M;
+      const timeStale = lastFetchAtRef.current === null || (now - lastFetchAtRef.current) >= STALE_MS;
+      const personaChanged = persona !== lastFetchPersonaRef.current;
+      const parkScopeChanged = dailyContext?.parks !== lastFetchParkScopeRef.current;
+
+      if (!gpsChanged && !timeStale && !personaChanged && !parkScopeChanged) return;
+
+      setRecsLoading(true);
+      let fired = false;
+      const timer = setTimeout(() => {
+        fired = true;
+        void runFetch(coords.lat, coords.lng, park);
+      }, FETCH_DEBOUNCE_MS);
+
+      return () => {
+        clearTimeout(timer);
+        if (!fired) setRecsLoading(false);
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [coordsKey, status, persona, dailyContext?.parks, isParkOpen, runFetch])
+  );
 
   const handleDebugPickerSubmit = useCallback((_park: ParkSlug, rideId: string) => {
     setDebugPickerOpen(false);
@@ -205,6 +270,11 @@ export function Recommendations(): React.ReactElement {
       setDebugCoords(ride.lat, ride.lng);
     }
   }, [ridesById, setDebugCoords]);
+
+  const handleResetGPS = useCallback(() => {
+    setDebugPickerOpen(false);
+    clearDebugCoords();
+  }, [clearDebugCoords]);
 
   // --- render ---
 
@@ -345,6 +415,7 @@ export function Recommendations(): React.ReactElement {
           ridesByPark={ridesByParkForPicker}
           restrictToParks={dailyContext?.parks ?? 'both'}
           onSubmit={handleDebugPickerSubmit}
+          onResetGPS={handleResetGPS}
           onClose={() => {
             setDebugPickerOpen(false);
             setDebugPickerDismissed(true);

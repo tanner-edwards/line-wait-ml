@@ -102,10 +102,11 @@ const dcaLive: ThemeparksLiveResponse = {
 
 function buildEvent(
   path: string,
-  apiKey: string | null = 'test-api-key'
+  apiKey: string | null = 'test-api-key',
+  queryStringParameters: Record<string, string> | null = null
 ): APIGatewayProxyEvent {
   const headers = apiKey === null ? {} : { 'x-api-key': apiKey };
-  return { path, headers } as unknown as APIGatewayProxyEvent;
+  return { path, headers, queryStringParameters } as unknown as APIGatewayProxyEvent;
 }
 
 function setupHappyPath(): void {
@@ -544,5 +545,49 @@ describe('handler — caching', () => {
 
     await handler(buildEvent('/v0/waits/california-adventure'));
     expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(2);
+  });
+
+  describe('?fresh=true bypass', () => {
+    it('re-hits upstream even within TTL when fresh=true', async () => {
+      await handler(buildEvent('/v0/waits/disneyland'));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(2);
+    });
+
+    it('collapses a burst of fresh=true requests into one upstream call (bypass floor)', async () => {
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+
+      // A second fresh=true request immediately after should ride the entry
+      // the first one just wrote, not trigger a second upstream call.
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+    });
+
+    it('allows another fresh=true bypass once the floor expires', async () => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-05-15T20:00:00Z'));
+
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+
+      // Advance past the 20s bypass floor but still well within the 150s TTL.
+      jest.setSystemTime(new Date('2026-05-15T20:00:21Z'));
+
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(2);
+
+      jest.useRealTimers();
+    });
+
+    it('writes the fresh result back into parkCache so a normal follow-up request does not re-fetch', async () => {
+      await handler(buildEvent('/v0/waits/disneyland', 'test-api-key', { fresh: 'true' }));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+
+      await handler(buildEvent('/v0/waits/disneyland'));
+      expect(mockedClient.fetchLiveData).toHaveBeenCalledTimes(1);
+    });
   });
 });

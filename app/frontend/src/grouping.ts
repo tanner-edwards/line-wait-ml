@@ -194,3 +194,15 @@ export function flattenSorted(
 
   return items;
 }
+
+/**
+ * Filters a flattened list down to rides matching the query by name.
+ * Park/land headers are dropped entirely rather than kept-if-non-empty —
+ * search results read as a flat list, same as the onboarding ride search.
+ * Empty/whitespace query returns `items` unchanged.
+ */
+export function filterItemsByQuery(items: ListItem[], query: string): ListItem[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+  return items.filter(item => item.kind === 'ride' && item.ride.name.toLowerCase().includes(q));
+}

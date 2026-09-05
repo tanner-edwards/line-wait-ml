@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
+import { LocateFixed } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { DailyParks, ParkSlug, Ride } from '../types';
 import { SearchField } from './SearchField';
@@ -45,6 +46,9 @@ interface PickerSheetProps {
   restrictToParks: DailyParks;
   onSubmit: (park: ParkSlug, currentRideId: string) => void;
   onClose: () => void;
+  /** When provided, shows a "Reset to my GPS location" row that drops the
+   *  injected debug coords and closes the sheet, restoring real GPS. */
+  onResetGPS?: () => void;
 }
 
 export function PickerSheet({
@@ -55,6 +59,7 @@ export function PickerSheet({
   restrictToParks,
   onSubmit,
   onClose,
+  onResetGPS,
 }: PickerSheetProps): React.ReactElement {
   const [query, setQuery] = useState('');
 
@@ -114,6 +119,16 @@ export function PickerSheet({
                 testID="picker-search"
               />
             </View>
+            {onResetGPS ? (
+              <Pressable
+                style={styles.resetGpsRow}
+                onPress={onResetGPS}
+                testID="picker-reset-gps"
+              >
+                <LocateFixed size={16} color={colors.brand} />
+                <Text style={styles.resetGpsText}>Reset to my GPS location</Text>
+              </Pressable>
+            ) : null}
           </>
         }
         ListEmptyComponent={
@@ -149,6 +164,23 @@ const styles = StyleSheet.create({
   },
   searchWrap: {
     marginBottom: 12,
+  },
+  resetGpsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.goBg,
+  },
+  resetGpsText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.brand,
   },
   listContent: {
     paddingHorizontal: 16,

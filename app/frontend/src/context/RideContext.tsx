@@ -32,7 +32,10 @@ interface RideContextValue {
    *  Drives the "updating" spinner on the ride detail sheet. */
   backgroundRefreshing: boolean;
   lastRefreshedAt: string | null;
-  refresh: (mode: 'user' | 'auto' | 'initial', at?: string) => Promise<void>;
+  /** forceFresh bypasses the backend's cache (subject to its own bypass
+   *  floor) — set for explicit user actions (pull-to-refresh, opening a ride
+   *  detail), never for the automatic interval/foreground refresh. */
+  refresh: (mode: 'user' | 'auto' | 'initial', at?: string, forceFresh?: boolean) => Promise<void>;
   /** rideId → Ride lookup; used by the Recommendations screen to render rec cards
    *  from a slim rec payload that only carries rideIds. Empty until first fetch
    *  completes. */
@@ -61,14 +64,14 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   }, [getIdToken]);
 
   const refresh = useCallback(
-    async (mode: 'user' | 'auto' | 'initial', at?: string) => {
+    async (mode: 'user' | 'auto' | 'initial', at?: string, forceFresh?: boolean) => {
       if (mode === 'initial') setLoading(true);
       if (mode === 'user') setRefreshing(true);
       if (mode === 'auto') setBackgroundRefreshing(true);
       const fetchedAt = new Date().toISOString();
       try {
         const token = await getIdTokenRef.current();
-        const fresh = await fetchWaits(at, token, coords?.lat ?? null, coords?.lng ?? null);
+        const fresh = await fetchWaits(at, token, coords?.lat ?? null, coords?.lng ?? null, forceFresh);
         setData(fresh);
         lastFetchedAtMs.current = Date.now();
         if (mode !== 'initial') setLastRefreshedAt(fetchedAt);

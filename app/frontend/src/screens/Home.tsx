@@ -1,6 +1,8 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   FlatList,
+  NativeScrollEvent,
+  NativeSyntheticEvent,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -8,13 +10,14 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Clock } from 'lucide-react-native';
+import { Clock, SearchX } from 'lucide-react-native';
 import { StateBlock } from '../components/StateBlock';
 import { colors } from '../theme/tokens';
 import { StatusBar } from 'expo-status-bar';
 import {
   ListItem,
   SortBy,
+  filterItemsByQuery,
   flattenForList,
   flattenSorted,
 } from '../grouping';
@@ -24,6 +27,7 @@ import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
 import { RideRow } from '../components/RideRow';
+import { FloatingSearchBar } from '../components/FloatingSearchBar';
 import { ArrowUpDown } from 'lucide-react-native';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -32,6 +36,10 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { usePersona } from '../context/PersonaContext';
 import { filterByDailyParks } from '../utils/parkFilter';
+
+// Scroll delta (px) past which a direction counts as a deliberate scroll,
+// not a diagonal wobble — avoids the search bar flickering on tiny movements.
+const SCROLL_HIDE_THRESHOLD = 8;
 
 
 export function Home() {
@@ -56,9 +64,27 @@ export function Home() {
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy | null>('opportunity');
   const [showSortMenu, setShowSortMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Floating search bar visibility — hides on scroll-down, reappears on
+  // scroll-up or at the top of the list.
+  const [searchBarVisible, setSearchBarVisible] = useState(true);
+  const lastScrollY = useRef(0);
+  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const y = e.nativeEvent.contentOffset.y;
+    const diff = y - lastScrollY.current;
+    if (y <= 4) {
+      setSearchBarVisible(true);
+    } else if (diff > SCROLL_HIDE_THRESHOLD) {
+      setSearchBarVisible(false);
+    } else if (diff < -SCROLL_HIDE_THRESHOLD) {
+      setSearchBarVisible(true);
+    }
+    lastScrollY.current = y;
+  }, []);
 
   const onRefresh = useCallback(() => {
-    void refresh('user');
+    void refresh('user', undefined, true);
   }, [refresh]);
 
   const handleTimeTravelSet = useCallback((at: string, label: string) => {
@@ -72,7 +98,7 @@ export function Home() {
     setTimeTravelAt(null);
     setTimeTravelLabel(null);
     setShowTimeTravelModal(false);
-    void refresh('user');
+    void refresh('user', undefined, true);
   }, [refresh]);
 
   if (loading && !data) {
@@ -96,11 +122,14 @@ export function Home() {
     ? filterByDailyParks(data, dailyContext.parks)
     : data;
 
-  const items: ListItem[] = scopedData
-    ? sortBy
-      ? flattenSorted(scopedData, sortBy, locationCoords, persona)
-      : flattenForList(scopedData)
-    : [];
+  const items: ListItem[] = filterItemsByQuery(
+    scopedData
+      ? sortBy
+        ? flattenSorted(scopedData, sortBy, locationCoords, persona)
+        : flattenForList(scopedData)
+      : [],
+    searchQuery
+  );
   const lastUpdate = lastRefreshedAt
     ? formatHHMM(lastRefreshedAt)
     : data
@@ -158,6 +187,8 @@ export function Home() {
             onRidePress={(rideId) => openDetail({ rideId, type: null, source: 'browse' })}
           />
         )}
+        onScroll={handleScroll}
+        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -169,9 +200,25 @@ export function Home() {
               body="Data should appear once the park opens and rides start posting wait times."
               testID="empty-state"
             />
+          ) : searchQuery.trim() ? (
+            <StateBlock
+              icon={<SearchX size={48} color={colors.textTertiary} />}
+              title="No rides match"
+              body={`Nothing found for "${searchQuery.trim()}".`}
+              testID="search-empty-state"
+            />
           ) : null
         }
-        contentContainerStyle={items.length === 0 ? styles.emptyListContent : undefined}
+        contentContainerStyle={[
+          items.length === 0 ? styles.emptyListContent : undefined,
+          styles.listContent,
+        ]}
+      />
+      <FloatingSearchBar
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        visible={searchBarVisible}
+        testID="home-search"
       />
       <SortMenu
         visible={showSortMenu}
@@ -234,6 +281,9 @@ function ListRow({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   emptyListContent: { flexGrow: 1 },
+  // Bottom padding so the last row(s) aren't hidden behind the floating
+  // search bar docked over the list.
+  listContent: { paddingBottom: 72 },
   center: {
     flex: 1,
     alignItems: 'center',

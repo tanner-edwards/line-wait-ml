@@ -70,6 +70,36 @@ interface DeviceContextValue {
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
 
+// Retries a best-effort backend sync a couple of times (with backoff) before
+// giving up and logging. Callers must only treat the preference as "synced"
+// when this resolves non-null — resolving null means every attempt failed,
+// so the caller should leave its dedup ref untouched and let the next
+// effect run (or app relaunch) retry. Without that distinction, a single
+// dropped request (e.g. spotty in-park connectivity) silently strands the
+// old value in Firestore since nothing else would ever retry it.
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  label: string,
+  retries = 2,
+  delayMs = 1000
+): Promise<T | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isLast = attempt === retries;
+      const detail = err instanceof Error ? err.message : String(err);
+      if (isLast) {
+        logError(`${label} failed after ${retries + 1} attempts: ${detail}`, 'notif');
+        return null;
+      }
+      logInfo(`${label} attempt ${attempt + 1} failed, retrying: ${detail}`, 'notif');
+      await new Promise(resolve => setTimeout(resolve, delayMs * (attempt + 1)));
+    }
+  }
+  return null;
+}
+
 export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
@@ -125,11 +155,10 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     const ids = persona.mustDoRideIds;
     const fingerprint = [...ids].sort().join(',');
     if (fingerprint === lastSyncedMustDoRef.current) return;
-    lastSyncedMustDoRef.current = fingerprint;
-    void syncMustDoRideIds(deviceId, ids).catch(err => {
-      // Best-effort — log but don't surface to the user, the next change
-      // will retry the sync.
-      console.warn('syncMustDoRideIds failed', err);
+    // Only mark this fingerprint as synced once the request actually
+    // succeeds — otherwise a dropped request permanently stops retrying.
+    void withRetry(() => syncMustDoRideIds(deviceId, ids), 'syncMustDoRideIds').then(result => {
+      if (result !== null) lastSyncedMustDoRef.current = fingerprint;
     });
   }, [deviceId, notificationsEnabled, persona]);
 
@@ -140,9 +169,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     if (!deviceId || !notificationsEnabled || !dailyContext) return;
     const parks = dailyContext.parks;
     if (parks === lastSyncedDailyParksRef.current) return;
-    lastSyncedDailyParksRef.current = parks;
-    void syncDailyParks(deviceId, parks).catch(err => {
-      console.warn('syncDailyParks failed', err);
+    void withRetry(() => syncDailyParks(deviceId, parks), 'syncDailyParks').then(result => {
+      if (result !== null) lastSyncedDailyParksRef.current = parks;
     });
   }, [deviceId, notificationsEnabled, dailyContext]);
 
@@ -154,10 +182,11 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     if (!deviceId || !notificationsEnabled) return;
     const fingerprint = JSON.stringify(notificationTypes);
     if (fingerprint === lastSyncedTypesRef.current) return;
-    lastSyncedTypesRef.current = fingerprint;
-    void syncNotificationTypes(deviceId, notificationTypes).catch(err => {
-      console.warn('syncNotificationTypes failed', err);
-    });
+    void withRetry(() => syncNotificationTypes(deviceId, notificationTypes), 'syncNotificationTypes').then(
+      result => {
+        if (result !== null) lastSyncedTypesRef.current = fingerprint;
+      }
+    );
   }, [deviceId, notificationsEnabled, notificationTypes]);
 
   const enableNotifications = useCallback(async (): Promise<boolean> => {
@@ -255,8 +284,8 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       setNotificationTypesState(next);
       await writeNotificationTypes(next);
       if (deviceId && notificationsEnabled) {
-        void syncNotificationTypes(deviceId, next).catch(err => {
-          console.warn('syncNotificationTypes failed', err);
+        void withRetry(() => syncNotificationTypes(deviceId, next), 'syncNotificationTypes').then(result => {
+          if (result !== null) lastSyncedTypesRef.current = JSON.stringify(next);
         });
       }
     },
