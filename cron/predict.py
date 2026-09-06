@@ -71,6 +71,7 @@ TRAJECTORY_FEATURE_COLS = [
     # any horizon (small deltas, no direction by horizon) — unlike day_profile,
     # where the same ablation showed a clean, consistent improvement. Kept in
     # DAY_PROFILE_FEATURE_COLS only.
+    "minutes_at_current_level", "wait_regime_danger_zone",
     "ride_id_cat", "status_cat",
 ]
 
@@ -97,7 +98,8 @@ def _download_models(bucket_name: str, dest: Path) -> None:
     files = (
         [f"trajectory_t{h}.txt" for h in HORIZONS]
         + ["day_profile.txt", "feature_categories.json", "morning_baselines.json",
-           "reversion_model.txt", "ride_percentile_buckets.json"]
+           "reversion_model.txt", "ride_percentile_buckets.json",
+           "ride_regime_thresholds.json"]
     )
     for name in files:
         bucket.blob(name).download_to_filename(str(dest / name))
@@ -111,7 +113,8 @@ def _load_models(model_dir: Path):
     baselines = json.loads((model_dir / "morning_baselines.json").read_text())
     reversion = lgb.Booster(model_file=str(model_dir / "reversion_model.txt"))
     pct_buckets = json.loads((model_dir / "ride_percentile_buckets.json").read_text())
-    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], baselines, reversion, pct_buckets
+    regime_thresholds = json.loads((model_dir / "ride_regime_thresholds.json").read_text())
+    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], baselines, reversion, pct_buckets, regime_thresholds
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -274,6 +277,7 @@ def _build_trajectory_row(
     ride_df: pd.DataFrame,
     ride_id_cats: list[str],
     status_cats: list[str],
+    regime_thresholds: dict,
 ) -> dict | None:
     """Return a single trajectory feature dict for the most recent snapshot.
 
@@ -339,6 +343,30 @@ def _build_trajectory_row(
         if r.iloc[i]["status"] != "OPERATING":
             break  # not currently in a post-reopen window
 
+    # minutes_at_current_level / wait_regime_danger_zone
+    # Classify each recent snapshot into low/mid/high regime using per-ride
+    # P25/P75 thresholds pre-computed at training time. Walk backward to find
+    # when the current regime started, compute duration (capped at 300 min).
+    thresh = regime_thresholds.get(str(last["ride_id"]), {})
+    p25 = thresh.get("p25")
+    p75 = thresh.get("p75")
+    classify_regime = lambda w: (  # noqa: E731
+        "mid" if p25 is None or p75 is None or pd.isna(w) else
+        "low" if float(w) <= p25 else
+        "high" if float(w) >= p75 else "mid"
+    )
+    cur_regime = classify_regime(last["wait_minutes"])
+    regime_start_ts = last["timestamp_utc"]
+    for i in range(len(r) - 2, -1, -1):
+        if classify_regime(r.iloc[i]["wait_minutes"]) == cur_regime:
+            regime_start_ts = r.iloc[i]["timestamp_utc"]
+        else:
+            break
+    minutes_at_level = min(
+        300.0,
+        (last["timestamp_utc"] - regime_start_ts).total_seconds() / 60,
+    )
+
     return {
         "wait_minutes":                    float(last["wait_minutes"]),
         "wait_lag_1":                      float(lag1),
@@ -355,6 +383,8 @@ def _build_trajectory_row(
         "days_since_last_holiday":         int(last["days_since_last_holiday"]),
         "minutes_since_last_status_change": float(mins_since_change),
         "closure_duration_minutes":        float(closure_duration),
+        "minutes_at_current_level":        float(minutes_at_level),
+        "wait_regime_danger_zone":         int(20 <= minutes_at_level <= 50),
         # Keep as strings — converted to pd.Categorical in main() so LightGBM
         # sees the same dtype as during training.
         "ride_id_cat":                     last["ride_id"],
@@ -593,7 +623,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
-        traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets = _load_models(model_dir)
+        traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets, regime_thresholds = _load_models(model_dir)
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -653,7 +683,7 @@ def main() -> int:
 
         prediction_docs = []
         for ride_id, ride_df in df.groupby("ride_id"):
-            feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats)
+            feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats, regime_thresholds)
             if feat_row is None:
                 continue
             feat_row["park_crowd_median"] = park_crowd_median
