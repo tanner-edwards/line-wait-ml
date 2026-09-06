@@ -70,7 +70,12 @@ export interface RecommendationsRequest {
 export async function buildRecommendations(
   req: RecommendationsRequest
 ): Promise<RecommendationsResponse> {
-  const park = await fetchPark(req.park, req.at);
+  // Every recommendations call already costs an LLM invocation and is gated
+  // by the frontend's own focus/GPS/staleness checks — so it's always worth
+  // paying for the freshest wait-time data too, not whatever's sitting in
+  // the passive 2.5-min parkCache. fetchPark's own freshBypassFloor (20s)
+  // still protects against back-to-back bypasses if recs are hit rapidly.
+  const park = await fetchPark(req.park, req.at, null, null, true);
 
   let metadataMap;
   try {

@@ -9,6 +9,10 @@ interface Props {
   placeholder?: string;
   testID?: string;
   containerStyle?: object;
+  /** Defaults to the muted textTertiary used everywhere else this field
+   *  appears (onboarding, persona edit) — override for contexts that need
+   *  the field to stand out more, e.g. the floating bar on Home. */
+  iconColor?: string;
 }
 
 export function SearchField({
@@ -17,10 +21,11 @@ export function SearchField({
   placeholder,
   testID,
   containerStyle,
+  iconColor = colors.textTertiary,
 }: Props): React.ReactElement {
   return (
     <View style={[styles.container, containerStyle]}>
-      <Search size={16} color={colors.textTertiary} style={styles.searchIcon} />
+      <Search size={16} color={iconColor} style={styles.searchIcon} />
       <TextInput
         value={value}
         onChangeText={onChangeText}

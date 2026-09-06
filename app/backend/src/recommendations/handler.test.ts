@@ -286,6 +286,17 @@ describe('buildRecommendations — happy path', () => {
     expect(res.lastUpdated).toBe('2026-05-22T18:00:00Z');
   });
 
+  it('always requests fresh wait-time data from fetchPark, not the passive cache', async () => {
+    const rides = [makeRide('curr', 'Current Ride', null)];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+    mockInvoke.mockResolvedValue(JSON.stringify({ recommendations: [] }));
+
+    await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
+
+    expect(mockFetchPark).toHaveBeenCalledWith('disneyland', undefined, null, null, true);
+  });
+
   it('excludes the nearest ride from candidates even if Bedrock tries to recommend it', async () => {
     const rides = [
       makeRide('curr', 'Current', null),
