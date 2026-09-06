@@ -142,7 +142,11 @@ const styles = StyleSheet.create({
   },
   row1: {
     flexDirection: 'row',
-    alignItems: 'center',
+    // flex-start (not center) — a 2-line ride name grows this row taller, and
+    // centering would re-center the wait cluster within that extra height,
+    // making it drift down relative to single-line-title cards. Anchoring to
+    // the top keeps the wait number level with the first line every time.
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
   },
   nameRow: {
@@ -159,7 +163,12 @@ const styles = StyleSheet.create({
   },
   waitCluster: {
     flexDirection: 'row',
-    alignItems: 'baseline',
+    // center, not baseline — waitMin already overrides its own cross-axis
+    // alignment (alignSelf: 'flex-end' below), and ChevronRight has no real
+    // text baseline to align to, so 'baseline' here fights that override
+    // rather than complementing it. RideRow's equivalent cluster uses
+    // 'center' with the same waitMin override and doesn't have this problem.
+    alignItems: 'center',
     gap: 2,
   },
   waitNumber: {
@@ -189,6 +198,9 @@ const styles = StyleSheet.create({
   row2: {
     flexDirection: 'row',
     alignItems: 'center',
+    // Right-aligned — the trend relates to the wait number above it, not
+    // the title, so it should sit under that side, not under the title.
+    justifyContent: 'flex-end',
     marginTop: spacing.sm,
   },
   trendLabel: {
