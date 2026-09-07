@@ -43,7 +43,7 @@ BATCH_SIZE = 400
 DAY_PROFILE_FEATURE_COLS = [
     "ride_id_cat",
     "hour_of_day", "day_of_week", "week_of_year", "month",
-    "temp_high_f", "morning_crowd_index",
+    "temp_high_f", "morning_crowd_index", "crowd_level_ratio",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
     "minutes_until_close", "total_operating_hours",
@@ -72,6 +72,7 @@ TRAJECTORY_FEATURE_COLS = [
     # where the same ablation showed a clean, consistent improvement. Kept in
     # DAY_PROFILE_FEATURE_COLS only.
     "minutes_at_current_level", "wait_regime_danger_zone",
+    "crowd_level_ratio",
     "ride_id_cat", "status_cat",
 ]
 
@@ -99,7 +100,7 @@ def _download_models(bucket_name: str, dest: Path) -> None:
         [f"trajectory_t{h}.txt" for h in HORIZONS]
         + ["day_profile.txt", "feature_categories.json", "morning_baselines.json",
            "reversion_model.txt", "ride_percentile_buckets.json",
-           "ride_regime_thresholds.json"]
+           "ride_regime_thresholds.json", "crowd_level_baselines.json"]
     )
     for name in files:
         bucket.blob(name).download_to_filename(str(dest / name))
@@ -114,7 +115,8 @@ def _load_models(model_dir: Path):
     reversion = lgb.Booster(model_file=str(model_dir / "reversion_model.txt"))
     pct_buckets = json.loads((model_dir / "ride_percentile_buckets.json").read_text())
     regime_thresholds = json.loads((model_dir / "ride_regime_thresholds.json").read_text())
-    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], baselines, reversion, pct_buckets, regime_thresholds
+    crowd_baselines = json.loads((model_dir / "crowd_level_baselines.json").read_text())
+    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], baselines, reversion, pct_buckets, regime_thresholds, crowd_baselines
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -195,6 +197,48 @@ def _compute_morning_crowd_index(
         return None
 
     return round(actual_median / float(expected), 3)
+
+
+def _compute_crowd_level_ratio(
+    df: pd.DataFrame,
+    now_la: datetime,
+    hol: dict,
+    crowd_baselines: dict,
+) -> float | None:
+    """Compute real-time park crowd ratio (actual 2h sum / expected for hour+day_type+month).
+
+    Returns None before 10am (cold start) or when fewer than 8 rides report in
+    the 2h window (maintenance guard). Uses the already-fetched LOOKBACK_MINUTES=120
+    DataFrame — no extra Firestore read needed.
+    """
+    if now_la.hour < 10:
+        return None
+
+    cutoff_2h = now_la.astimezone(timezone.utc) - timedelta(hours=2)
+    window = df[
+        (df["timestamp_utc"] >= cutoff_2h)
+        & (df["status"] == "OPERATING")
+        & df["wait_minutes"].notna()
+    ]
+    if window["ride_id"].nunique() < 8:
+        return None
+
+    actual_sum = float(window["wait_minutes"].sum())
+
+    js_dow = (now_la.weekday() + 1) % 7
+    if hol["is_holiday"]:
+        day_type = "holiday"
+    elif js_dow in (0, 6):
+        day_type = "weekend"
+    else:
+        day_type = "weekday"
+
+    key = f"{day_type}_{now_la.hour}_{now_la.month}"
+    expected = crowd_baselines.get(key)
+    if not expected:
+        return None
+
+    return round(actual_sum / float(expected), 3)
 
 
 def _read_current_weather(db: firestore.Client) -> dict:
@@ -488,6 +532,7 @@ def _build_full_day(
     traj_preds: dict[int, float] | None = None,
     daily_weather: dict | None = None,
     morning_crowd_index: float | None = None,
+    crowd_level_ratio: float | None = None,
     open_minutes: int | None = None,
     close_minutes: int | None = None,
 ) -> list[dict]:
@@ -532,6 +577,7 @@ def _build_full_day(
             "month":                            now_la.month,
             "temp_high_f":                      (daily_weather or {}).get("temp_high_f", 75.0),
             "morning_crowd_index":              morning_crowd_index,
+            "crowd_level_ratio":                crowd_level_ratio,
             "is_holiday":                       hol["is_holiday"],
             "is_holiday_weekend":               hol["is_holiday_weekend"],
             "days_until_next_holiday":          hol["days_until_next_holiday"],
@@ -543,6 +589,7 @@ def _build_full_day(
 
     X_profile = pd.DataFrame(rows)[DAY_PROFILE_FEATURE_COLS]
     X_profile["morning_crowd_index"] = X_profile["morning_crowd_index"].astype(float)
+    X_profile["crowd_level_ratio"] = X_profile["crowd_level_ratio"].astype(float)
     X_profile["minutes_until_close"] = X_profile["minutes_until_close"].astype(float)
     X_profile["total_operating_hours"] = X_profile["total_operating_hours"].astype(float)
     X_profile["ride_id_cat"] = pd.Categorical(X_profile["ride_id_cat"], categories=ride_id_cats)
@@ -623,7 +670,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
-        traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets, regime_thresholds = _load_models(model_dir)
+        traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets, regime_thresholds, crowd_baselines = _load_models(model_dir)
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -681,12 +728,16 @@ def main() -> int:
         morning_crowd_index = _compute_morning_crowd_index(morning_df, now_la, morning_baselines, hol)
         log.info("morning_crowd_index: %s", morning_crowd_index)
 
+        crowd_level_ratio = _compute_crowd_level_ratio(df, now_la, hol, crowd_baselines)
+        log.info("crowd_level_ratio: %s", crowd_level_ratio)
+
         prediction_docs = []
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats, regime_thresholds)
             if feat_row is None:
                 continue
             feat_row["park_crowd_median"] = park_crowd_median
+            feat_row["crowd_level_ratio"] = crowd_level_ratio
 
             park_id = ride_df["park_id"].iloc[0]
             open_minutes, close_minutes = park_hours.get(park_id, (None, None))
@@ -709,6 +760,7 @@ def main() -> int:
                 traj_preds=traj_preds,
                 daily_weather=daily_weather,
                 morning_crowd_index=morning_crowd_index,
+                crowd_level_ratio=crowd_level_ratio,
                 open_minutes=open_minutes,
                 close_minutes=close_minutes,
             )
