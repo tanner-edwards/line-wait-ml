@@ -12,6 +12,8 @@ jest.mock('./devices', () => {
     upsertDevice: jest.fn().mockResolvedValue(undefined),
     setArmedDate: jest.fn().mockResolvedValue(undefined),
     setMustDoRideIds: jest.fn().mockResolvedValue(undefined),
+    setRetiredRideIds: jest.fn().mockResolvedValue(undefined),
+    resetRetiredRideIdsForUid: jest.fn().mockResolvedValue(undefined),
     setDailyParks: jest.fn().mockResolvedValue(undefined),
     setNotificationTypes: jest.fn().mockResolvedValue(undefined),
     // todayInPT stays real so tests assert on a stable date format.
@@ -203,6 +205,49 @@ describe('POST /v1/devices/:id/must-do', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(mockedDevices.setMustDoRideIds).toHaveBeenCalledWith('abc-123', ['ride-1', 'ride-2']);
+  });
+});
+
+describe('POST /v1/devices/:id/retired', () => {
+  it('updates the retired list', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/retired', 'POST', {
+        retiredRideIds: ['ride-1', 'ride-2'],
+      })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.setRetiredRideIds).toHaveBeenCalledWith('abc-123', ['ride-1', 'ride-2']);
+  });
+
+  it('accepts an empty list', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/retired', 'POST', { retiredRideIds: [] })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.setRetiredRideIds).toHaveBeenCalledWith('abc-123', []);
+  });
+
+  it('rejects missing array', async () => {
+    const res = await handler(buildEvent('/v1/devices/abc-123/retired', 'POST', {}));
+    expect(res.statusCode).toBe(400);
+    expect(mockedDevices.setRetiredRideIds).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-array', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/retired', 'POST', { retiredRideIds: 'ride-1' })
+    );
+    expect(res.statusCode).toBe(400);
+  });
+
+  it('filters non-strings out of the array', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices/abc-123/retired', 'POST', {
+        retiredRideIds: ['ride-1', 42, '', null, 'ride-2'],
+      })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.setRetiredRideIds).toHaveBeenCalledWith('abc-123', ['ride-1', 'ride-2']);
   });
 });
 

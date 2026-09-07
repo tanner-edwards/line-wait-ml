@@ -17,6 +17,7 @@ import { Card } from './Card';
 import { Pill } from './Pill';
 import { TrendArrow, trajectoryDirection, predictionTrajectory } from './TrendArrow';
 import { WalkPill } from './WalkPill';
+import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 
@@ -27,9 +28,20 @@ interface RecommendationCardProps {
   ride: Ride | undefined;
   debugMode: boolean;
   onPress: () => void;
+  /** Marks this ride "Rode it" — excluded from recs for the rest of the trip. */
+  onRetire: () => void;
+  /** Only the first card in the list plays the one-time swipe-hint animation. */
+  isFirst?: boolean;
 }
 
-export function RecommendationCard({ rec, ride, debugMode, onPress }: RecommendationCardProps): React.ReactElement {
+export function RecommendationCard({
+  rec,
+  ride,
+  debugMode,
+  onPress,
+  onRetire,
+  isFirst,
+}: RecommendationCardProps): React.ReactElement {
   if (!ride) {
     return (
       <View style={styles.skeleton} testID={`rec-card-${rec.rideId}`}>
@@ -62,70 +74,70 @@ export function RecommendationCard({ rec, ride, debugMode, onPress }: Recommenda
   const cardAccent = badge === 'go' ? colors.go : badge === 'star' ? colors.star : undefined;
 
   return (
-    <Pressable
-      onPress={onPress}
-      testID={`rec-card-${rec.rideId}`}
-      style={styles.pressable}
-    >
-      <Card variant={cardVariant} accent={cardAccent}>
-        {/* Row 1 */}
-        <View style={styles.row1}>
-          {showBadge ? <Pill variant={badge!} /> : null}
-          <View style={styles.nameRow}>
-            <Text style={styles.rideName}>{ride.name}</Text>
-            {rec.restrictionNote ? (
-              <AlertTriangle size={13} color={colors.star} />
-            ) : null}
-          </View>
-          <View style={styles.waitCluster}>
-            {showWalkOn ? (
-              <View style={styles.walkOnCluster}>
-                <Footprints size={14} color={colors.go} />
-                <Text style={[styles.walkOnLabel, { color: colors.go }]}>Walk On</Text>
+    <View style={styles.rowMargin}>
+      <SwipeToRetireRow onConfirm={onRetire} isFirst={isFirst} testID={`rec-swipe-${rec.rideId}`}>
+        <Pressable onPress={onPress} testID={`rec-card-${rec.rideId}`}>
+          <Card variant={cardVariant} accent={cardAccent}>
+            {/* Row 1 */}
+            <View style={styles.row1}>
+              {showBadge ? <Pill variant={badge!} /> : null}
+              <View style={styles.nameRow}>
+                <Text style={styles.rideName}>{ride.name}</Text>
+                {rec.restrictionNote ? (
+                  <AlertTriangle size={13} color={colors.star} />
+                ) : null}
               </View>
-            ) : waitDisplay !== null ? (
-              <>
-                <Text style={styles.waitNumber}>{waitDisplay}</Text>
-                <Text style={styles.waitMin}> min</Text>
-              </>
-            ) : (
-              <Text style={styles.waitStatus}>—</Text>
-            )}
-            <ChevronRight size={14} color={colors.textTertiary} />
-          </View>
-        </View>
+              <View style={styles.waitCluster}>
+                {showWalkOn ? (
+                  <View style={styles.walkOnCluster}>
+                    <Footprints size={14} color={colors.go} />
+                    <Text style={[styles.walkOnLabel, { color: colors.go }]}>Walk On</Text>
+                  </View>
+                ) : waitDisplay !== null ? (
+                  <>
+                    <Text style={styles.waitNumber}>{waitDisplay}</Text>
+                    <Text style={styles.waitMin}> min</Text>
+                  </>
+                ) : (
+                  <Text style={styles.waitStatus}>—</Text>
+                )}
+                <ChevronRight size={14} color={colors.textTertiary} />
+              </View>
+            </View>
 
-        {/* Row 2 — trend only; badge now lives in Row 1 next to the title */}
-        {trend ? (
-          <View style={styles.row2}>
-            <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
-            <TrendArrow direction={trend} />
-          </View>
-        ) : null}
+            {/* Row 2 — trend only; badge now lives in Row 1 next to the title */}
+            {trend ? (
+              <View style={styles.row2}>
+                <Text style={styles.trendLabel}>{TREND_LABEL[trend]}</Text>
+                <TrendArrow direction={trend} />
+              </View>
+            ) : null}
 
-        {/* Row 3 — AI copy */}
-        {rec.oneLiner ? (
-          <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
-        ) : null}
+            {/* Row 3 — AI copy */}
+            {rec.oneLiner ? (
+              <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
+            ) : null}
 
-        {/* Row 4 — walk-time pill */}
-        {rec.walkMinutes !== null ? (
-          <View style={styles.walkPillRow}>
-            <WalkPill
-              minutes={rec.walkMinutes}
-              yards={debugMode ? rec.walkYards : null}
-              emphasized
-              testID={`rec-walk-${rec.rideId}`}
-            />
-          </View>
-        ) : null}
-      </Card>
-    </Pressable>
+            {/* Row 4 — walk-time pill */}
+            {rec.walkMinutes !== null ? (
+              <View style={styles.walkPillRow}>
+                <WalkPill
+                  minutes={rec.walkMinutes}
+                  yards={debugMode ? rec.walkYards : null}
+                  emphasized
+                  testID={`rec-walk-${rec.rideId}`}
+                />
+              </View>
+            ) : null}
+          </Card>
+        </Pressable>
+      </SwipeToRetireRow>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  pressable: {
+  rowMargin: {
     marginHorizontal: spacing.base,
     marginBottom: spacing.sm,
   },

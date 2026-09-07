@@ -219,6 +219,14 @@ Resources:
             Method: post
             Auth:
               ApiKeyRequired: true
+        DeviceRetired:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/devices/{deviceId}/retired
+            Method: post
+            Auth:
+              ApiKeyRequired: true
         DeviceDailyParks:
           Type: Api
           Properties:

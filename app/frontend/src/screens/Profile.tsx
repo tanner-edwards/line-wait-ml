@@ -39,6 +39,7 @@ import {
   PersonaFieldModal,
 } from '../components/PersonaFieldModal';
 import { DailyParkSheet } from '../components/DailyParkSheet';
+import { RetiredRidesModal } from '../components/RetiredRidesModal';
 import { DebugLogModal } from '../components/DebugLogModal';
 import { TapEditRow } from '../components/TapEditRow';
 import { ToggleRow } from '../components/ToggleRow';
@@ -105,6 +106,7 @@ export function Profile(): React.ReactElement {
     enableNotifications,
     disableNotifications,
     setNotificationTypeEnabled,
+    retiredRideIds,
   } = useDevice();
   const { data } = useRides();
   const { user, userRecord, getIdToken, signOut } = useAuth();
@@ -114,6 +116,7 @@ export function Profile(): React.ReactElement {
   const [parkPickerOpen, setParkPickerOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [retiredRidesOpen, setRetiredRidesOpen] = useState(false);
 
   if (!persona) {
     return (
@@ -175,6 +178,12 @@ export function Profile(): React.ReactElement {
             value={mustDoValue}
             onPress={() => setEditing('mustDoRideIds')}
             numberOfLines={1}
+          />
+          <TapEditRow
+            label="Ridden rides"
+            value={retiredRideIds.length === 0 ? 'None yet' : `${retiredRideIds.length} ridden this trip`}
+            onPress={() => setRetiredRidesOpen(true)}
+            testID="retired-rides-row"
           />
           <TapEditRow
             label="Accessibility"
@@ -363,6 +372,7 @@ export function Profile(): React.ReactElement {
         onCancel={() => setParkPickerOpen(false)}
       />
       <DebugLogModal visible={logsOpen} onClose={() => setLogsOpen(false)} />
+      <RetiredRidesModal visible={retiredRidesOpen} onClose={() => setRetiredRidesOpen(false)} />
       <Modal
         visible={paywallOpen}
         animationType="slide"

@@ -21,6 +21,7 @@ import {
   syncDailyParks,
   syncMustDoRideIds,
   syncNotificationTypes,
+  syncRetiredRideIds,
 } from '../api';
 import { getOrCreateDeviceId } from '../utils/deviceStorage';
 import {
@@ -35,12 +36,17 @@ import {
   getDebugKeepArmed,
   setDebugKeepArmed as writeDebugKeepArmed,
 } from '../utils/debugKeepArmedStorage';
+import {
+  getRetiredRides,
+  setRetiredRides as writeRetiredRides,
+} from '../utils/retiredRidesStorage';
 import { getNotificationService, PushTokenType } from '../services/notifications';
 import { logError, logInfo } from '../utils/logger';
 import { NotificationKind, NotificationTypes, defaultNotificationTypes } from '../types';
 import { usePersona } from './PersonaContext';
 import { useDailyContext } from './DailyContextContext';
 import { useTrip } from './TripContext';
+import { useAuth } from './AuthContext';
 
 interface DeviceContextValue {
   deviceId: string | null;
@@ -66,6 +72,12 @@ interface DeviceContextValue {
   /** Debug-only: auto-arm + refresh token on every app launch. */
   debugKeepArmed: boolean;
   setDebugKeepArmed: (on: boolean) => Promise<void>;
+  /** Rides swiped "Rode it" — excluded from recs for the rest of the trip. */
+  retiredRideIds: string[];
+  /** Retire a ride for the rest of the trip. */
+  retireRide: (rideId: string) => void;
+  /** Undo a retire (e.g. from the undo toast or the Profile management list). */
+  unretireRide: (rideId: string) => void;
 }
 
 const DeviceContext = createContext<DeviceContextValue | null>(null);
@@ -104,6 +116,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
   const { trip } = useTrip();
+  const { user } = useAuth();
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState<boolean>(false);
   const [armedDate, setArmedDate] = useState<string | null>(null);
@@ -111,28 +124,83 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [debugKeepArmed, setDebugKeepArmedState] = useState(false);
+  const [retiredRideIds, setRetiredRideIdsState] = useState<string[]>([]);
 
   // Resolve the deviceId once on mount — generated on first launch and
   // persisted in AsyncStorage thereafter. Also hydrate cached flags.
+  const lastSeenTripIdRef = useRef<string | null | undefined>(undefined); // undefined = not hydrated yet
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const [id, types, enabled, keepArmed] = await Promise.all([
+      const [id, types, enabled, keepArmed, retired] = await Promise.all([
         getOrCreateDeviceId(),
         getNotificationTypes(),
         readNotificationsEnabled(),
         getDebugKeepArmed(),
+        getRetiredRides(),
       ]);
       if (!cancelled) {
         setDeviceId(id);
         setNotificationTypesState(types);
         setNotificationsEnabled(enabled);
         setDebugKeepArmedState(keepArmed);
+        setRetiredRideIdsState(retired.rideIds);
+        lastSeenTripIdRef.current = retired.tripId;
       }
     })();
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  // Reset retiredRideIds when the active trip changes — a genuinely new
+  // trip.id (not just the initial hydration above, which leaves the ref at
+  // the persisted tripId so a normal relaunch mid-trip isn't mistaken for a
+  // trip change). Covers both this-session trip creation (trip updates once
+  // TripContext refetches after purchase/claim/promo) and a trip created in
+  // a different session (caught by TripContext's foreground refetch).
+  const lastSyncedRetiredRef = useRef<string>('');
+  useEffect(() => {
+    if (lastSeenTripIdRef.current === undefined) return; // not hydrated yet
+    const currentTripId = trip?.id ?? null;
+    if (currentTripId === lastSeenTripIdRef.current) return;
+    lastSeenTripIdRef.current = currentTripId;
+    setRetiredRideIdsState([]);
+    void writeRetiredRides({ tripId: currentTripId, rideIds: [] });
+    if (deviceId) {
+      void withRetry(() => syncRetiredRideIds(deviceId, []), 'syncRetiredRideIds (trip reset)').then(result => {
+        if (result !== null) lastSyncedRetiredRef.current = '';
+      });
+    }
+  }, [trip?.id, deviceId]);
+
+  // Sync retiredRideIds to backend whenever the list changes — same
+  // fingerprint-dedup pattern as mustDoRideIds below.
+  useEffect(() => {
+    if (!deviceId) return;
+    const fingerprint = [...retiredRideIds].sort().join(',');
+    if (fingerprint === lastSyncedRetiredRef.current) return;
+    void withRetry(() => syncRetiredRideIds(deviceId, retiredRideIds), 'syncRetiredRideIds').then(result => {
+      if (result !== null) lastSyncedRetiredRef.current = fingerprint;
+    });
+  }, [deviceId, retiredRideIds]);
+
+  const retireRide = useCallback((rideId: string) => {
+    setRetiredRideIdsState(prev => {
+      if (prev.includes(rideId)) return prev;
+      const next = [...prev, rideId];
+      void writeRetiredRides({ tripId: lastSeenTripIdRef.current ?? null, rideIds: next });
+      return next;
+    });
+  }, []);
+
+  const unretireRide = useCallback((rideId: string) => {
+    setRetiredRideIdsState(prev => {
+      if (!prev.includes(rideId)) return prev;
+      const next = prev.filter(id => id !== rideId);
+      void writeRetiredRides({ tripId: lastSeenTripIdRef.current ?? null, rideIds: next });
+      return next;
+    });
   }, []);
 
   // Auto-arm: when debugKeepArmed is on and the deviceId is ready, silently
@@ -221,6 +289,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
       logInfo(`enableNotifications: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
       await registerDevice({
         deviceId,
+        uid: user?.uid ?? null,
         pushToken: sub?.token ?? null,
         pushTokenType: (sub?.type ?? null) as PushTokenType | null,
         mustDoRideIds: persona?.mustDoRideIds ?? [],
@@ -246,7 +315,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [deviceId, persona]);
+  }, [deviceId, persona, user]);
 
   const disableNotifications = useCallback(async (): Promise<void> => {
     if (!deviceId) return;
@@ -257,6 +326,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     try {
       await registerDevice({
         deviceId,
+        uid: user?.uid ?? null,
         pushToken: null,
         pushTokenType: null,
         mustDoRideIds: persona?.mustDoRideIds ?? [],
@@ -276,7 +346,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setBusy(false);
     }
-  }, [deviceId, persona]);
+  }, [deviceId, persona, user]);
 
   const setNotificationTypeEnabled = useCallback(
     async (kind: NotificationKind, enabled: boolean): Promise<void> => {
@@ -302,6 +372,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     logInfo(`armForToday: token acquired (len ${sub?.token?.length ?? 0})`, 'notif');
     await registerDevice({
       deviceId: id,
+      uid: user?.uid ?? null,
       pushToken: sub?.token ?? null,
       pushTokenType: (sub?.type ?? null) as PushTokenType | null,
       mustDoRideIds: persona?.mustDoRideIds ?? [],
@@ -312,7 +383,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
     const { armedDate: stamped } = await armDeviceForToday(id);
     logInfo(`armForToday: armed for ${stamped}`, 'notif');
     setArmedDate(stamped);
-  }, [persona]);
+  }, [persona, user]);
 
   const armForToday = useCallback(async (): Promise<void> => {
     if (!deviceId) return;
@@ -347,6 +418,9 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         disableNotifications,
         armForToday,
         setNotificationTypeEnabled,
+        retiredRideIds,
+        retireRide,
+        unretireRide,
         debugKeepArmed,
         setDebugKeepArmed,
       }}

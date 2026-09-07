@@ -19,9 +19,19 @@ export type NotificationTypes = Record<NotificationKind, boolean>;
 
 export interface DeviceRecord {
   deviceId: string;
+  // Firebase uid of the account this device last registered under (real or
+  // anonymous). Links this device-scoped record to the uid-scoped `trips`
+  // collection so a new trip can reset retiredRideIds server-side. Null for
+  // devices that registered before this field existed, or that never sent one.
+  uid: string | null;
   pushToken: string | null;
   pushTokenType: PushTokenType | null;
   mustDoRideIds: string[];
+  // Rides swiped "Rode it" — excluded from recs for the rest of the trip.
+  // Unlike mustDoRideIds, this resets (see resetRetiredRideIdsForUid) when
+  // the uid's active trip changes. Client is the primary source of truth for
+  // its own UI; this stored copy is a secondary correctness net.
+  retiredRideIds: string[];
   notificationsEnabled: boolean;
   // YYYY-MM-DD in America/Los_Angeles. Scanner compares to today-PT and
   // skips devices whose armedDate doesn't match — that's the "auto-disarm
@@ -33,6 +43,7 @@ export interface DeviceRecord {
 }
 
 export interface UpsertFields {
+  uid?: string | null;
   pushToken?: string | null;
   pushTokenType?: PushTokenType | null;
   mustDoRideIds?: string[];
@@ -48,9 +59,11 @@ export async function upsertDevice(deviceId: string, fields: UpsertFields): Prom
   if (!existing.exists) {
     await docRef.set({
       deviceId,
+      uid: fields.uid ?? null,
       pushToken: fields.pushToken ?? null,
       pushTokenType: fields.pushTokenType ?? null,
       mustDoRideIds: fields.mustDoRideIds ?? [],
+      retiredRideIds: [],
       notificationsEnabled: fields.notificationsEnabled ?? false,
       armedDate: null,
       tripEnd: fields.tripEnd ?? null,
@@ -76,6 +89,32 @@ export async function setMustDoRideIds(deviceId: string, rideIds: string[]): Pro
     { mustDoRideIds: rideIds, updatedAt: new Date().toISOString() },
     { merge: true }
   );
+}
+
+export async function setRetiredRideIds(deviceId: string, rideIds: string[]): Promise<void> {
+  const db = getFirestore();
+  await db.collection(COLLECTION).doc(deviceId).set(
+    { retiredRideIds: rideIds, updatedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
+// Called right after a new trip is created (claim-free / promo / IAP) so a
+// device's stored retiredRideIds don't survive into the new trip even if the
+// client never runs again on this device (e.g. the trip was created from a
+// different session). Devices that never sent a uid simply won't match —
+// expected for anonymous/debug-only devices, which are out of scope for this
+// reset per product decision.
+export async function resetRetiredRideIdsForUid(uid: string): Promise<void> {
+  const db = getFirestore();
+  const snap = await db.collection(COLLECTION).where('uid', '==', uid).get();
+  if (snap.empty) return;
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  snap.docs.forEach(doc => {
+    batch.set(doc.ref, { retiredRideIds: [], updatedAt: now }, { merge: true });
+  });
+  await batch.commit();
 }
 
 export async function setDailyParks(deviceId: string, dailyParks: DailyParks): Promise<void> {

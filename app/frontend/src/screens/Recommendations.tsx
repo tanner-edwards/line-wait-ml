@@ -24,6 +24,7 @@ import { ApiError, fetchRecommendations } from '../api';
 import { DailyContext, ParkSlug, Persona, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
 import { useAuth } from '../context/AuthContext';
+import { useDevice } from '../context/DeviceContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useLocation } from '../context/LocationContext';
@@ -31,6 +32,7 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
+import { UndoToast } from '../components/UndoToast';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader } from '../components/GradientHeader';
 import { StateBlock } from '../components/StateBlock';
@@ -71,6 +73,7 @@ function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] 
 export function Recommendations(): React.ReactElement {
   const { data, error: waitsError, loading: waitsLoading, ridesById } = useRides();
   const { getIdToken } = useAuth();
+  const { retiredRideIds, retireRide, unretireRide } = useDevice();
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
   const { coords, status, retry, setDebugCoords, clearDebugCoords } = useLocation();
@@ -84,6 +87,7 @@ export function Recommendations(): React.ReactElement {
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [debugPickerOpen, setDebugPickerOpen] = useState(false);
   const [debugPickerDismissed, setDebugPickerDismissed] = useState(false);
+  const [undoToast, setUndoToast] = useState<{ rideId: string; key: number } | null>(null);
 
   const inFlightAbort = useRef<AbortController | null>(null);
   const loadMoreAbort = useRef<AbortController | null>(null);
@@ -145,7 +149,15 @@ export function Recommendations(): React.ReactElement {
     loadMoreAbort.current?.abort();
     try {
       const idToken = await getIdToken();
-      const res = await fetchRecommendations({ park, userLat: lat, userLng: lng, persona, signal: controller.signal, idToken });
+      const res = await fetchRecommendations({
+        park,
+        userLat: lat,
+        userLng: lng,
+        persona,
+        excludeRideIds: retiredRideIds,
+        signal: controller.signal,
+        idToken,
+      });
       if (controller.signal.aborted) return;
       setRecs(res);
     } catch (err) {
@@ -162,7 +174,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen, persona, dailyContext?.parks, getIdToken]);
+  }, [isParkOpen, persona, dailyContext?.parks, getIdToken, retiredRideIds]);
 
   const loadMore = useCallback(async () => {
     if (!recs || !coords) return;
@@ -180,7 +192,7 @@ export function Recommendations(): React.ReactElement {
         userLat: coords.lat,
         userLng: coords.lng,
         persona,
-        excludeRideIds: recs.recommendations.map(r => r.rideId),
+        excludeRideIds: [...recs.recommendations.map(r => r.rideId), ...retiredRideIds],
         signal: controller.signal,
         idToken,
       });
@@ -203,7 +215,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
-  }, [recs, coords, dailyContext, persona, getIdToken]);
+  }, [recs, coords, dailyContext, persona, getIdToken, retiredRideIds]);
 
   const onRefresh = useCallback(() => {
     if (!coords) return;
@@ -262,6 +274,18 @@ export function Recommendations(): React.ReactElement {
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [coordsKey, status, persona, dailyContext?.parks, isParkOpen, runFetch])
   );
+
+  const handleRetire = useCallback((rideId: string) => {
+    retireRide(rideId);
+    setUndoToast({ rideId, key: Date.now() });
+  }, [retireRide]);
+
+  const handleUndoRetire = useCallback(() => {
+    if (undoToast) unretireRide(undoToast.rideId);
+    setUndoToast(null);
+  }, [undoToast, unretireRide]);
+
+  const handleDismissToast = useCallback(() => setUndoToast(null), []);
 
   const handleDebugPickerSubmit = useCallback((_park: ParkSlug, rideId: string) => {
     setDebugPickerOpen(false);
@@ -388,6 +412,7 @@ export function Recommendations(): React.ReactElement {
         <RecsList
           recs={recs}
           ridesById={ridesById}
+          retiredRideIds={retiredRideIds}
           loadingMore={loadingMore}
           loadMoreError={loadMoreError}
           onShowMore={() => void loadMore()}
@@ -403,6 +428,16 @@ export function Recommendations(): React.ReactElement {
               oneLiner: rec.oneLiner ?? null,
             })
           }
+          onRetire={handleRetire}
+        />
+      ) : null}
+
+      {undoToast ? (
+        <UndoToast
+          key={undoToast.key}
+          message="Removed from list · Undo"
+          onUndo={handleUndoRetire}
+          onDismiss={handleDismissToast}
         />
       ) : null}
 
@@ -431,6 +466,7 @@ export function Recommendations(): React.ReactElement {
 function RecsList({
   recs,
   ridesById,
+  retiredRideIds,
   loadingMore,
   loadMoreError,
   onShowMore,
@@ -438,9 +474,11 @@ function RecsList({
   onRefresh,
   debugMode,
   onCardPress,
+  onRetire,
 }: {
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
+  retiredRideIds: string[];
   loadingMore: boolean;
   loadMoreError: string | null;
   onShowMore: () => void;
@@ -448,8 +486,14 @@ function RecsList({
   onRefresh: () => void;
   debugMode: boolean;
   onCardPress: (rec: RecommendationsResponse['recommendations'][number]) => void;
+  onRetire: (rideId: string) => void;
 }): React.ReactElement {
-  if (recs.recommendations.length === 0) {
+  // Defensive filter — the request-level excludeRideIds already keeps
+  // retired rides out of fresh fetches, but this also drops one instantly
+  // from a cached response without waiting on the next fetch.
+  const visibleRecs = recs.recommendations.filter(r => !retiredRideIds.includes(r.rideId));
+
+  if (visibleRecs.length === 0) {
     return (
       <StateBlock
         icon={<CircleAlert size={48} color={colors.textTertiary} />}
@@ -462,16 +506,18 @@ function RecsList({
 
   return (
     <FlatList
-      data={recs.recommendations}
+      data={visibleRecs}
       keyExtractor={r => r.rideId}
       contentContainerStyle={styles.listContent}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      renderItem={({ item }) => (
+      renderItem={({ item, index }) => (
         <RecommendationCard
           rec={item}
           ride={ridesById.get(item.rideId)}
           debugMode={debugMode}
           onPress={() => onCardPress(item)}
+          onRetire={() => onRetire(item.rideId)}
+          isFirst={index === 0}
         />
       )}
       ListHeaderComponent={

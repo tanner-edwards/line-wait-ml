@@ -39,9 +39,9 @@ const RIDE_CATEGORY_TEXT: Record<Exclude<RideCategory, 'first-time'>, string> = 
 
 const ACCESSIBILITY_TEXT: Record<Exclude<AccessibilityNeed, 'none'>, string> = {
   stroller:
-    'Party is traveling with a stroller — flag attractions that require stroller transfer when relevant.',
+    "Party is traveling with a stroller — there's no ride-transfer concern (strollers park outside the queue), but navigating the park with one is slower and more cumbersome: crowds, narrow paths, curbs. Weigh proximity more heavily than usual; a moderate wait improvement rarely justifies more than a short walk.",
   wheelchair:
-    'Party member uses a wheelchair or mobility scooter — avoid attractions that require transferring out of the wheelchair when comparable options exist.',
+    'Party member uses a wheelchair or mobility scooter — avoid attractions that require transferring out of the wheelchair when comparable options exist. Navigating the park is also generally slower; weigh proximity more heavily than usual, and a moderate wait improvement rarely justifies more than a short walk.',
   pregnant:
     'A pregnant guest is in the party — do not recommend severe drops, high-G coasters, spinning rides, or otherwise rough thrills.',
   sensory:
@@ -56,10 +56,10 @@ function ageText(age: number): string {
     return 'All adults in the party — no height restrictions to worry about; the full thrill catalog is available.';
   }
   if (age <= 3) {
-    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences. Long walks between attractions are harder with a toddler in tow — favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 6) {
-    return `Youngest in the party is a young child (age ${age}). Several headliner thrills (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a young child (age ${age}). Several headliner thrills (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks. Long walks between attractions are harder with young kids in tow — favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 12) {
     return `Youngest in the party is age ${age}. Most attractions are accessible; only the very tallest thrills (Indiana Jones at 46", Incredicoaster at 48", Guardians at 42") may be borderline — recommend with care if the child is small for their age.`;

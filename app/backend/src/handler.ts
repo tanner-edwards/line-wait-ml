@@ -61,10 +61,12 @@ import {
   NotificationTypes,
   PUSH_TOKEN_TYPES,
   PushTokenType,
+  resetRetiredRideIdsForUid,
   setArmedDate,
   setDailyParks,
   setMustDoRideIds,
   setNotificationTypes,
+  setRetiredRideIds,
   todayInPT,
   upsertDevice,
 } from './devices/devices';
@@ -462,6 +464,7 @@ type RouteKind =
   | { kind: 'device-register' }
   | { kind: 'device-arm'; deviceId: string }
   | { kind: 'device-must-do'; deviceId: string }
+  | { kind: 'device-retired'; deviceId: string }
   | { kind: 'device-daily-parks'; deviceId: string }
   | { kind: 'device-notification-types'; deviceId: string }
   | { kind: 'device-notifications-list'; deviceId: string }
@@ -507,6 +510,8 @@ function routeFromPath(
     if (armMatch) return { kind: 'device-arm', deviceId: armMatch[1] };
     const mustDoMatch = path.match(/\/v1\/devices\/([^/]+)\/must-do$/);
     if (mustDoMatch) return { kind: 'device-must-do', deviceId: mustDoMatch[1] };
+    const retiredMatch = path.match(/\/v1\/devices\/([^/]+)\/retired$/);
+    if (retiredMatch) return { kind: 'device-retired', deviceId: retiredMatch[1] };
     const dailyParksMatch = path.match(/\/v1\/devices\/([^/]+)\/daily-parks$/);
     if (dailyParksMatch) return { kind: 'device-daily-parks', deviceId: dailyParksMatch[1] };
     const notifTypesMatch = path.match(/\/v1\/devices\/([^/]+)\/notification-types$/);
@@ -601,6 +606,10 @@ export async function handler(
 
   if (route.kind === 'device-must-do') {
     return handleDeviceMustDo(route.deviceId, event);
+  }
+
+  if (route.kind === 'device-retired') {
+    return handleDeviceRetired(route.deviceId, event);
   }
 
   if (route.kind === 'device-daily-parks') {
@@ -812,6 +821,7 @@ async function handleDeviceRegister(
 ): Promise<APIGatewayProxyResult> {
   let body: {
     deviceId?: unknown;
+    uid?: unknown;
     pushToken?: unknown;
     pushTokenType?: unknown;
     mustDoRideIds?: unknown;
@@ -854,9 +864,12 @@ async function handleDeviceRegister(
   const notificationsEnabled =
     typeof body.notificationsEnabled === 'boolean' ? body.notificationsEnabled : undefined;
 
+  const uid = typeof body.uid === 'string' && body.uid.length > 0 ? body.uid : undefined;
+
   try {
     const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
     await upsertDevice(deviceId, {
+      uid,
       pushToken,
       pushTokenType,
       mustDoRideIds,
@@ -906,6 +919,34 @@ async function handleDeviceMustDo(
   try {
     await setMustDoRideIds(deviceId, rideIds);
     return jsonResponse(200, { deviceId, mustDoRideIds: rideIds });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+async function handleDeviceRetired(
+  deviceId: string,
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  if (!deviceId) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'deviceId missing from path'));
+  }
+  let body: { retiredRideIds?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+  if (!Array.isArray(body.retiredRideIds)) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'retiredRideIds must be an array of strings'));
+  }
+  const rideIds = body.retiredRideIds.filter(
+    (x): x is string => typeof x === 'string' && x.length > 0
+  );
+  try {
+    await setRetiredRideIds(deviceId, rideIds);
+    return jsonResponse(200, { deviceId, retiredRideIds: rideIds });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
@@ -1154,6 +1195,9 @@ async function handleClaimFreeTrip(
     if (!userRecord) return jsonResponse(404, errorBody('NOT_FOUND', 'User not found'));
     const trip = await claimFreeTrip(uid, userRecord.appleId, tripStart, tripEnd);
     invalidateEntitlement(uid); // reflect the new trip on the next data poll
+    await resetRetiredRideIdsForUid(uid).catch(err =>
+      console.warn('resetRetiredRideIdsForUid failed after claim-free trip', err)
+    );
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1185,6 +1229,9 @@ async function handlePromoValidate(
   try {
     const trip = await validatePromoCode(uid, code, tripStart, tripEnd);
     invalidateEntitlement(uid); // reflect the new trip on the next data poll
+    await resetRetiredRideIdsForUid(uid).catch(err =>
+      console.warn('resetRetiredRideIdsForUid failed after promo trip', err)
+    );
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1246,6 +1293,9 @@ async function handleTripPurchase(
   try {
     const trip = await purchaseTrip(uid, receiptData, tripStart, tripEnd);
     invalidateEntitlement(uid); // reflect the new trip on the next data poll
+    await resetRetiredRideIdsForUid(uid).catch(err =>
+      console.warn('resetRetiredRideIdsForUid failed after IAP trip purchase', err)
+    );
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

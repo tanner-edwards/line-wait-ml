@@ -66,6 +66,12 @@ export const colors = {
   borderStrong:      'rgba(10,107,90,0.20)',
 } as const;
 
+// Swipe-to-retire ("Rode it") action — slate blue, picked after on-device
+// comparison (none of the locked palette colors above were a clean fit:
+// green is overused, brick red is SKIP, amber gold is the star badge).
+export const retiredAction = '#5C7A99';
+export const retiredActionText = '#F2EDE0';
+
 export const fonts = {
   display:          'Lora_700Bold',
   displaySemiBold:  'Lora_600SemiBold',

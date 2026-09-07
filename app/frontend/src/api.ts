@@ -145,11 +145,12 @@ export async function fetchRecommendations({
 
 interface RegisterDeviceInput {
   deviceId: string;
+  uid?: string | null;
   pushToken: string | null;
   pushTokenType: 'web' | 'expo' | null;
   mustDoRideIds: string[];
   notificationsEnabled: boolean;
-  tripEnd: string | null;
+  tripEnd?: string | null;
 }
 
 export async function registerDevice(input: RegisterDeviceInput): Promise<void> {
@@ -163,6 +164,10 @@ export async function armDeviceForToday(deviceId: string): Promise<{ armedDate: 
 
 export async function syncMustDoRideIds(deviceId: string, mustDoRideIds: string[]): Promise<void> {
   await postJson(`/v1/devices/${encodeURIComponent(deviceId)}/must-do`, { mustDoRideIds });
+}
+
+export async function syncRetiredRideIds(deviceId: string, retiredRideIds: string[]): Promise<void> {
+  await postJson(`/v1/devices/${encodeURIComponent(deviceId)}/retired`, { retiredRideIds });
 }
 
 export async function syncDailyParks(deviceId: string, dailyParks: 'disneyland' | 'california-adventure' | 'both'): Promise<void> {
