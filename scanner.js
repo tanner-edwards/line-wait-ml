@@ -72,7 +72,15 @@ function getFirestore() {
   if (firestoreInstance) return firestoreInstance;
   const blob = process.env.FIREBASE_SERVICE_ACCOUNT;
   if (!blob) throw new Error('FIREBASE_SERVICE_ACCOUNT env var is not set');
-  admin.initializeApp({ credential: admin.credential.cert(JSON.parse(blob)) });
+  const parsed = JSON.parse(blob);
+  // Diagnostic: the backend Lambda and this scanner authenticate via two
+  // independently-configured secrets (deploy.sh reads local firebase-key.json;
+  // this reads the FIREBASE_SERVICE_ACCOUNT GH Actions secret). If they ever
+  // drift to different service accounts/projects, this job would silently
+  // read/write a different Firestore than the app does. Log which project
+  // this run actually resolved so that can be confirmed or ruled out.
+  log('firestore_credential', { projectId: parsed.project_id, clientEmail: parsed.client_email });
+  admin.initializeApp({ credential: admin.credential.cert(parsed) });
   firestoreInstance = admin.firestore();
   return firestoreInstance;
 }

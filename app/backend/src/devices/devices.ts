@@ -71,7 +71,17 @@ export async function upsertDevice(deviceId: string, fields: UpsertFields): Prom
       updatedAt: now,
     });
   } else {
-    await docRef.set({ ...fields, deviceId, updatedAt: now }, { merge: true });
+    // Firestore rejects a document containing an explicit `undefined` value
+    // anywhere in it — and a field a caller simply didn't pass through
+    // (e.g. `uid` from a request body that omitted it) arrives here as
+    // `undefined`, not absent, since UpsertFields spreads straight from the
+    // handler. Drop those keys so an omitted field just leaves the stored
+    // value untouched instead of failing the entire merge write.
+    const updates: Record<string, unknown> = { ...fields, deviceId, updatedAt: now };
+    for (const key of Object.keys(updates)) {
+      if (updates[key] === undefined) delete updates[key];
+    }
+    await docRef.set(updates, { merge: true });
   }
 }
 
