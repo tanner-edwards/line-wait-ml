@@ -448,6 +448,14 @@ async function loadClosureProfiles(db) {
   return map;
 }
 
+// Fingerprint a push token for diagnostics — enough to tell two tokens apart
+// without writing the full delivery credential into CI logs.
+function tokenFingerprint(token) {
+  if (!token) return null;
+  const s = String(token);
+  return `…${s.slice(-12)} (len ${s.length})`;
+}
+
 async function loadArmedDevices(db) {
   const snap = await db.collection('devices')
     .where('notificationsEnabled', '==', true)
@@ -457,15 +465,44 @@ async function loadArmedDevices(db) {
     year: 'numeric', month: '2-digit', day: '2-digit',
   }).format(new Date());
   const list = [];
+  const skippedTripEnded = [];
   snap.forEach(doc => {
     const data = doc.data();
     // Skip devices whose trip has ended. Devices without a tripEnd are legacy
     // records — let them through so existing behavior is unchanged.
-    if (data.tripEnd && data.tripEnd < todayPT) return;
+    if (data.tripEnd && data.tripEnd < todayPT) { skippedTripEnded.push(doc.id); return; }
     // Guarantee deviceId is always present — some older docs were written
     // before the field was added to upsertDevice's create block.
-    list.push({ ...data, deviceId: data.deviceId ?? doc.id });
+    list.push({ ...data, deviceId: data.deviceId ?? doc.id, _docId: doc.id });
   });
+
+  // Diagnostic: a push is addressed by pushToken, not by deviceId. deviceId is
+  // a UUID in the app's AsyncStorage and regenerates whenever that storage is
+  // cleared (reinstall, dev rebuild), while the Expo token is issued per
+  // install and survives it. So one physical handset can own several device
+  // docs sharing a token — and a stale doc left notificationsEnabled=true
+  // keeps delivering to a phone whose current doc is correctly false. Print
+  // per-doc identity and flag shared tokens so that's visible, not inferred.
+  const docIdsByToken = new Map();
+  for (const d of list) {
+    log('armed_device', {
+      docId: d._docId,
+      deviceIdField: d.deviceId,
+      idMismatch: d._docId !== d.deviceId,
+      pushToken: tokenFingerprint(d.pushToken),
+      pushTokenType: d.pushTokenType ?? null,
+      updatedAt: d.updatedAt ?? null,
+      mustDoCount: Array.isArray(d.mustDoRideIds) ? d.mustDoRideIds.length : 0,
+    });
+    if (d.pushToken) {
+      const key = String(d.pushToken);
+      docIdsByToken.set(key, [...(docIdsByToken.get(key) ?? []), d._docId]);
+    }
+  }
+  const sharedTokenGroups = [...docIdsByToken.values()].filter(ids => ids.length > 1);
+  if (sharedTokenGroups.length) log('duplicate_push_tokens', { groups: sharedTokenGroups });
+  if (skippedTripEnded.length) log('skipped_trip_ended', { docIds: skippedTripEnded });
+
   return list;
 }
 
