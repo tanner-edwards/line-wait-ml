@@ -85,6 +85,39 @@ export async function upsertDevice(deviceId: string, fields: UpsertFields): Prom
   }
 }
 
+// A device's identity (deviceId) lives in the app's AsyncStorage, but its push
+// token is issued per install by the OS. Reinstalling the app wipes the former
+// while typically preserving the latter, so the reinstalled app registers as a
+// NEW doc while the OLD one keeps a live, still-deliverable token — and goes on
+// pushing to the same handset regardless of what the user turns off in the new
+// install (their toggle only ever writes their current doc). The scanner can't
+// self-heal this either: its only token cleanup runs on a 404/410 from the push
+// service, which a still-routable token never returns.
+//
+// So whenever a token is claimed, strip it from every other doc holding it and
+// disable them — guaranteeing at most one record can deliver to one handset.
+// Returns the ids that were reclaimed, for logging.
+export async function reclaimPushToken(
+  deviceId: string,
+  pushToken: string
+): Promise<string[]> {
+  const db = getFirestore();
+  const snap = await db.collection(COLLECTION).where('pushToken', '==', pushToken).get();
+  const orphans = snap.docs.filter(doc => doc.id !== deviceId);
+  if (orphans.length === 0) return [];
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  for (const doc of orphans) {
+    batch.set(
+      doc.ref,
+      { pushToken: null, pushTokenType: null, notificationsEnabled: false, updatedAt: now },
+      { merge: true }
+    );
+  }
+  await batch.commit();
+  return orphans.map(doc => doc.id);
+}
+
 export async function setArmedDate(deviceId: string, date: string): Promise<void> {
   const db = getFirestore();
   await db.collection(COLLECTION).doc(deviceId).set(

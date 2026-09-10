@@ -10,6 +10,7 @@ jest.mock('./devices', () => {
   return {
     ...actual,
     upsertDevice: jest.fn().mockResolvedValue(undefined),
+    reclaimPushToken: jest.fn().mockResolvedValue([]),
     setArmedDate: jest.fn().mockResolvedValue(undefined),
     setMustDoRideIds: jest.fn().mockResolvedValue(undefined),
     setRetiredRideIds: jest.fn().mockResolvedValue(undefined),
@@ -91,6 +92,39 @@ describe('POST /v1/devices (register/upsert)', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(mockedDevices.upsertDevice).toHaveBeenCalled();
+  });
+
+  // A reinstall regenerates deviceId but keeps the OS push token, so the old
+  // doc would otherwise keep notifying the same handset forever — the toggle
+  // in the new install only ever writes the new doc. Registering must claim
+  // the token away from any previous owner.
+  it('reclaims the push token from any older device doc', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices', 'POST', {
+        deviceId: 'new-install-id',
+        pushToken: 'ExponentPushToken[xyz]',
+        pushTokenType: 'expo',
+        notificationsEnabled: true,
+      })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.reclaimPushToken).toHaveBeenCalledWith(
+      'new-install-id',
+      'ExponentPushToken[xyz]'
+    );
+  });
+
+  it('does not attempt a reclaim when there is no push token', async () => {
+    const res = await handler(
+      buildEvent('/v1/devices', 'POST', {
+        deviceId: 'abc-123',
+        pushToken: null,
+        pushTokenType: null,
+        notificationsEnabled: false,
+      })
+    );
+    expect(res.statusCode).toBe(200);
+    expect(mockedDevices.reclaimPushToken).not.toHaveBeenCalled();
   });
 
   it('rejects missing deviceId', async () => {

@@ -57,10 +57,15 @@ export async function deleteUserData(uid: string): Promise<void> {
   const tripsSnap = await db.collection('trips').where('uid', '==', uid).get();
   tripsSnap.docs.forEach(doc => batch.delete(doc.ref));
 
-  // Remove device records linked to this user. Devices that were registered
-  // anonymously (no userId field) are left alone — they won't receive auth-
-  // gated notifications after the user deletes their account.
-  const devicesSnap = await db.collection('devices').where('userId', '==', uid).get();
+  // Remove device records linked to this user. The link field is `uid` (see
+  // upsertDevice) — this queried a non-existent `userId` field until 2026-09-09,
+  // which Firestore answers with an empty snapshot rather than an error, so
+  // account deletion silently retained every device record (and its live push
+  // token, meaning deleted accounts kept receiving notifications). Devices that
+  // registered anonymously carry a null uid and are left alone; if a deleted
+  // user's phone opens the app again it simply re-registers with notifications
+  // off.
+  const devicesSnap = await db.collection('devices').where('uid', '==', uid).get();
   devicesSnap.docs.forEach(doc => batch.delete(doc.ref));
 
   await batch.commit();

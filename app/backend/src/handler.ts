@@ -69,6 +69,7 @@ import {
   setRetiredRideIds,
   todayInPT,
   upsertDevice,
+  reclaimPushToken,
 } from './devices/devices';
 
 const CACHE_TTL_MS = 150_000;
@@ -876,6 +877,13 @@ async function handleDeviceRegister(
       notificationsEnabled,
       tripEnd,
     });
+    // Claim this token exclusively — a reinstall generates a fresh deviceId
+    // but keeps the OS push token, orphaning the previous doc with a live
+    // token that keeps notifying this same handset. Runs after the upsert so
+    // the current doc already owns the token and is excluded by id.
+    if (pushToken) {
+      await reclaimPushToken(deviceId, pushToken);
+    }
     return jsonResponse(200, { deviceId, ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';

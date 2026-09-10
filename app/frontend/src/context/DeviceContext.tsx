@@ -140,6 +140,7 @@ export function DeviceProvider({ children }: { children: React.ReactNode }) {
         getRetiredRides(),
       ]);
       if (!cancelled) {
+        logInfo(`deviceId: ${id}`, 'notif');
         setDeviceId(id);
         setNotificationTypesState(types);
         setNotificationsEnabled(enabled);
