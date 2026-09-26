@@ -1,10 +1,12 @@
 // Recommendations screen — v4.
 //
 // Location flow:
-//   GPS ready  → auto-fetch with user coordinates; backend derives nearest ride
-//   GPS denied → "Location access denied" prompt
-//   Out of park → "You don't appear to be in the park" + Retry
-//   Debug mode → ride picker (OPERATING rides only) injects fake GPS coords
+//   GPS ready        → auto-fetch with user coordinates; backend derives nearest ride
+//   Needs permission → priming screen; its button triggers the OS dialog
+//   GPS denied       → iOS won't prompt again, so Settings is the only way back
+//   GPS error        → permission is fine, no fix yet → Retry
+//   Out of park      → "You don't appear to be in the park" + Retry
+//   Debug mode       → ride picker (OPERATING rides only) injects fake GPS coords
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
@@ -36,7 +38,7 @@ import { UndoToast } from '../components/UndoToast';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader } from '../components/GradientHeader';
 import { StateBlock } from '../components/StateBlock';
-import { CircleAlert, Info, LocateFixed, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
+import { CircleAlert, Info, LocateFixed, LocateOff, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
 import { colors, spacing, typography } from '../theme/tokens';
@@ -76,7 +78,7 @@ export function Recommendations(): React.ReactElement {
   const { retiredRideIds, retireRide, unretireRide } = useDevice();
   const { persona } = usePersona();
   const { context: dailyContext } = useDailyContext();
-  const { coords, status, retry, setDebugCoords, clearDebugCoords } = useLocation();
+  const { coords, status, requestPermission, retry, setDebugCoords, clearDebugCoords } = useLocation();
   const { debugMode } = useDebugMode();
   const { openDetail } = useNotificationDetail();
 
@@ -324,14 +326,46 @@ export function Recommendations(): React.ReactElement {
     );
   }
 
+  // Never asked yet (or iOS will still prompt): explain first, then let the
+  // button fire the OS dialog. Must never shortcut to Settings from here.
+  if (!debugMode && status === 'needs-permission') {
+    return (
+      <SafeAreaView style={styles.container} testID="recs-location-permission">
+        <StateBlock
+          icon={<MapPin size={48} color={colors.brand} />}
+          title="Find rides near you"
+          body="Club 32 uses your location to sort rides by how far you are and estimate walk times."
+          action={{ label: 'Enable location', onPress: requestPermission, testID: 'recs-enable-location' }}
+        />
+        <StatusBar style="auto" />
+      </SafeAreaView>
+    );
+  }
+
+  // Declined and iOS won't prompt again — Settings genuinely is the only path.
   if (!debugMode && status === 'denied') {
     return (
       <SafeAreaView style={styles.container} testID="recs-location-denied">
         <StateBlock
           icon={<MapPinOff size={48} color={colors.textTertiary} />}
           title="Location access needed"
-          body="Club 32 uses your location to sort rides by how far you are. Enable it in Settings, then come back."
-          action={{ label: 'Open Settings', onPress: () => void Linking.openSettings(), testID: 'recs-retry-location' }}
+          body="Club 32 uses your location to sort rides by how far you are. Turn it on in Settings, then come back."
+          action={{ label: 'Open Settings', onPress: () => void Linking.openSettings(), testID: 'recs-open-settings' }}
+        />
+        <StatusBar style="auto" />
+      </SafeAreaView>
+    );
+  }
+
+  // Permission is fine — the device just hasn't produced a fix.
+  if (!debugMode && status === 'gps-error') {
+    return (
+      <SafeAreaView style={styles.container} testID="recs-location-error">
+        <StateBlock
+          icon={<LocateOff size={48} color={colors.textTertiary} />}
+          title="Can't find your location"
+          body="We couldn't get a GPS fix. Check that Location Services is on, then try again."
+          action={{ label: 'Try again', onPress: retry, testID: 'recs-retry-location' }}
         />
         <StatusBar style="auto" />
       </SafeAreaView>
@@ -345,7 +379,7 @@ export function Recommendations(): React.ReactElement {
           icon={<MapPin size={48} color={colors.textTertiary} />}
           title="You're outside the park"
           body="Recommendations are based on where you are in the park. Head in and we'll pick up from there."
-          action={{ label: 'Check again', onPress: retry, testID: 'recs-retry-location' }}
+          action={{ label: 'Check again', onPress: retry, testID: 'recs-recheck-location' }}
         />
         <StatusBar style="auto" />
       </SafeAreaView>

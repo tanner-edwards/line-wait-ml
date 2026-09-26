@@ -1,74 +1,43 @@
-// One-time soft prompt explaining why Club 32 wants notifications.
-// Fires after onboarding completes (persona is set) on the user's first
-// launch. Dismissed permanently via AsyncStorage — never shown again.
+// One-time soft prompt explaining why Club 32 wants location, shown on Home
+// after onboarding. The button raises the NATIVE OS dialog — it must never
+// deep-link to Settings. Sending a user who had never been asked to Settings
+// is what got build 1(6) rejected under App Store guideline 5.1.1(iv).
 //
-// Showing a custom screen BEFORE the OS dialog is Apple best practice:
-// if the user denies the OS dialog, iOS never shows it again. A soft
-// prompt lets us make the case first so the "deny" rate drops.
+// Only shown while the OS is still willing to prompt ('needs-permission').
+// Once permission is granted, or permanently denied, there is nothing useful
+// a soft prompt can do — the Recommendations screen handles those states.
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell } from 'lucide-react-native';
+import { MapPin } from 'lucide-react-native';
 import { usePersona } from '../context/PersonaContext';
-import { useDevice } from '../context/DeviceContext';
+import { useLocation } from '../context/LocationContext';
 import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 
-const STORAGE_KEY = 'club32:notifFirstPromptShownV1';
+const STORAGE_KEY = 'club32:locationFirstPromptShownV1';
 
-interface Props {
-  /**
-   * Fires once this prompt is out of the way — dismissed, or decided it won't
-   * show at all. When the user opts in, it waits for the OS notification
-   * dialog to close, so whatever runs next can raise its own alert safely.
-   */
-  onResolved?: () => void;
-}
-
-export function FirstLaunchNotifPrompt({ onResolved }: Props): React.ReactElement {
+export function FirstLaunchLocationPrompt(): React.ReactElement {
   const { persona } = usePersona();
-  const { notificationsEnabled, enableNotifications } = useDevice();
+  const { status, requestPermission } = useLocation();
   const [visible, setVisible] = useState(false);
 
-  const resolvedRef = useRef(false);
-  const onResolvedRef = useRef(onResolved);
-  onResolvedRef.current = onResolved;
-  const resolve = useCallback(() => {
-    if (resolvedRef.current) return;
-    resolvedRef.current = true;
-    onResolvedRef.current?.();
-  }, []);
-
   useEffect(() => {
-    // Wait for onboarding; persona null means the user isn't on Home yet.
     if (!persona) return;
-    if (notificationsEnabled) {
-      resolve();
-      return;
-    }
+    if (status !== 'needs-permission') return;
     void AsyncStorage.getItem(STORAGE_KEY).then(val => {
-      if (val) resolve();
-      else setVisible(true);
+      if (!val) setVisible(true);
     });
-  }, [persona, notificationsEnabled, resolve]);
+  }, [persona, status]);
 
-  const close = () => {
+  const dismiss = () => {
     setVisible(false);
     void AsyncStorage.setItem(STORAGE_KEY, '1');
   };
 
-  const dismiss = () => {
-    close();
-    resolve();
-  };
-
-  const handleEnable = async () => {
-    close();
-    // Resolve only after the OS dialog closes — otherwise the next prompt
-    // raises a second system alert while this one is still up, and iOS
-    // silently drops it.
-    await enableNotifications();
-    resolve();
+  const handleEnable = () => {
+    dismiss();
+    requestPermission();
   };
 
   return (
@@ -76,27 +45,28 @@ export function FirstLaunchNotifPrompt({ onResolved }: Props): React.ReactElemen
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
-            <Bell size={32} color={colors.brand} />
+            <MapPin size={32} color={colors.brand} />
           </View>
 
-          <Text style={styles.title}>Stay ahead of the crowds</Text>
+          <Text style={styles.title}>Find rides near you</Text>
 
           <Text style={styles.body}>
-            Club 32 can alert you the moment your must-do rides hit a short wait — before the crowd catches on.
+            Club 32 uses your location to sort rides by how far you are and estimate walk times, so
+            your next move is the closest good one.
           </Text>
 
           <Pressable
-            onPress={() => void handleEnable()}
+            onPress={handleEnable}
             style={({ pressed }) => [styles.btn, styles.btnPrimary, pressed && styles.pressed]}
-            testID="notif-prompt-enable"
+            testID="location-prompt-enable"
           >
-            <Text style={styles.btnPrimaryText}>Turn on notifications</Text>
+            <Text style={styles.btnPrimaryText}>Enable location</Text>
           </Pressable>
 
           <Pressable
             onPress={dismiss}
             style={({ pressed }) => [styles.btn, styles.btnSecondary, pressed && styles.pressed]}
-            testID="notif-prompt-dismiss"
+            testID="location-prompt-dismiss"
           >
             <Text style={styles.btnSecondaryText}>Not now</Text>
           </Pressable>
