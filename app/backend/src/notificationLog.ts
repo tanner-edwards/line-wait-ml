@@ -8,10 +8,13 @@
 //     currentWait, delivered, deliveryError, plus type-specific fields
 //     (bucket0Wait, rideStats, previousWait, closedAt, durationMs) }
 //
-// The doc holds the LATEST fire per (deviceId, rideId, type). Cooldown
-// overwrites on each new fire, so the history is effectively
-// "last fire per type-and-ride for this device" — not a per-fire audit
-// log. For 2-hour-window display purposes that's the right shape.
+// Append-only: one doc per fire, auto-generated ID. Cooldown state lives
+// separately in `notification_cooldowns` — it previously shared this
+// collection via a `${deviceId}__${rideId}__${type}` doc ID, which made each
+// fire overwrite the last and silently dropped most of the user's history
+// (a 30-min cooldown allows up to 4 fires per ride+type inside the 2-hour
+// display window). Entries are pruned by a Firestore TTL policy on
+// `expiresAt`; nothing in code deletes them.
 
 import { getFirestore } from './firestoreClient';
 
@@ -19,7 +22,7 @@ export interface NotificationLogEntry {
   deviceId: string;
   rideId: string;
   rideName: string | null;
-  type: 'trough' | 'closure' | 'reopen';
+  type: 'trough' | 'closure' | 'reopen' | 'peak';
   badge: 'star' | 'go' | null;
   firedAt: string;
   expiresAt: string;
@@ -38,9 +41,21 @@ export interface NotificationLogEntry {
   durationMs?: number | null;
 }
 
+// Caps how many entries one history request can read. Well above what the
+// 2-hour window can realistically hold, so it acts as a runaway guard rather
+// than a visible limit.
+const MAX_ENTRIES = 100;
+
 /**
  * Returns recent notifications for the given device, sorted by firedAt
  * descending. `withinMs` filters out anything older (default 2 hours).
+ *
+ * The date filter and ordering are applied server-side: this collection is
+ * append-only and never pruned in code, so an unfiltered read would fetch
+ * every notification the device has ever received (billed per doc) just to
+ * display the last couple of hours.
+ *
+ * Requires a composite index on (deviceId ASC, firedAt DESC).
  */
 export async function loadDeviceNotifications(
   deviceId: string,
@@ -48,18 +63,21 @@ export async function loadDeviceNotifications(
   now: Date = new Date()
 ): Promise<NotificationLogEntry[]> {
   const db = getFirestore();
+  const cutoffIso = new Date(now.getTime() - withinMs).toISOString();
   const snap = await db.collection('notification_log')
     .where('deviceId', '==', deviceId)
+    .where('firedAt', '>=', cutoffIso)
+    .orderBy('firedAt', 'desc')
+    .limit(MAX_ENTRIES)
     .get();
-  const cutoff = now.getTime() - withinMs;
   const entries: NotificationLogEntry[] = [];
   snap.forEach(doc => {
     const d = doc.data() as NotificationLogEntry;
-    const ts = new Date(d.firedAt).getTime();
-    if (Number.isFinite(ts) && ts >= cutoff) {
-      entries.push(d);
-    }
+    // A log entry is written even when the push failed, so that a delivery
+    // error is recoverable for debugging. Don't show the user history for a
+    // notification that never reached them.
+    if (d.delivered === false) return;
+    entries.push(d);
   });
-  entries.sort((a, b) => b.firedAt.localeCompare(a.firedAt));
   return entries;
 }

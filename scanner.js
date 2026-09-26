@@ -461,28 +461,40 @@ async function loadArmedDevices(db) {
   return list;
 }
 
-// Cooldown check via a deterministic doc ID per (deviceId, rideId, type).
-// The doc holds the LATEST fire — each new fire overwrites it. This avoids
-// the composite index a multi-equality query would otherwise need, and
-// reduces cooldown checks to a single `get()`.
+const COOLDOWN_MS = 30 * 60_000;
+
+// Cooldown state lives in its own collection, separate from notification_log.
+// It wants exactly one latest-fire record per (deviceId, rideId, type), which
+// a deterministic doc ID gives us in a single `get()` with no composite index.
+// notification_log wants the opposite — every fire preserved — so the two
+// can't share storage: keying the log this way made each fire overwrite the
+// previous one, and with a 30-min cooldown inside a 2-hour display window that
+// silently dropped up to 3 of every 4 entries from the user's history.
 function cooldownDocId(deviceId, rideId, type) {
   return `${deviceId}__${rideId}__${type}`;
 }
 
 async function isWithinCooldown(db, deviceId, rideId, type) {
-  const doc = await db.collection('notification_log').doc(cooldownDocId(deviceId, rideId, type)).get();
+  const doc = await db.collection('notification_cooldowns').doc(cooldownDocId(deviceId, rideId, type)).get();
   if (!doc.exists) return false;
   const firedAt = doc.data()?.firedAt;
   if (!firedAt) return false;
-  return Date.now() - new Date(firedAt).getTime() < 30 * 60_000;
+  return Date.now() - new Date(firedAt).getTime() < COOLDOWN_MS;
 }
 
+async function writeCooldown(db, deviceId, rideId, type, firedAt) {
+  await db.collection('notification_cooldowns')
+    .doc(cooldownDocId(deviceId, rideId, type))
+    .set({ deviceId, rideId, type, firedAt });
+}
+
+// Append-only: one doc per fire, auto-generated ID. `expiresAt` on each entry
+// is what a Firestore TTL policy deletes — nothing in code prunes this.
 async function writeNotificationLog(db, entry) {
-  const docId = cooldownDocId(entry.deviceId, entry.rideId, entry.type);
   // Firestore rejects `undefined` anywhere in the document. Strip
-  // (rather than convert to null) so absent fields stay absent on
-  // overwrite — keeps the schema clean as we add/remove extras.
-  await db.collection('notification_log').doc(docId).set(stripUndefined(entry));
+  // (rather than convert to null) so absent fields stay absent —
+  // keeps the schema clean as we add/remove extras.
+  await db.collection('notification_log').add(stripUndefined(entry));
 }
 
 function stripUndefined(value) {
@@ -573,8 +585,9 @@ async function sendExpoPush(device, payload) {
 // Sends a push to the device. Routes on pushTokenType:
 //   'expo' → Expo Push API (APNs via Expo's service)
 //   'web'  → VAPID Web Push
-// Returns { sent, reason, expired? }. Failures don't throw — the caller
-// still writes notification_log so cooldown applies.
+// Returns { sent, reason, expired? }. Failures don't throw — the caller still
+// records the cooldown either way, so a failing device isn't retried every
+// tick, and still logs the attempt with its deliveryError.
 async function sendPush(device, payload) {
   if (device.pushTokenType === 'expo') {
     return sendExpoPush(device, payload);
@@ -644,8 +657,9 @@ function buildDigestPayload(category, rideNames, rideIds) {
   };
 }
 
-// Fire one push for multiple rides in the same category. Writes individual
-// notification_log entries per ride (for cooldown + history sheet display).
+// Fire one push for multiple rides in the same category. Writes a per-ride
+// notification_log entry (so history shows each ride individually) plus a
+// per-ride cooldown record.
 async function fireDigestGroup(db, device, category, items) {
   const { deviceId } = device;
   const firedAt = new Date().toISOString();
@@ -679,6 +693,9 @@ async function fireDigestGroup(db, device, category, items) {
       deliveryError: result.sent ? null : result.reason,
       ...extra,
     }));
+    // Cooldown is per (device, ride, type) even though the push was a single
+    // digest — each ride in the group must independently wait out its window.
+    await writeCooldown(db, deviceId, currentRide.rideId, type, firedAt);
   }
 
   log('fired_digest', {
@@ -734,6 +751,7 @@ async function fireNotification({ db, device, currentRide, type, badge = null, e
     deliveryError: result.sent ? null : result.reason,
     ...extra,
   });
+  await writeCooldown(db, deviceId, rideId, type, firedAt);
   if (result.expired) {
     await nullDeviceToken(db, deviceId);
     log('expired_subscription', { deviceId, rideId });
