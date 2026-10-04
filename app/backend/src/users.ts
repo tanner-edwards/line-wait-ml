@@ -2,7 +2,10 @@
 // All functions assume the caller has already verified the Firebase ID token
 // and extracted a valid uid.
 
+import * as crypto from 'crypto';
+import * as admin from 'firebase-admin';
 import { getFirestore } from './firestoreClient';
+import { revokeRefreshToken } from './appleAuth';
 import { PromoCode, TripRecord, UserRecord, UserResponse } from './types';
 
 export async function upsertUser(
@@ -47,8 +50,25 @@ export async function getTrip(uid: string): Promise<TripRecord | null> {
   return snap.empty ? null : (snap.docs[0].data() as TripRecord);
 }
 
+export async function setAppleRefreshToken(uid: string, refreshToken: string): Promise<void> {
+  await getFirestore().collection('users').doc(uid).update({ appleRefreshToken: refreshToken });
+}
+
 export async function deleteUserData(uid: string): Promise<void> {
   const db = getFirestore();
+
+  // Revoke the Sign in with Apple grant before the record holding the token
+  // goes away. Apple has required this on account deletion since June 2022.
+  // A failure here is logged, never fatal — blocking deletion would be the
+  // worse violation.
+  const existing = await getUser(uid);
+  if (existing?.appleRefreshToken) {
+    const revoked = await revokeRefreshToken(existing.appleRefreshToken);
+    if (!revoked) {
+      console.warn('[deleteUserData] Apple token revocation did not succeed', { uid });
+    }
+  }
+
   const batch = db.batch();
 
   batch.delete(db.collection('users').doc(uid));
@@ -69,21 +89,41 @@ export async function deleteUserData(uid: string): Promise<void> {
   devicesSnap.docs.forEach(doc => batch.delete(doc.ref));
 
   await batch.commit();
+
+  // Remove the Firebase Auth user too. Without this the identity survives, so
+  // signing back in with the same Apple ID lands on a live uid whose records
+  // are gone — and "permanently removes your account" wasn't true.
+  try {
+    await admin.auth().deleteUser(uid);
+  } catch (err) {
+    console.warn('[deleteUserData] Firebase Auth user deletion failed', { uid, err });
+  }
+}
+
+/**
+ * Ledger key for the one-free-trip rule.
+ *
+ * Hashed so the retained entry isn't itself an identifier — account deletion
+ * leaves this behind deliberately, and the privacy policy says so.
+ */
+export function freeTripLedgerKey(appleSub: string): string {
+  return crypto.createHash('sha256').update(appleSub).digest('hex');
 }
 
 export async function claimFreeTrip(
   uid: string,
-  appleId: string,
+  appleSub: string,
   tripStart: string,
   tripEnd: string
 ): Promise<TripRecord> {
   const db = getFirestore();
   const userRef = db.collection('users').doc(uid);
-  const claimedRef = db.collection('claimedFreeTrips').doc(appleId);
+  const claimedRef = db.collection('claimedFreeTrips').doc(freeTripLedgerKey(appleSub));
 
-  // Check both the user record AND the durable appleId ledger. The user record
-  // is deleted on account deletion, so it alone can't prevent re-claim after
-  // a delete + re-signup with the same Apple ID.
+  // Check both the user record AND the durable ledger. The user record is
+  // deleted on account deletion, so it alone can't prevent a re-claim after
+  // delete + re-signup — and the uid changes on re-signup, which is why the
+  // ledger keys on Apple's identifier instead.
   const [userSnap, claimedSnap] = await Promise.all([userRef.get(), claimedRef.get()]);
 
   if (!userSnap.exists) throw new Error('User not found');

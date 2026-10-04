@@ -12,6 +12,7 @@ import {
   isTripActive,
   stripPremiumFromRide,
   resolveEntitlement,
+  verifyAuthClaims,
   _resetEntitlementCacheForTests,
 } from './entitlement';
 import { getUser, getTrip } from './users';
@@ -156,6 +157,24 @@ describe('resolveEntitlement', () => {
   it('is false when the token fails verification', async () => {
     mockVerifyIdToken.mockRejectedValue(new Error('bad token'));
     expect(await resolveEntitlement(eventWithToken('xyz'))).toBe(false);
+  });
+
+  // The free-trip ledger keys on this. It has to come off the verified token,
+  // never the request body, or a caller can mint a new key per claim.
+  it('surfaces Apple identity from the verified token', async () => {
+    mockVerifyIdToken.mockResolvedValue({
+      uid: 'u-apple',
+      firebase: {
+        sign_in_provider: 'apple.com',
+        identities: { 'apple.com': ['001234.abcdef.5678'] },
+      },
+    });
+    expect((await verifyAuthClaims(eventWithToken('t')))?.appleSub).toBe('001234.abcdef.5678');
+  });
+
+  it('reports no Apple identity for anonymous sign-ins', async () => {
+    mockVerifyIdToken.mockResolvedValue({ uid: 'anon', firebase: { sign_in_provider: 'anonymous' } });
+    expect((await verifyAuthClaims(eventWithToken('t')))?.appleSub).toBeNull();
   });
 
   it('anonymous → free tier unless ALLOW_ANONYMOUS_PREMIUM=true', async () => {

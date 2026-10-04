@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   SafeAreaView,
   ScrollView,
@@ -28,6 +29,7 @@ import {
   requestPurchase,
 } from 'expo-iap';
 import { checkPromoCode, purchaseTrip, validatePromoCode } from '../api';
+import { PRIVACY_POLICY_URL, TERMS_URL } from '../legal';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
@@ -293,9 +295,30 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
           {promoError ? <Text style={styles.promoError}>{promoError}</Text> : null}
         </View>
 
+        {/* Deliberately no "manage in Settings → Subscriptions" line: the trip
+            is a consumable, so it never appears there and the pointer only
+            confuses people into looking for something to cancel. */}
         <Text style={styles.legal}>
-          Payment processed securely via Apple. No subscription — each trip is a separate purchase.
-          {Platform.OS === 'ios' ? ' Purchases managed in Settings → Apple ID → Subscriptions.' : ''}
+          Payment processed securely via Apple. No subscription — each trip is a separate
+          purchase, so there's nothing to cancel or renew.
+        </Text>
+
+        <Text style={styles.legal}>
+          <Text
+            style={styles.legalLink}
+            onPress={() => void Linking.openURL(TERMS_URL)}
+            accessibilityRole="link"
+          >
+            Terms of Service
+          </Text>
+          {'   ·   '}
+          <Text
+            style={styles.legalLink}
+            onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
+            accessibilityRole="link"
+          >
+            Privacy Policy
+          </Text>
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -464,5 +487,9 @@ const styles = StyleSheet.create({
     color: colors.textTertiary,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  legalLink: {
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
   },
 });

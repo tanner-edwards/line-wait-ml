@@ -88,6 +88,10 @@
     <td>Purchase history</td>
     <td>Records of trip-access purchases (processed by Apple) or promo codes redeemed, used to unlock the app's full features for your trip dates.</td>
   </tr>
+  <tr>
+    <td>Trip preferences</td>
+    <td>Answers you give during onboarding — trip length, the age of the youngest person in your party, ride types you prefer, must-do rides, and any accessibility needs you select (stroller, wheelchair, pregnancy, or sensory sensitivity). Used to tailor which rides are recommended and in what order. You can change or clear these at any time in Profile.</td>
+  </tr>
 </table>
 
 <p>
@@ -100,6 +104,7 @@
 <ul>
   <li><strong>Apple</strong> processes all in-app purchases directly; we never see your payment details.</li>
   <li><strong>Firebase (Google Cloud)</strong> stores your account and trip records as our infrastructure provider, under their standard data processing terms.</li>
+  <li><strong>Amazon Web Services</strong> processes your location and trip preferences through Amazon Bedrock to generate the plain-language recommendations the app shows you. This data is not used to train models and is not retained after the recommendation is returned.</li>
   <li>We do not sell personal information or share it with third parties for their own marketing purposes.</li>
 </ul>
 
@@ -107,14 +112,16 @@
 <ul>
   <li>Location access can be turned off any time in iOS Settings → Privacy → Location Services. The app will still work, but walk-time and location-based recommendations won't be available.</li>
   <li>Notifications can be disabled in iOS Settings → Notifications.</li>
-  <li>You can request deletion of your account and associated data at any time by contacting us below.</li>
+  <li>You can delete your account at any time from Profile → Delete account. This removes your account record, trip history, and device records, and revokes the app's Sign in with Apple access. We keep one thing: a one-way hash of your Apple ID, recording that a free trip was already claimed so the same person can't claim another. It can't be reversed to identify you, and it isn't used for anything else. You can also email us if you'd prefer we do it for you.</li>
 </ul>
 
 <h2>Data Retention</h2>
 <p>
-  We retain account and trip data for as long as your account is active, or until you request
-  deletion. Location data sent with a request is used to generate that request's response and
-  is not retained as part of your permanent account record.
+  We retain account and trip data for as long as your account is active, or until you delete
+  your account. Location data sent with a request is used to generate that request's response
+  and is not retained as part of your permanent account record. The one exception to deletion
+  is the one-way hash described under "Your Choices," which we keep to prevent repeat free-trip
+  claims.
 </p>
 
 <h2>Children's Privacy</h2>

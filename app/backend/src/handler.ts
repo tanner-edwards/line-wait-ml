@@ -45,7 +45,8 @@ import {
   UserResponse,
   FeedbackRecord,
 } from './types';
-import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode } from './users';
+import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode, setAppleRefreshToken } from './users';
+import { exchangeAuthorizationCode } from './appleAuth';
 import { submitFeedback } from './feedback';
 import {
   resolveEntitlement,
@@ -472,6 +473,7 @@ type RouteKind =
   | { kind: 'user-upsert' }
   | { kind: 'user-me' }
   | { kind: 'user-delete' }
+  | { kind: 'user-apple-auth' }
   | { kind: 'user-trip' }
   | { kind: 'user-trip-claim-free' }
   | { kind: 'user-trip-purchase' }
@@ -500,6 +502,9 @@ function routeFromPath(
     }
     if (path.endsWith('/v1/promo/validate')) {
       return { kind: 'promo-validate' };
+    }
+    if (path.endsWith('/v1/users/apple-auth')) {
+      return { kind: 'user-apple-auth' };
     }
     if (path.endsWith('/v1/feedback')) {
       return { kind: 'feedback-submit' };
@@ -571,6 +576,10 @@ export async function handler(
 
   if (route.kind === 'user-delete') {
     return handleUserDelete(event);
+  }
+
+  if (route.kind === 'user-apple-auth') {
+    return handleUserAppleAuth(event);
   }
 
   if (route.kind === 'user-trip') {
@@ -1039,16 +1048,21 @@ async function handleDeviceDailyParks(
 async function handleUserUpsert(
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> {
-  const uid = await verifyAuth(event);
-  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+  const claims = await verifyAuthClaims(event);
+  if (!claims) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+  const uid = claims.uid;
 
-  let body: { appleId?: unknown; email?: unknown };
+  let body: { email?: unknown };
   try {
     body = JSON.parse(event.body ?? '{}');
   } catch {
     return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
   }
-  const appleId = typeof body.appleId === 'string' ? body.appleId : uid;
+  // `appleId` in the body is ignored. It used to be stored verbatim and then
+  // used as the free-trip ledger key, so posting a new value bought another
+  // free trip. Anonymous (web) sign-ins have no Apple identity and fall back
+  // to the uid — they can't claim free trips at all.
+  const appleId = claims.appleSub ?? uid;
   const email = typeof body.email === 'string' ? body.email : null;
 
   try {
@@ -1106,6 +1120,40 @@ async function handleUserDelete(
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+// Exchanges Apple's one-time authorization code for a refresh token and stores
+// it, so account deletion can revoke the Sign in with Apple grant later.
+// Always reports success: a user whose token can't be stored must still be able
+// to sign in, and the failure is logged server-side.
+async function handleUserAppleAuth(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let authorizationCode: unknown;
+  try {
+    authorizationCode = (JSON.parse(event.body ?? '{}') as { authorizationCode?: unknown })
+      .authorizationCode;
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Invalid JSON body'));
+  }
+
+  if (typeof authorizationCode !== 'string' || !authorizationCode) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'authorizationCode is required'));
+  }
+
+  try {
+    const refreshToken = await exchangeAuthorizationCode(authorizationCode);
+    if (refreshToken) {
+      await setAppleRefreshToken(uid, refreshToken);
+    }
+    return jsonResponse(200, { stored: refreshToken !== null });
+  } catch (err) {
+    console.warn('[handleUserAppleAuth] failed to store Apple refresh token', { uid, err });
+    return jsonResponse(200, { stored: false });
   }
 }
 
@@ -1182,8 +1230,20 @@ async function handleFeedbackSubmit(
 async function handleClaimFreeTrip(
   event: APIGatewayProxyEvent
 ): Promise<APIGatewayProxyResult> {
-  const uid = await verifyAuth(event);
-  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+  const claims = await verifyAuthClaims(event);
+  if (!claims) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+  const uid = claims.uid;
+
+  // The ledger key has to come from the token, never the request body or the
+  // stored user record — both are ultimately caller-chosen, and a fresh value
+  // meant a fresh free trip. No Apple identity means no durable key, so refuse
+  // rather than fall back to the uid, which a delete + re-signup rotates.
+  if (!claims.appleSub) {
+    return jsonResponse(
+      403,
+      errorBody('APPLE_SIGN_IN_REQUIRED', 'Free trips require signing in with Apple')
+    );
+  }
 
   let body: { tripStart?: unknown; tripEnd?: unknown };
   try {
@@ -1201,7 +1261,7 @@ async function handleClaimFreeTrip(
   try {
     const userRecord = await getUser(uid);
     if (!userRecord) return jsonResponse(404, errorBody('NOT_FOUND', 'User not found'));
-    const trip = await claimFreeTrip(uid, userRecord.appleId, tripStart, tripEnd);
+    const trip = await claimFreeTrip(uid, claims.appleSub, tripStart, tripEnd);
     invalidateEntitlement(uid); // reflect the new trip on the next data poll
     await resetRetiredRideIdsForUid(uid).catch(err =>
       console.warn('resetRetiredRideIdsForUid failed after claim-free trip', err)

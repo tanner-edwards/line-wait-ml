@@ -66,6 +66,38 @@ Parameters:
       Leave blank to skip the alarm + SNS topic entirely. Confirms via AWS
       verification email after first deploy.
 
+  AppleTeamId:
+    Type: String
+    Default: ''
+    Description: >
+      Apple Developer Team ID. With AppleKeyId/ApplePrivateKey/AppleClientId,
+      lets account deletion revoke the user's Sign in with Apple grant, which
+      Apple has required since June 2022 (guideline 5.1.1(v)). Leave blank and
+      deletion still works — it just skips revocation and logs a warning.
+
+  AppleKeyId:
+    Type: String
+    Default: ''
+    Description: >
+      Key ID of the "Sign in with Apple" key (Certificates, Identifiers &
+      Profiles → Keys). Pairs with ApplePrivateKey.
+
+  ApplePrivateKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: >
+      Contents of the .p8 private key for the Sign in with Apple key, as a
+      single line with literal \n in place of newlines. Used only to sign the
+      short-lived client secret sent to appleid.apple.com.
+
+  AppleClientId:
+    Type: String
+    Default: 'com.tannere.club32'
+    Description: >
+      Apple client_id for token exchange and revocation. For a native iOS app
+      this is the bundle identifier, not a Services ID.
+
   AppleSharedSecret:
     Type: String
     NoEcho: true
@@ -162,6 +194,10 @@ Resources:
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_REGION: !Ref BedrockRegion
           APPLE_SHARED_SECRET: !Ref AppleSharedSecret
+          APPLE_TEAM_ID: !Ref AppleTeamId
+          APPLE_KEY_ID: !Ref AppleKeyId
+          APPLE_PRIVATE_KEY: !Ref ApplePrivateKey
+          APPLE_CLIENT_ID: !Ref AppleClientId
       Events:
         Combined:
           Type: Api
@@ -273,6 +309,14 @@ Resources:
             RestApiId: !Ref WaitsApi
             Path: /v1/users/me
             Method: get
+            Auth:
+              ApiKeyRequired: true
+        UserAppleAuth:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/apple-auth
+            Method: post
             Auth:
               ApiKeyRequired: true
         UserDelete:

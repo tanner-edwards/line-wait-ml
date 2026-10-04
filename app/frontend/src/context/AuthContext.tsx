@@ -53,7 +53,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }): React
     try {
       const token = await firebaseUser.getIdToken();
       const record = await createOrFetchUser(token, {
-        appleId: firebaseUser.uid,
         email: firebaseUser.email ?? null,
       });
       setUserRecord(record);

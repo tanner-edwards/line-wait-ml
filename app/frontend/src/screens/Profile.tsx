@@ -10,6 +10,7 @@ import React, { useState } from 'react';
 import {
   Alert,
   LayoutAnimation,
+  Linking,
   Modal,
   Pressable,
   SafeAreaView,
@@ -18,6 +19,12 @@ import {
   Text,
   View,
 } from 'react-native';
+import {
+  PRIVACY_POLICY_URL,
+  SUPPORT_URL,
+  TERMS_URL,
+  THEMEPARKS_WIKI_URL,
+} from '../legal';
 import { PaywallScreen } from './PaywallScreen';
 import { FeedbackScreen } from './FeedbackScreen';
 import { usePersona } from '../context/PersonaContext';
@@ -46,7 +53,7 @@ import { ToggleRow } from '../components/ToggleRow';
 import { GradientHeader } from '../components/GradientHeader';
 import { SectionHeader } from '../components/SectionHeader';
 import { Card } from '../components/Card';
-import { colors, spacing } from '../theme/tokens';
+import { colors, spacing, typography } from '../theme/tokens';
 
 const TRIP_DURATION_LABELS: Record<TripDuration, string> = {
   '1-day': '1 day',
@@ -304,7 +311,7 @@ export function Profile(): React.ReactElement {
             onPress={() => {
               Alert.alert(
                 'Delete account',
-                'This permanently removes your account, trip history, and device records. This cannot be undone.',
+                "This removes your account, trip history, and device records, and revokes Club 32's access to your Apple ID. We keep only an anonymous marker recording that a free trip was already claimed. This cannot be undone.",
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {
@@ -363,6 +370,55 @@ export function Profile(): React.ReactElement {
           </>
         ) : null}
 
+        {/* Foot of the settings list — the conventional home for legal text,
+            and deliberately not somewhere it competes with the actual app.
+            The attribution is a condition of the themeparks.wiki license. */}
+        <View style={styles.footer}>
+          <Text style={styles.footerLinks}>
+            <Text
+              style={styles.footerLink}
+              onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
+              accessibilityRole="link"
+            >
+              Privacy Policy
+            </Text>
+            {'   ·   '}
+            <Text
+              style={styles.footerLink}
+              onPress={() => void Linking.openURL(TERMS_URL)}
+              accessibilityRole="link"
+            >
+              Terms
+            </Text>
+            {'   ·   '}
+            <Text
+              style={styles.footerLink}
+              onPress={() => void Linking.openURL(SUPPORT_URL)}
+              accessibilityRole="link"
+            >
+              Support
+            </Text>
+          </Text>
+
+          <Text style={styles.footerNote}>
+            Wait time data powered by{' '}
+            <Text
+              style={styles.footerLink}
+              onPress={() => void Linking.openURL(THEMEPARKS_WIKI_URL)}
+              accessibilityRole="link"
+            >
+              ThemeParks.wiki
+            </Text>
+            .
+          </Text>
+
+          <Text style={styles.footerNote}>
+            Club 32 is an independent app and is not affiliated with, endorsed by, or sponsored
+            by The Walt Disney Company. Park and attraction names are trademarks of their
+            respective owners and are used for identification only.
+          </Text>
+        </View>
+
       </ScrollView>
 
       <PersonaFieldModal field={editing} onClose={() => setEditing(null)} />
@@ -398,6 +454,26 @@ export function Profile(): React.ReactElement {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: spacing.base, paddingTop: spacing.sm, paddingBottom: spacing.xxxl },
+  footer: {
+    marginTop: spacing.xl,
+    paddingHorizontal: spacing.sm,
+    gap: spacing.sm,
+  },
+  footerLinks: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    textAlign: 'center',
+  },
+  footerLink: {
+    color: colors.textSecondary,
+    textDecorationLine: 'underline',
+  },
+  footerNote: {
+    ...typography.caption,
+    color: colors.textTertiary,
+    textAlign: 'center',
+    lineHeight: 15,
+  },
   sectionCard: { marginBottom: spacing.xl },
   debugSectionCard: { marginBottom: spacing.xl, borderColor: colors.borderStrong },
   resetRow: {

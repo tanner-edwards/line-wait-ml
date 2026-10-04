@@ -354,6 +354,10 @@ export interface UserRecord {
   freeTripClaimed: boolean;
   bypass: boolean;
   debugMode: boolean;
+  // Apple refresh token, kept solely so account deletion can revoke the user's
+  // Sign in with Apple grant. Never include this in a UserResponse — both
+  // response builders enumerate fields explicitly, keep it that way.
+  appleRefreshToken?: string | null;
 }
 
 export interface TripRecord {

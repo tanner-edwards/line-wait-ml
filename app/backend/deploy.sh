@@ -130,6 +130,33 @@ else
   echo "==> AllowAnonymousPremium=false — anonymous users get free tier only."
 fi
 
+# Sign in with Apple revocation (guideline 5.1.1(v): deleting an account must
+# also revoke the user's Apple grant). All optional — leave them unset and the
+# stack keeps the template's empty defaults, account deletion still works, and
+# the backend logs that it skipped revocation.
+#
+# Set before running this script:
+#   APPLE_TEAM_ID=ABCDE12345
+#   APPLE_KEY_ID=XYZ9876543
+#   APPLE_PRIVATE_KEY_PATH=/path/to/AuthKey_XYZ9876543.p8
+[[ -n "$APPLE_TEAM_ID" ]] && PARAMETER_OVERRIDES+=("AppleTeamId=$APPLE_TEAM_ID")
+[[ -n "$APPLE_KEY_ID" ]] && PARAMETER_OVERRIDES+=("AppleKeyId=$APPLE_KEY_ID")
+if [[ -n "$APPLE_PRIVATE_KEY_PATH" ]]; then
+  if [[ ! -f "$APPLE_PRIVATE_KEY_PATH" ]]; then
+    echo "Error: APPLE_PRIVATE_KEY_PATH set but $APPLE_PRIVATE_KEY_PATH not found. Aborting." >&2
+    exit 1
+  fi
+  # base64 for the same reason as the Firebase key: the raw PEM's newlines and
+  # '=' padding break SAM's Key=Value shorthand. appleAuth.ts decodes it.
+  APPLE_PRIVATE_KEY_B64=$(base64 < "$APPLE_PRIVATE_KEY_PATH" | tr -d '\n')
+  PARAMETER_OVERRIDES+=("ApplePrivateKey=$APPLE_PRIVATE_KEY_B64")
+fi
+if [[ -n "$APPLE_TEAM_ID" && -n "$APPLE_KEY_ID" && -n "$APPLE_PRIVATE_KEY_PATH" ]]; then
+  echo "==> Sign in with Apple revocation configured."
+else
+  echo "==> Sign in with Apple revocation NOT configured — deletion will skip it."
+fi
+
 echo "==> sam deploy"
 sam deploy \
   --parameter-overrides "${PARAMETER_OVERRIDES[@]}" \

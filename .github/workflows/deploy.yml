@@ -59,20 +59,42 @@ jobs:
         working-directory: app/backend
         env:
           FIREBASE_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
+          APPLE_PRIVATE_KEY_PEM: ${{ secrets.APPLE_PRIVATE_KEY }}
         run: |
           FIREBASE_JSON_B64=$(echo "$FIREBASE_JSON" | base64 -w 0)
+
+          PARAMS=(
+            "ApiKeyValue=${{ secrets.CLUB32_API_KEY }}"
+            "CorsOrigin=${{ steps.cors.outputs.origin }}"
+            "FirebaseServiceAccountJson=$FIREBASE_JSON_B64"
+            "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}"
+            "AllowAnonymousPremium=${{ github.event.inputs.allow_anonymous_premium }}"
+          )
+
+          # Sign in with Apple revocation (guideline 5.1.1(v)). These must be
+          # passed on EVERY deploy: parameters left out of --parameter-overrides
+          # can fall back to the template's empty defaults, which would silently
+          # disable revocation on the next run of this workflow. base64 for the
+          # same reason as the Firebase key — a raw PEM's newlines and '='
+          # padding break SAM's Key=Value shorthand.
+          if [[ -n "$APPLE_TEAM_ID" && -n "$APPLE_KEY_ID" && -n "$APPLE_PRIVATE_KEY_PEM" ]]; then
+            PARAMS+=("AppleTeamId=$APPLE_TEAM_ID")
+            PARAMS+=("AppleKeyId=$APPLE_KEY_ID")
+            PARAMS+=("ApplePrivateKey=$(printf '%s' "$APPLE_PRIVATE_KEY_PEM" | base64 -w 0)")
+            echo "==> Sign in with Apple revocation configured."
+          else
+            echo "==> WARNING: Apple revocation secrets missing — account deletion will NOT revoke Apple tokens."
+          fi
+
           sam deploy \
             --stack-name club32-backend \
             --region us-west-2 \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --s3-prefix club32-backend \
-            --parameter-overrides \
-              "ApiKeyValue=${{ secrets.CLUB32_API_KEY }}" \
-              "CorsOrigin=${{ steps.cors.outputs.origin }}" \
-              "FirebaseServiceAccountJson=$FIREBASE_JSON_B64" \
-              "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}" \
-              "AllowAnonymousPremium=${{ github.event.inputs.allow_anonymous_premium }}" \
+            --parameter-overrides "${PARAMS[@]}" \
             --no-confirm-changeset
 
   deploy-frontend:

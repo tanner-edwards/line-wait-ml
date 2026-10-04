@@ -6,6 +6,7 @@
 import React, { useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Platform,
   SafeAreaView,
   StyleSheet,
@@ -20,6 +21,8 @@ import {
   signInWithCredential,
 } from 'firebase/auth';
 import { auth } from '../firebase';
+import { registerAppleAuthorizationCode } from '../api';
+import { PRIVACY_POLICY_URL, TERMS_URL } from '../legal';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -43,8 +46,20 @@ export function SignInScreen(): React.ReactElement {
         idToken: credential.identityToken!,
         rawNonce: credential.authorizationCode ?? undefined,
       });
-      await signInWithCredential(auth, firebaseCred);
+      const { user } = await signInWithCredential(auth, firebaseCred);
       // AuthContext's onAuthStateChanged fires next — no manual state update needed.
+
+      // Apple's authorization code exists only here, and only once. Hand it to
+      // the backend so account deletion can revoke the grant later (required
+      // by guideline 5.1.1(v)). Best-effort — never block sign-in on it.
+      if (credential.authorizationCode) {
+        try {
+          const idToken = await user.getIdToken();
+          await registerAppleAuthorizationCode(idToken, credential.authorizationCode);
+        } catch (err) {
+          console.warn('[SignInScreen] Could not register Apple authorization code:', err);
+        }
+      }
     } catch (err: unknown) {
       if (err && typeof err === 'object' && 'code' in err && err.code === 'ERR_REQUEST_CANCELED') {
         // User dismissed the sheet — not an error.
@@ -98,7 +113,23 @@ export function SignInScreen(): React.ReactElement {
           )}
 
           <Text style={styles.legal}>
-            By continuing you agree to the Terms of Service and Privacy Policy.
+            By continuing you agree to the{' '}
+            <Text
+              style={styles.legalLink}
+              onPress={() => void Linking.openURL(TERMS_URL)}
+              accessibilityRole="link"
+            >
+              Terms of Service
+            </Text>{' '}
+            and{' '}
+            <Text
+              style={styles.legalLink}
+              onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
+              accessibilityRole="link"
+            >
+              Privacy Policy
+            </Text>
+            .
           </Text>
         </View>
       </View>
@@ -167,5 +198,9 @@ const styles = StyleSheet.create({
     color: colors.textInverseMuted,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  legalLink: {
+    color: colors.textInverse,
+    textDecorationLine: 'underline',
   },
 });

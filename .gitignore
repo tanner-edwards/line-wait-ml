@@ -17,3 +17,4 @@ __pycache__/
 closure_events.csv
 models/*.txt
 models/*.json
+*.p8

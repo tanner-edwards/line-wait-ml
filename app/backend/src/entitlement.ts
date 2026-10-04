@@ -23,6 +23,17 @@ import { getUser, getTrip } from './users';
 export interface AuthClaims {
   uid: string;
   isAnonymous: boolean;
+  /**
+   * Apple's stable per-team user identifier, straight out of the verified
+   * token. Null for anonymous sign-ins, which have no Apple identity.
+   *
+   * This exists because the free-trip ledger must key on something the caller
+   * cannot choose. It previously keyed on an `appleId` string taken from the
+   * request body, so anyone could post a fresh value and claim another free
+   * trip. Unlike the Firebase uid it also survives account deletion, so the
+   * ledger still matches when the same person signs up again.
+   */
+  appleSub: string | null;
 }
 
 // Verifies the Bearer token and reports both the uid and whether the sign-in
@@ -41,9 +52,11 @@ export async function verifyAuthClaims(
     const app = initFirebase();
     const admin = await import('firebase-admin');
     const decoded = await admin.auth(app).verifyIdToken(token);
+    const appleIdentities = decoded.firebase?.identities?.['apple.com'];
     return {
       uid: decoded.uid,
       isAnonymous: decoded.firebase?.sign_in_provider === 'anonymous',
+      appleSub: Array.isArray(appleIdentities) ? (appleIdentities[0] as string) ?? null : null,
     };
   } catch {
     return null;

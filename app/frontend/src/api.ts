@@ -210,9 +210,12 @@ export async function fetchDeviceNotifications(deviceId: string): Promise<Notifi
 
 // --- User + trip endpoints ---
 
+// No appleId here on purpose: the backend derives Apple's identifier from the
+// verified token. It used to accept one from this body and key the free-trip
+// ledger on it, which meant a caller could post a new value and claim another.
 export async function createOrFetchUser(
   idToken: string,
-  input: { appleId: string; email: string | null }
+  input: { email: string | null }
 ): Promise<UserResponse> {
   const body = await authedPostJson('/v1/users', idToken, input);
   return body as UserResponse;
@@ -330,6 +333,18 @@ export async function submitFeedback(
   }
 ): Promise<void> {
   await authedPostJson('/v1/feedback', idToken, input);
+}
+
+/**
+ * Hands Apple's one-time authorization code to the backend, which trades it for
+ * a refresh token so account deletion can revoke the Sign in with Apple grant.
+ * Best-effort: sign-in must never fail because this did.
+ */
+export async function registerAppleAuthorizationCode(
+  idToken: string,
+  authorizationCode: string
+): Promise<void> {
+  await authedPostJson('/v1/users/apple-auth', idToken, { authorizationCode });
 }
 
 export async function deleteAccount(idToken: string): Promise<void> {
