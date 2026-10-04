@@ -41,6 +41,15 @@ interface PaywallScreenProps {
 
 const PRODUCT_ID = 'com.tannere.club32.trip';
 
+// The price is owned by App Store Connect, not this app — changing it there
+// propagates with no binary update, but only because nothing here hardcodes a
+// number. 'unavailable' covers StoreKit failing, returning no product, and
+// non-iOS platforms alike: all three mean "we have no price to show."
+type PriceState =
+  | { status: 'loading' }
+  | { status: 'ready'; label: string }
+  | { status: 'unavailable' };
+
 const BENEFITS = [
   'See how wait times are going to change throughout the day',
   'Know the right time to head to any ride',
@@ -66,7 +75,12 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     tripEnd: toYMD(defaultEnd),
   });
 
-  const [localizedPrice, setLocalizedPrice] = useState<string | null>(null);
+  // Never render a price we didn't get from StoreKit. A hardcoded fallback
+  // goes stale the moment the price changes in App Store Connect — and is
+  // wrong in every non-USD storefront regardless. fetchProducts failing is not
+  // exotic here: it needs a network round trip, and this screen opens in a
+  // park where cell service is routinely saturated.
+  const [price, setPrice] = useState<PriceState>({ status: 'loading' });
   const [purchasing, setPurchasing] = useState(false);
   const [purchaseError, setPurchaseError] = useState<string | null>(null);
 
@@ -94,7 +108,11 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
   }, [refetchUser, refetchTrip, onClose]);
 
   useEffect(() => {
-    if (Platform.OS !== 'ios') return;
+    if (Platform.OS !== 'ios') {
+      // Purchases are iOS-only; handleActivate says so when tapped.
+      setPrice({ status: 'unavailable' });
+      return;
+    }
 
     let mounted = true;
 
@@ -102,11 +120,17 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
       try {
         await initConnection();
         const products = await fetchProducts({ skus: [PRODUCT_ID] });
-        if (mounted && products.length > 0) {
-          setLocalizedPrice((products[0] as { localizedPrice?: string }).localizedPrice ?? null);
-        }
-      } catch {
-        // Non-fatal — button still shows, falls back to '$10'
+        if (!mounted) return;
+        // fetchProducts is typed as nullable, and returns an empty array for an
+        // unknown SKU — e.g. the Paid Applications Agreement lapsing, which has
+        // taken this product down before.
+        const label = (products?.[0] as { localizedPrice?: string } | undefined)?.localizedPrice;
+        setPrice(label ? { status: 'ready', label } : { status: 'unavailable' });
+      } catch (err) {
+        if (!mounted) return;
+        // Was silently swallowed, which is how a wrong price reached the UI.
+        console.warn('[PaywallScreen] Could not load product price from StoreKit:', err);
+        setPrice({ status: 'unavailable' });
       }
     })();
 
@@ -200,7 +224,9 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
     }
   };
 
-  const priceLabel = localizedPrice ?? '$10';
+  // A validated promo makes the trip free and never touches StoreKit, so it
+  // stays purchasable even when pricing couldn't load.
+  const canPurchase = validatedPromo !== null || price.status === 'ready';
 
   return (
     <KeyboardAvoidingView
@@ -235,16 +261,26 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </View>
 
         <View style={styles.priceCard}>
-          <Text style={[styles.price, validatedPromo ? styles.priceFree : null]}>
-            {validatedPromo ? 'Free' : priceLabel}
+          {validatedPromo ? (
+            <Text style={[styles.price, styles.priceFree]}>Free</Text>
+          ) : price.status === 'ready' ? (
+            <Text style={styles.price}>{price.label}</Text>
+          ) : price.status === 'loading' ? (
+            <ActivityIndicator color={colors.textSecondary} />
+          ) : (
+            <Text style={styles.priceUnavailable}>Price unavailable</Text>
+          )}
+          <Text style={styles.priceSub}>
+            {!validatedPromo && price.status === 'unavailable'
+              ? 'Check your connection and try again'
+              : 'per trip · one-time'}
           </Text>
-          <Text style={styles.priceSub}>per trip · one-time</Text>
         </View>
 
         <TouchableOpacity
-          style={[styles.purchaseBtn, purchasing && styles.purchaseBtnDisabled]}
+          style={[styles.purchaseBtn, (purchasing || !canPurchase) && styles.purchaseBtnDisabled]}
           onPress={() => void handleActivate()}
-          disabled={purchasing}
+          disabled={purchasing || !canPurchase}
           activeOpacity={0.85}
         >
           {purchasing
@@ -388,9 +424,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     letterSpacing: -1.5,
   },
+  priceUnavailable: {
+    fontFamily: 'Lora_700Bold',
+    fontSize: 28,
+    color: colors.textTertiary,
+    letterSpacing: -0.5,
+  },
   priceSub: {
     ...typography.label,
     color: colors.textSecondary,
+    textAlign: 'center',
   },
   purchaseBtn: {
     backgroundColor: colors.brand,
