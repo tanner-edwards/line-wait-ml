@@ -15,6 +15,7 @@ import { ClaimFreeTripScreen } from '../screens/ClaimFreeTripScreen';
 import { SignInScreen } from '../screens/SignInScreen';
 import { OnboardingNavigator } from '../onboarding/OnboardingNavigator';
 import { DailyParkSheet } from '../components/DailyParkSheet';
+import { FirstLaunchPrompts } from '../components/FirstLaunchPrompts';
 import { AppNavigator } from './AppNavigator';
 
 export function RootNavigator(): React.ReactElement {
@@ -51,10 +52,15 @@ export function RootNavigator(): React.ReactElement {
     return <ClaimFreeTripScreen onSkip={() => setSkippedFreeTrip(true)} />;
   }
 
+  // First-launch prompts live here rather than at the app root so they can't
+  // fire over sign-in, onboarding, or the free-trip gate. The location one
+  // ends in an unskippable OS dialog, which has no business interrupting a
+  // screen that isn't about location.
   return (
     <>
       <AppNavigator />
       <DailyParkSheet visible={dailyIsStale} />
+      <FirstLaunchPrompts />
     </>
   );
 }

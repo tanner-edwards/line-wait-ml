@@ -1,7 +1,15 @@
-// One-time soft prompt explaining why Club 32 wants location, shown on Home
-// after onboarding. The button raises the NATIVE OS dialog — it must never
-// deep-link to Settings. Sending a user who had never been asked to Settings
-// is what got build 1(6) rejected under App Store guideline 5.1.1(iv).
+// One-time soft prompt explaining why Club 32 wants location, shown after
+// onboarding. The button raises the NATIVE OS dialog — it must never deep-link
+// to Settings. Sending a user who had never been asked to Settings is what got
+// build 1(6) rejected under App Store guideline 5.1.1(iv).
+//
+// Build 1(7) was rejected again over this card. Two rules came out of it, both
+// load-bearing:
+//   • The button says "Continue", not "Enable location". A custom button must
+//     not read as the thing that grants access — the OS dialog is.
+//   • There is no "Not now". Every exit from this card proceeds to the
+//     permission request, including the Android back gesture. Declining is
+//     what "Don't Allow" in the OS dialog is for.
 //
 // Only shown while the OS is still willing to prompt ('needs-permission').
 // Once permission is granted, or permanently denied, there is nothing useful
@@ -30,18 +38,16 @@ export function FirstLaunchLocationPrompt(): React.ReactElement {
     });
   }, [persona, status]);
 
-  const dismiss = () => {
+  // The only way out of this card, by Apple's requirement — every dismissal
+  // path lands on the OS permission dialog.
+  const proceed = () => {
     setVisible(false);
     void AsyncStorage.setItem(STORAGE_KEY, '1');
-  };
-
-  const handleEnable = () => {
-    dismiss();
     requestPermission();
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={dismiss}>
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={proceed}>
       <View style={styles.backdrop}>
         <View style={styles.card}>
           <View style={styles.iconWrap}>
@@ -56,19 +62,11 @@ export function FirstLaunchLocationPrompt(): React.ReactElement {
           </Text>
 
           <Pressable
-            onPress={handleEnable}
+            onPress={proceed}
             style={({ pressed }) => [styles.btn, styles.btnPrimary, pressed && styles.pressed]}
-            testID="location-prompt-enable"
+            testID="location-prompt-continue"
           >
-            <Text style={styles.btnPrimaryText}>Enable location</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={dismiss}
-            style={({ pressed }) => [styles.btn, styles.btnSecondary, pressed && styles.pressed]}
-            testID="location-prompt-dismiss"
-          >
-            <Text style={styles.btnSecondaryText}>Not now</Text>
+            <Text style={styles.btnPrimaryText}>Continue</Text>
           </Pressable>
         </View>
       </View>
@@ -125,12 +123,6 @@ const styles = StyleSheet.create({
     ...typography.label,
     fontSize: 16,
     color: colors.textInverse,
-  },
-  btnSecondary: { backgroundColor: colors.surface },
-  btnSecondaryText: {
-    ...typography.label,
-    fontSize: 15,
-    color: colors.textSecondary,
   },
   pressed: { opacity: 0.7 },
 });

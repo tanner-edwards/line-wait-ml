@@ -327,7 +327,9 @@ export function Recommendations(): React.ReactElement {
   }
 
   // Never asked yet (or iOS will still prompt): explain first, then let the
-  // button fire the OS dialog. Must never shortcut to Settings from here.
+  // button fire the OS dialog. Must never shortcut to Settings from here, and
+  // the label stays "Continue" — Apple rejected "Enable location" because a
+  // custom button must not read as the thing that grants access.
   if (!debugMode && status === 'needs-permission') {
     return (
       <SafeAreaView style={styles.container} testID="recs-location-permission">
@@ -335,7 +337,7 @@ export function Recommendations(): React.ReactElement {
           icon={<MapPin size={48} color={colors.brand} />}
           title="Find rides near you"
           body="Club 32 uses your location to sort rides by how far you are and estimate walk times."
-          action={{ label: 'Enable location', onPress: requestPermission, testID: 'recs-enable-location' }}
+          action={{ label: 'Continue', onPress: requestPermission, testID: 'recs-enable-location' }}
         />
         <StatusBar style="auto" />
       </SafeAreaView>

@@ -101,9 +101,21 @@ it('raises the OS dialog rather than deep-linking to Settings', async () => {
   render(<FirstLaunchPrompts />);
   await screen.findByText(LOCATION_TITLE);
 
-  fireEvent.press(screen.getByTestId('location-prompt-enable'));
+  fireEvent.press(screen.getByTestId('location-prompt-continue'));
 
   expect(mockRequestPermission).toHaveBeenCalledTimes(1);
+});
+
+// Apple rejected build 1(7) for both of these: a button that reads as granting
+// access, and an opt-out that skips the permission request entirely.
+it('labels the button "Continue" and offers no way to skip the request', async () => {
+  mockNotificationsEnabled = true;
+  render(<FirstLaunchPrompts />);
+  await screen.findByText(LOCATION_TITLE);
+
+  expect(screen.getByText('Continue')).toBeTruthy();
+  expect(screen.queryByText('Enable location')).toBeNull();
+  expect(screen.queryByText('Not now')).toBeNull();
 });
 
 it('does not prompt when iOS will no longer ask', async () => {
@@ -119,7 +131,7 @@ it('only shows the location prompt once per install', async () => {
   mockNotificationsEnabled = true;
   const first = render(<FirstLaunchPrompts />);
   await screen.findByText(LOCATION_TITLE);
-  fireEvent.press(screen.getByTestId('location-prompt-dismiss'));
+  fireEvent.press(screen.getByTestId('location-prompt-continue'));
   first.unmount();
 
   render(<FirstLaunchPrompts />);
