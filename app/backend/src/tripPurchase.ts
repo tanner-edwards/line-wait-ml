@@ -3,16 +3,35 @@
 // Flow:
 //   1. App completes StoreKit purchase, gets a signed JWS transaction.
 //   2. App POSTs JWS + trip dates to POST /v1/users/trip/purchase.
-//   3. This module verifies the JWS:
-//      - Xcode environment: skip signature check (local StoreKit config).
-//      - Sandbox / Production: verify certificate chain + ES256 signature.
+//   3. This module verifies the certificate chain terminates at Apple's real
+//      root, that every cert is in date, and that the ES256 signature is valid.
 //   4. On success, writes trips/{uid}, marks freeTripClaimed, returns trip.
+//
+// Two holes used to live here, both of which handed out free paid trips:
+//   - The payload was decoded WITHOUT verification and, if that unverified
+//     payload claimed `environment: 'Xcode'`, signature checking was skipped
+//     entirely. Anyone could forge one. Local StoreKit testing now requires
+//     ALLOW_XCODE_RECEIPTS, which is never set in production.
+//   - The root was accepted on `issuer.includes('Apple')`, a string an
+//     attacker sets on their own self-signed chain. The root is now pinned to
+//     the real certificate by fingerprint.
 
 import * as crypto from 'crypto';
 import { getFirestore } from './firestoreClient';
 import { TripRecord } from './types';
 
 const EXPECTED_PRODUCT_ID = 'com.tannere.club32.trip';
+
+// SHA-256 of the DER encoding of "Apple Root CA - G3", which every StoreKit 2
+// JWS chain terminates at. Verified against
+// https://www.apple.com/certificateauthority/AppleRootCA-G3.cer
+const APPLE_ROOT_CA_G3_SHA256 =
+  '63343ABFB89A6A03EBB57E9B3F5FA7BE7C4F5C756F3017B3A8C488C3653E9179';
+
+// Escape hatch for the local Xcode StoreKit config, whose receipts are signed
+// with a dev key that chains to no real root. Absent in deployed stacks, so
+// production has no code path that reaches an unverified payload.
+const ALLOW_XCODE_RECEIPTS = process.env.ALLOW_XCODE_RECEIPTS === 'true';
 
 interface JWSTransactionPayload {
   productId?: string;
@@ -62,10 +81,21 @@ async function verifyAndDecodeJws(jws: string): Promise<JWSTransactionPayload> {
     }
   }
 
-  // Root cert must originate from Apple.
+  // Pin the root. An issuer-string check is worthless here: the chain above
+  // only proves the certs sign each other, which an attacker's own chain does
+  // too, and `issuer` is a field they fill in.
   const root = certs[certs.length - 1];
-  if (!root.issuer.includes('Apple')) {
-    throw new Error('Certificate chain does not originate from Apple');
+  const rootFingerprint = root.fingerprint256.replace(/:/g, '').toUpperCase();
+  if (rootFingerprint !== APPLE_ROOT_CA_G3_SHA256) {
+    throw new Error('Apple receipt verification failed: chain does not terminate at Apple Root CA - G3');
+  }
+
+  // An expired or not-yet-valid cert anywhere in the chain invalidates it.
+  const now = Date.now();
+  for (const cert of certs) {
+    if (now < Date.parse(cert.validFrom) || now > Date.parse(cert.validTo)) {
+      throw new Error('Apple receipt verification failed: certificate outside its validity period');
+    }
   }
 
   // Verify the JWS signature using the leaf certificate's public key.
@@ -102,22 +132,25 @@ export async function purchaseTrip(
   tripStart: string,
   tripEnd: string,
 ): Promise<TripRecord> {
-  // Decode the payload first (without verification) to check the environment.
-  const unverified = decodePayload(transactionJws);
-
-  // Xcode local StoreKit config is signed with a dev key — skip chain verification.
-  // All other environments go through full verification.
-  const payload =
-    unverified.environment === 'Xcode'
-      ? unverified
-      : await verifyAndDecodeJws(transactionJws);
+  // Never let unverified payload data decide whether to verify. Outside local
+  // Xcode testing there is exactly one path, and it checks the signature.
+  let payload: JWSTransactionPayload;
+  if (ALLOW_XCODE_RECEIPTS) {
+    const unverified = decodePayload(transactionJws);
+    payload =
+      unverified.environment === 'Xcode'
+        ? unverified
+        : await verifyAndDecodeJws(transactionJws);
+  } else {
+    payload = await verifyAndDecodeJws(transactionJws);
+  }
 
   if (payload.productId !== EXPECTED_PRODUCT_ID) {
-    throw new Error(`Unexpected product: ${payload.productId}`);
+    throw new Error(`Apple receipt verification failed: unexpected product ${payload.productId}`);
   }
 
   if (!payload.transactionId) {
-    throw new Error('Transaction ID missing from JWS payload');
+    throw new Error('Apple receipt verification failed: transaction ID missing from JWS payload');
   }
 
   const db = getFirestore();
@@ -132,10 +165,28 @@ export async function purchaseTrip(
     transactionId: payload.transactionId,
   };
 
-  await Promise.all([
-    tripRef.set(trip),
-    db.collection('users').doc(uid).update({ freeTripClaimed: true }),
-  ]);
+  // create() fails the whole batch if this transaction was already redeemed,
+  // which makes redemption idempotent without a read-then-write race. A valid
+  // receipt previously minted unlimited trips if replayed.
+  const batch = db.batch();
+  batch.create(db.collection('redeemedTransactions').doc(payload.transactionId), {
+    uid,
+    tripId: tripRef.id,
+    productId: payload.productId,
+    redeemedAt: trip.purchasedAt,
+  });
+  batch.set(tripRef, trip);
+  batch.update(db.collection('users').doc(uid), { freeTripClaimed: true });
+
+  try {
+    await batch.commit();
+  } catch (err) {
+    // Firestore ALREADY_EXISTS — the transaction has been redeemed before.
+    if (err && typeof err === 'object' && (err as { code?: number }).code === 6) {
+      throw new Error('Apple receipt verification failed: transaction already redeemed');
+    }
+    throw err;
+  }
 
   return trip;
 }
