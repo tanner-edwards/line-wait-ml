@@ -49,6 +49,31 @@ def _init_firestore() -> firestore.Client:
     return firestore.client()
 
 
+# Bounded to the walk-on regime on purpose. A marker means "essentially no
+# wait", so it is always small — 13 is the only off-grid value in 744k rows of
+# DLR data. An off-grid 36 or 62 is a real wait, and collapsing it to 5 would be
+# a catastrophic misread, so the rule must never reach that far.
+WALK_ON_MAX = 15
+
+
+def _normalize_walk_on(waits: pd.Series) -> pd.Series:
+    """Collapse Disney's walk-on signal to the posted-wait floor of 5.
+
+    Disney posts waits in multiples of 5; any other value is a deliberate
+    walk-on marker rather than a literal wait (Haunted Mansion's thematic 13 is
+    the main one, at 24% of its readings). Every percentile and average derived
+    downstream is compared against model output, which is built on normalized
+    values — so these have to agree or the comparison is across two scales.
+
+    Must match cron/predict.py::_normalize_walk_on, the notebook's
+    walk-on-normalization cell, and app/backend/src/walkOn.ts.
+
+    Genuine zeros pass through untouched, since 0 % 5 == 0.
+    """
+    w = pd.to_numeric(waits, errors="coerce")
+    return w.mask(w.notna() & (w % 5 != 0) & (w < WALK_ON_MAX), 5.0)
+
+
 def _read_wait_times(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
     log.info("Reading wait_times since %s", cutoff.isoformat())
     rows = []
@@ -67,6 +92,8 @@ def _read_wait_times(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
             continue
         rows.append(d)
     df = pd.DataFrame(rows)
+    if not df.empty:
+        df["wait_minutes"] = _normalize_walk_on(df["wait_minutes"])
     log.info("Read %d rows", len(df))
     return df
 

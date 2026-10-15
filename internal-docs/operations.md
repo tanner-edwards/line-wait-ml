@@ -68,6 +68,17 @@ The job itself is triggered two ways:
 - Every 10 min by `collect.yml` (runs `predict.py`)
 - Every Sunday by `rebuild_profiles.yml` (runs `build_closure_profiles.py` via `--args`)
 
+### ML models
+Upload retrained models after the notebook's save cell writes them to `models/`. From the repo root:
+```bash
+gsutil -m cp gs://club32-models/* gs://club32-models/backup-$(date +%F)/   # optional backup
+npm run deploy:models
+```
+
+**How it works:** copies every `models/*.txt` and `models/*.json` to `gs://club32-models/`. `predict.py` downloads models from the bucket on every run, so the next 10-min run picks them up — no image rebuild needed. Use `npm run deploy:all` only when `cron/` code also changed (it runs `deploy:models` then rebuilds the cron image).
+
+Before deploying, confirm the new models beat the deployed ones in the notebook's `deployed-vs-new-compare` and `deployed-vs-new-day-profile` cells. After deploying, bump `DEPLOYED_TRAINED_THROUGH` in the compare cell to the deploy date.
+
 ### Frontend (Expo web)
 ```bash
 cd app/frontend && ./deploy-web.sh

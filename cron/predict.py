@@ -121,6 +121,27 @@ def _load_models(model_dir: Path):
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
+# Bounded to the walk-on regime on purpose. A marker means "essentially no
+# wait", so it is always small — 13 is the only off-grid value in 744k rows of
+# DLR data. An off-grid 36 or 62 is a real wait, and collapsing it to 5 would be
+# a catastrophic misread, so the rule must never reach that far.
+WALK_ON_MAX = 15
+
+
+def _normalize_walk_on(waits: pd.Series) -> pd.Series:
+    """Collapse Disney's walk-on signal to the posted-wait floor of 5.
+
+    Disney posts waits in multiples of 5; any other value is a deliberate
+    walk-on marker rather than a literal wait (Haunted Mansion's thematic 13
+    is the main one, at 24% of its readings). Must match the notebook's
+    walk-on-normalization cell — training and inference have to agree.
+
+    Genuine zeros pass through untouched, since 0 % 5 == 0.
+    """
+    w = pd.to_numeric(waits, errors="coerce")
+    return w.mask(w.notna() & (w % 5 != 0) & (w < WALK_ON_MAX), 5.0)
+
+
 def _read_morning_waits(db: firestore.Client, now_la: datetime) -> pd.DataFrame:
     """Read all wait_times from midnight LA-local today through now.
 
@@ -144,6 +165,7 @@ def _read_morning_waits(db: firestore.Client, now_la: datetime) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+    df["wait_minutes"] = _normalize_walk_on(df["wait_minutes"])
     return df
 
 
@@ -312,6 +334,7 @@ def _read_recent(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+    df["wait_minutes"] = _normalize_walk_on(df["wait_minutes"])
     return df.sort_values(["ride_id", "timestamp_utc"]).reset_index(drop=True)
 
 

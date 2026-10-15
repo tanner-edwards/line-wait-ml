@@ -9,6 +9,7 @@
 // Iron law: two statistically-identical rides get the identical verdict.
 
 import { Ride } from '../types';
+import { normalizeWalkOn } from '../walkOn';
 
 export type DealVerdict = 'go' | 'skip' | 'neutral';
 
@@ -87,7 +88,10 @@ function percentile(sorted: number[], p: number): number {
 }
 
 export function dealVerdict(ride: Ride): DealResult {
-  const cur = ride.currentWait;
+  // Normalized for comparison — rideStats percentiles and the ML curve are both
+  // on the walk-on-normalized scale. DealResult carries no display value, so
+  // nothing raw needs preserving here.
+  const cur = normalizeWalkOn(ride.currentWait);
   const st = ride.rideStats;
   const typical = (ride.historicalBaseline ?? ride.historicalAverage)?.buckets[0]?.wait ?? null;
 

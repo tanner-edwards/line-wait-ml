@@ -20,6 +20,7 @@
 
 import { Ride, Verdict, VerdictReason, VerdictReasons } from '../types';
 import { dealVerdict, DealResult } from './layer1';
+import { normalizeWalkOn } from '../walkOn';
 
 export type { Verdict, VerdictReason, VerdictReasons };
 
@@ -46,7 +47,12 @@ export interface VerdictResult {
 export function scoreVerdict(ride: Ride): VerdictResult {
   const deal = dealVerdict(ride);
   const st = ride.rideStats;
-  const cur = ride.currentWait;
+  // Two values, two jobs: `cur` is normalized for every comparison below (the
+  // p10/p50/p90 it is measured against are normalized too); `curRaw` is the
+  // posted value and is the only one that reaches `reasons`, so the UI keeps
+  // showing Disney's 13 rather than our 5.
+  const curRaw = ride.currentWait;
+  const cur = normalizeWalkOn(curRaw);
   const typical = deal.typical;
 
   const worthy = st != null && st.p90 >= WORTH_MIN;
@@ -90,7 +96,7 @@ export function scoreVerdict(ride: Ride): VerdictResult {
 
   const reasons: VerdictReasons = {
     primary: primaryReason(verdict, star, deal, muted, cur),
-    current: cur ?? 0,
+    current: curRaw ?? 0,
     typical,
     todayP30: deal.todayP30,
     todayP80: deal.todayP80,
