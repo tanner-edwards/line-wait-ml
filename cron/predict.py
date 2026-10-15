@@ -105,6 +105,36 @@ def _download_models(bucket_name: str, dest: Path) -> None:
     for name in files:
         bucket.blob(name).download_to_filename(str(dest / name))
         log.info("Downloaded %s", name)
+    # manifest.json only stamps model_version on the docs — a missing one must
+    # not fail the job, unlike the model files above.
+    try:
+        bucket.blob("manifest.json").download_to_filename(str(dest / "manifest.json"))
+        log.info("Downloaded manifest.json")
+    except Exception:
+        log.warning("manifest.json missing from bucket; model_version will be 'unknown'")
+
+
+def _read_model_version(model_dir: Path) -> str:
+    """`trained_through` from models/manifest.json, or "unknown" when the file
+    is missing, unparseable, or lacks the key."""
+    try:
+        manifest = json.loads((model_dir / "manifest.json").read_text())
+        return str(manifest["trained_through"])
+    except Exception as e:
+        log.warning("Could not read model_version from manifest.json (%s); using 'unknown'", e)
+        return "unknown"
+
+
+def _tombstone_doc(ride_id: str, now: datetime, model_version: str) -> dict:
+    """Replaces a ride's predictions doc when it can't be forecast this run,
+    so the previous run's forecast is never served as live."""
+    return {
+        "ride_id":         ride_id,
+        "updated_at":      now.isoformat(),
+        "degraded":        True,
+        "degraded_reason": "insufficient_history",
+        "model_version":   model_version,
+    }
 
 
 def _load_models(model_dir: Path):
@@ -165,6 +195,8 @@ def _read_morning_waits(db: firestore.Client, now_la: datetime) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+    # Full Day past slots display Disney's posted value (e.g. 13), so keep it.
+    df["wait_minutes_raw"] = pd.to_numeric(df["wait_minutes"], errors="coerce")
     df["wait_minutes"] = _normalize_walk_on(df["wait_minutes"])
     return df
 
@@ -334,6 +366,7 @@ def _read_recent(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True)
+    df["wait_minutes_raw"] = pd.to_numeric(df["wait_minutes"], errors="coerce")
     df["wait_minutes"] = _normalize_walk_on(df["wait_minutes"])
     return df.sort_values(["ride_id", "timestamp_utc"]).reset_index(drop=True)
 
@@ -466,8 +499,11 @@ def _derive_trend(
     lag1: float,
     preds: dict[int, float],
 ) -> tuple[str, float, str]:
-    """Return (trend, trend_delta_30, confidence) from the trajectory predictions."""
-    t10   = preds[10]
+    """Return (trend, trend_delta_30, confidence) from the trajectory predictions.
+
+    confidence counts how many of the 9 horizons after T+30 (T+40 .. T+240)
+    agree with delta30's direction: high >= 7 of 9, medium >= 5 of 9.
+    """
     t30   = preds[30]
     delta30 = round(t30 - current_wait, 1)
 
@@ -481,11 +517,13 @@ def _derive_trend(
     else:
         trend = "stable"
 
-    # Confidence: how many of the 9 horizons agree on the direction of delta30?
+    # Confidence: how many of the 9 horizons after T+30 share delta30's
+    # direction? T+30 is excluded because delta30 comes from it (a guaranteed
+    # agreeing vote); T+10/T+20 because t10 is just the current wait.
     if abs(delta30) < 2:
         confidence = "low"
     else:
-        deltas = [preds[h] - current_wait for h in HORIZONS]
+        deltas = [preds[h] - current_wait for h in HORIZONS if h > 30]
         same_dir = sum(1 for d in deltas if (d >= 0) == (delta30 >= 0))
         confidence = "high" if same_dir >= 7 else ("medium" if same_dir >= 5 else "low")
 
@@ -558,6 +596,9 @@ def _build_full_day(
     crowd_level_ratio: float | None = None,
     open_minutes: int | None = None,
     close_minutes: int | None = None,
+    morning_df: pd.DataFrame | None = None,
+    now_minutes: int | None = None,
+    current_raw_wait: float | None = None,
 ) -> list[dict]:
     """Run the day-profile model for all 34 half-hour slots.
 
@@ -579,6 +620,14 @@ def _build_full_day(
                    the fixed 7am–11:30pm grid otherwise predicts straight through
                    a shortened day's actual close. The frontend already skips
                    wait: null slots.
+
+    morning_df, now_minutes, current_raw_wait: when morning_df and now_minutes
+                   are given, slots that have already ended show what actually
+                   happened (median raw posted wait over this ride's OPERATING
+                   snapshots in the window, or None when there are none), and
+                   the slot containing now shows current_raw_wait (left as the
+                   model value when None). Raw, not walk-on-normalized, because
+                   full_day is a display value. Future slots are untouched.
     """
     # collect.js stores day_of_week in JS convention (Sun=0); convert from Python (Mon=0)
     js_dow = (now_la.weekday() + 1) % 7
@@ -639,6 +688,29 @@ def _build_full_day(
             if target_min in slot_index:
                 slots[slot_index[target_min]]["wait"] = max(0, round(float(traj_preds[h])))
 
+    if morning_df is not None and now_minutes is not None:
+        ride_rows = pd.DataFrame()
+        if not morning_df.empty and "wait_minutes_raw" in morning_df.columns:
+            ride_rows = morning_df[
+                (morning_df["ride_id"] == ride_id)
+                & (morning_df["status"] == "OPERATING")
+                & morning_df["wait_minutes_raw"].notna()
+            ]
+        if not ride_rows.empty:
+            local_ts = ride_rows["timestamp_utc"].dt.tz_convert("America/Los_Angeles")
+            row_minutes = (local_ts.dt.hour * 60 + local_ts.dt.minute).to_numpy()
+            raw_waits = ride_rows["wait_minutes_raw"].to_numpy()
+        for slot in slots:
+            start_min = slot["start_minutes"]
+            if start_min + 30 <= now_minutes:
+                if ride_rows.empty:
+                    slot["wait"] = None
+                else:
+                    in_window = raw_waits[(row_minutes >= start_min) & (row_minutes < start_min + 30)]
+                    slot["wait"] = round(float(pd.Series(in_window).median())) if len(in_window) else None
+            elif start_min <= now_minutes and current_raw_wait is not None:
+                slot["wait"] = round(float(current_raw_wait))
+
     if close_minutes is not None:
         for slot in slots:
             if slot["start_minutes"] >= close_minutes:
@@ -694,6 +766,8 @@ def main() -> int:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
         traj_models, day_profile_model, ride_id_cats, status_cats, morning_baselines, reversion_model, percentile_buckets, regime_thresholds, crowd_baselines = _load_models(model_dir)
+        model_version = _read_model_version(model_dir)
+        log.info("model_version: %s", model_version)
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -707,6 +781,7 @@ def main() -> int:
 
         now = datetime.now(timezone.utc)
         now_la = now.astimezone(LA_TZ)
+        now_minutes = now_la.hour * 60 + now_la.minute
         hol = holiday_features(now)
 
         # Read today's completed closures once — passed per-ride to _build_full_day
@@ -755,9 +830,15 @@ def main() -> int:
         log.info("crowd_level_ratio: %s", crowd_level_ratio)
 
         prediction_docs = []
+        tombstoned = 0
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats, regime_thresholds)
             if feat_row is None:
+                # Replace (never merge) the old doc so a stale forecast isn't
+                # served as live. Rides with no rows in the window get no
+                # tombstone; their old doc ages out via the backend's 20-min rule.
+                prediction_docs.append(_tombstone_doc(ride_id, now, model_version))
+                tombstoned += 1
                 continue
             feat_row["park_crowd_median"] = park_crowd_median
             feat_row["crowd_level_ratio"] = crowd_level_ratio
@@ -772,6 +853,10 @@ def main() -> int:
                 h: max(0.0, round(float(m.predict(X)[0]), 1))
                 for h, m in traj_models.items()
             }
+            # The T+10 model loses to "wait stays the same", so t10 is the
+            # (normalized) current wait. The model stays loaded/downloaded for
+            # now so HORIZONS and the GCS file list are unchanged.
+            traj_preds[10] = float(feat_row["wait_minutes"])
 
             trend, trend_delta_30, confidence = _derive_trend(
                 feat_row["wait_minutes"], feat_row["wait_lag_1"], traj_preds
@@ -786,6 +871,12 @@ def main() -> int:
                 crowd_level_ratio=crowd_level_ratio,
                 open_minutes=open_minutes,
                 close_minutes=close_minutes,
+                morning_df=morning_df,
+                now_minutes=now_minutes,
+                current_raw_wait=(
+                    None if pd.isna(ride_df["wait_minutes_raw"].iloc[-1])
+                    else float(ride_df["wait_minutes_raw"].iloc[-1])
+                ),
             )
 
             # Reversion probability — day_type must match training-time classify_day_type
@@ -838,9 +929,11 @@ def main() -> int:
                 "full_day":       full_day,
                 "reversion_prob": reversion_prob,
                 "pct_rank":       pct_rank,
+                "model_version":  model_version,
             })
 
-        log.info("Built predictions for %d rides", len(prediction_docs))
+        predicted = len(prediction_docs) - tombstoned
+        log.info("Built predictions for %d rides, %d tombstones", predicted, tombstoned)
 
         coll = db.collection("predictions")
         written = 0
@@ -852,7 +945,10 @@ def main() -> int:
             batch.commit()
             written += len(chunk)
 
-    log.info("Done in %.1fs — predictions for %d rides", time.monotonic() - t0, written)
+    log.info(
+        "Done in %.1fs — predicted %d, tombstoned %d, model_version=%s",
+        time.monotonic() - t0, predicted, tombstoned, model_version,
+    )
     return 0
 
 

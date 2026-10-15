@@ -25,6 +25,7 @@ from pathlib import Path
 import pandas as pd
 
 from . import baselines, deployed, metrics, recipes
+from .manifest import read_manifest
 from .splits import forward_split, interleaved_split
 
 log = logging.getLogger("ml.evaluate")
@@ -275,6 +276,16 @@ def run(
     test_days = sorted(set(df.loc[test, "date_la"]))
     if not test_days:
         raise ValueError("Forward split produced no test days")
+    if deployed_trained_through is None and deployed_git_ref is None:
+        manifest = read_manifest(Path(model_dir) / "manifest.json") or {}
+        try:
+            deployed_trained_through = date.fromisoformat(str(manifest["trained_through"]))
+        except (KeyError, ValueError):
+            pass  # unknown stays None -> contaminated
+    elif deployed_trained_through is None:
+        # The working-tree manifest describes models/, not the git ref's models.
+        log.info("deployed_git_ref=%s given without deployed_trained_through; working-tree "
+                 "manifest not used, deployed models treated as contaminated", deployed_git_ref)
     is_contaminated = deployed.contaminated(deployed_trained_through, test_days)
 
     meta = {

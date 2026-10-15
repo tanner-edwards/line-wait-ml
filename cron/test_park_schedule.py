@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from park_schedule import (
@@ -69,6 +69,18 @@ class TestMinutesFromMidnight:
         assert _minutes_from_midnight(None) is None
         assert _minutes_from_midnight("not-a-time") is None
 
+    def test_midnight_close_anchored_to_previous_day_is_1440(self):
+        assert _minutes_from_midnight("2026-06-07T00:00:00-07:00", anchor_date=date(2026, 6, 6)) == 1440
+
+    def test_1am_close_anchored_to_previous_day_is_1500(self):
+        assert _minutes_from_midnight("2026-06-07T01:00:00-07:00", anchor_date=date(2026, 6, 6)) == 1500
+
+    def test_same_day_close_with_anchor_is_unchanged(self):
+        assert _minutes_from_midnight("2026-06-06T20:00:00-07:00", anchor_date=date(2026, 6, 6)) == 1200
+
+    def test_midnight_without_anchor_keeps_legacy_zero(self):
+        assert _minutes_from_midnight("2026-06-07T00:00:00-07:00") == 0
+
 
 class TestPickOperatingWindow:
     def test_returns_operating_entry_times(self):
@@ -123,6 +135,18 @@ class TestGetTodaysHours:
             }
         })
         assert get_todays_hours(db, self.PARK_ID, self.NOW_LA) == (9 * 60, 18 * 60)
+
+    def test_midnight_close_comes_out_as_1440(self):
+        now_la = datetime(2026, 6, 6, 12, 0, tzinfo=LA)
+        db = _FakeDb({
+            f"{self.PARK_ID}_2026-06-06": {
+                "entries": [
+                    {"type": "OPERATING", "openingTime": "2026-06-06T08:00:00-07:00", "closingTime": "2026-06-07T00:00:00-07:00"},
+                ]
+            }
+        })
+        assert get_todays_hours(db, self.PARK_ID, now_la) == (480, 1440)
+        assert operating_hours(480, 1440) == 16.0
 
     def test_returns_none_none_when_doc_missing(self):
         db = _FakeDb({})

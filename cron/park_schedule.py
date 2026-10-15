@@ -14,7 +14,7 @@ closure_features.py being shared between the notebook and predict.py.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
 
 from firebase_admin import firestore
@@ -30,13 +30,28 @@ def _la_date_string(when: datetime, tz: ZoneInfo = LA_TZ) -> str:
     return when.astimezone(tz).strftime("%Y-%m-%d")
 
 
-def _minutes_from_midnight(iso_time: str, tz: ZoneInfo = LA_TZ) -> int | None:
+def _minutes_from_midnight(
+    iso_time: str, tz: ZoneInfo = LA_TZ, anchor_date: date | None = None
+) -> int | None:
+    """LA-local minutes from midnight of `iso_time`.
+
+    With `anchor_date` (the schedule's own date), a time that falls on a later
+    local day gets 1440 added per day, so a 12:00 AM close comes out as 1440
+    instead of 0. Without it the legacy same-day value is returned.
+    """
     try:
         dt = datetime.fromisoformat(iso_time)
     except (TypeError, ValueError):
         return None
     local = dt.astimezone(tz)
-    return local.hour * 60 + local.minute
+    minutes = local.hour * 60 + local.minute
+    if anchor_date is not None:
+        days = (local.date() - anchor_date).days
+        if days < 0:
+            log.warning("%s is before anchor date %s; returning unadjusted minutes", iso_time, anchor_date)
+        else:
+            minutes += 1440 * days
+    return minutes
 
 
 def pick_operating_window(entries: list[dict]) -> tuple[str | None, str | None]:
@@ -73,7 +88,11 @@ def get_todays_hours(
     opening_iso, closing_iso = pick_operating_window(data.get("entries", []))
     if not opening_iso or not closing_iso:
         return None, None
-    return _minutes_from_midnight(opening_iso), _minutes_from_midnight(closing_iso)
+    anchor = now_la.astimezone(LA_TZ).date()
+    return (
+        _minutes_from_midnight(opening_iso, anchor_date=anchor),
+        _minutes_from_midnight(closing_iso, anchor_date=anchor),
+    )
 
 
 def minutes_until_close(current_minutes: int, close_minutes: int) -> int:

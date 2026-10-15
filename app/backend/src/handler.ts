@@ -281,7 +281,7 @@ export async function fetchPark(
     // closedAt timestamps, never a 5xx for the whole response.
     loadCurrentClosures().catch(() => new Map()),
     // Best-effort: missing predictions degrade gracefully to historical averages.
-    loadPredictions().catch(() => new Map<string, import('./mlPredictions').MLPredictionDoc>()),
+    loadPredictions(now).catch(() => new Map<string, import('./mlPredictions').MLPredictionDoc>()),
     // Best-effort: missing profiles just means no predictedReopenAt on DOWN rides.
     loadClosureProfiles().catch(() => new Map<string, import('./closureProfiles').ClosureProfile>()),
   ]);

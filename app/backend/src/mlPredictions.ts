@@ -21,14 +21,31 @@ export interface MLPredictionDoc {
   full_day: Array<{ time_slot: string; start_minutes: number; wait: number }>;
   reversion_prob?: number;  // P(wait spikes ≥40% within 30 min)
   pct_rank?: number;        // empirical percentile within ride's own hour/day-type bucket
+  degraded?: boolean;       // tombstone: predict.py couldn't forecast this ride this run
+  degraded_reason?: string;
+  model_version?: string;   // trained_through date of the model that wrote the doc
 }
 
-export async function loadPredictions(): Promise<Map<string, MLPredictionDoc>> {
+// predict.py runs every 10 min; a doc older than this means the ride was
+// skipped (or the job failed) and its forecast must not be served as live.
+export const PREDICTION_MAX_AGE_MINUTES = 20;
+
+// Rides with no usable doc (tombstoned, stale, or missing updated_at) are left
+// out of the map, so callers fall back exactly as for a ride with no doc.
+export async function loadPredictions(
+  now: Date = new Date(),
+  maxAgeMinutes = PREDICTION_MAX_AGE_MINUTES,
+): Promise<Map<string, MLPredictionDoc>> {
   const db = getFirestore();
   const snap = await db.collection('predictions').get();
   const map = new Map<string, MLPredictionDoc>();
   for (const doc of snap.docs) {
-    map.set(doc.id, doc.data() as MLPredictionDoc);
+    const data = doc.data() as MLPredictionDoc;
+    if (data.degraded === true) continue;
+    const updatedMs = data.updated_at ? Date.parse(data.updated_at) : NaN;
+    if (Number.isNaN(updatedMs)) continue;
+    if (now.getTime() - updatedMs > maxAgeMinutes * 60_000) continue;
+    map.set(doc.id, data);
   }
   return map;
 }

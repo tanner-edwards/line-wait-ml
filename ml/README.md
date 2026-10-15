@@ -18,6 +18,16 @@ res.by_ride[60].head(20)  # per-ride MAE and lift at T+60, worst first
 
 That also writes `reports/eval/YYYY-MM-DD_baseline.md` (commit it). For quick iteration pass `horizons=[30, 60, 120]` and `run_staleness=False`. If you edit a module under `ml/`, restart the kernel or `importlib.reload` it.
 
+## Save cell: write the manifest
+
+Add this line to the notebook's save cell, after the model files are written to `models/`:
+
+```python
+from ml.manifest import write_manifest; write_manifest(trained_through=df_sorted['date_la'].max())
+```
+
+It writes `models/manifest.json` (`trained_through`, `exported_at`, `git_sha`, `recipe`). `deploy:models` uploads it, `predict.py` stamps `model_version` from it, and `evaluate.run` uses its date for `deployed_trained_through` when you don't pass one.
+
 ## Reading the headline table
 
 - Train = every day on or before the cutoff; test = the 4 weeks after. The model has never seen a test day.

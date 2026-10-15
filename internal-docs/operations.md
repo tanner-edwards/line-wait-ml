@@ -79,6 +79,8 @@ npm run deploy:models
 
 Before deploying, confirm the new models beat the deployed ones in the notebook's `deployed-vs-new-compare` and `deployed-vs-new-day-profile` cells. After deploying, bump `DEPLOYED_TRAINED_THROUGH` in the compare cell to the deploy date.
 
+The save cell also writes `models/manifest.json` (via `ml.manifest.write_manifest`), and `deploy:models` uploads it with the models. `predict.py` stamps `model_version` (the manifest's `trained_through`) on every prediction doc, and writes a tombstone doc (`degraded: true`) for rides it cannot forecast so the backend never serves a stale forecast as live.
+
 ### Frontend (Expo web)
 ```bash
 cd app/frontend && ./deploy-web.sh
