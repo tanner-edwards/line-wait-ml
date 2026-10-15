@@ -28,6 +28,32 @@ from ml.manifest import write_manifest; write_manifest(trained_through=df_sorted
 
 It writes `models/manifest.json` (`trained_through`, `exported_at`, `git_sha`, `recipe`). `deploy:models` uploads it, `predict.py` stamps `model_version` from it, and `evaluate.run` uses its date for `deployed_trained_through` when you don't pass one.
 
+## Cleaning cell
+
+New cell, pasted after `FEATURES: walk-on-normalization` and before `FEATURES: sort-and-targets` (targets and lags must be built on the cleaned frame):
+
+```python
+import sys, json; sys.path.insert(0, '.')
+from ml.clean import clean_frame
+ride_metadata = json.load(open('ride_metadata.json'))
+df, clean_summary = clean_frame(df, schedules_df, ride_metadata)
+```
+
+It drops rows after the park's public OPERATING close (party nights: Oogie Boogie Bash, Grad Nite, After Dark), drops `Villains Grove at Oogie Boogie Bash`, and turns OPERATING zeros on real-queue rides into NaN (`wait_minutes_raw` keeps the 0). Dates with no schedule are kept. It prints a 4-line summary; `clean_summary['dates_affected']` and `clean_summary['party_dates']` list the dates.
+
+`park_schedules_cache.pkl` is never topped up. If its date range (printed by `LOAD: park-schedules-cache`) ends before the wait data does, delete the file and re-run that cell first, or party nights after that date stay in training.
+
+Edit `FEATURES: park-schedule-extract`: replace the two `_minutes_from_midnight` lines with
+
+```python
+schedules_df['open_minutes'] = schedules_df.apply(lambda r: _minutes_from_midnight(r['opening_iso'], anchor_date=pd.to_datetime(r['date']).date()), axis=1)
+schedules_df['close_minutes'] = schedules_df.apply(lambda r: _minutes_from_midnight(r['closing_iso'], anchor_date=pd.to_datetime(r['date']).date()), axis=1)
+```
+
+so a 12:00 AM close is 1440, not 0. Then re-run the notebook from the cleaning cell onward (that covers the schedule cell too; `clean_frame` is safe to run twice), and run the scoreboard with `label='clean'`.
+
+Smoke check on the raw cache (read-only): `.venv/bin/python ml/smoke_clean.py --cache df_cache.pkl --schedules park_schedules_cache.pkl --metadata ride_metadata.json`.
+
 ## Reading the headline table
 
 - Train = every day on or before the cutoff; test = the 4 weeks after. The model has never seen a test day.
