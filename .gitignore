@@ -16,3 +16,4 @@ samconfig.toml
 __pycache__/
 closure_events.csv
 *.p8
+df_features_cache.pkl
