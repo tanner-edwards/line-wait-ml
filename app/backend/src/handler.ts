@@ -10,6 +10,7 @@ import {
   PARK_ORDER,
   Prediction,
   Ride,
+  ThemeparksLiveEntity,
 } from './types';
 import { fetchLiveData, UpstreamError } from './themeparksClient';
 import { filterToRides } from './rideFilter';
@@ -26,7 +27,7 @@ import {
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
-import { loadPredictions, MLPredictionDoc } from './mlPredictions';
+import { isUsablePrediction, loadPredictions, MLPredictionDoc } from './mlPredictions';
 import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
@@ -189,7 +190,7 @@ async function buildFullDayForecast(
   now: Date,
   mlPred?: MLPredictionDoc,
 ): Promise<FullDaySlot[] | null> {
-  if (mlPred !== undefined && mlPred.full_day.length > 0) {
+  if (mlPred !== undefined && Array.isArray(mlPred.full_day) && mlPred.full_day.length > 0) {
     return mlPred.full_day.map(s => ({
       timeSlot: s.time_slot,
       startMinutes: s.start_minutes,
@@ -286,124 +287,147 @@ export async function fetchPark(
     loadClosureProfiles().catch(() => new Map<string, import('./closureProfiles').ClosureProfile>()),
   ]);
 
+  // Builds one ride. mlPred is passed in (not looked up) so the per-ride
+  // fallback below can rebuild the same ride without ML.
+  const assembleRide = async (
+    entity: ThemeparksLiveEntity,
+    mlPred: MLPredictionDoc | undefined,
+  ): Promise<Ride> => {
+    const isOperating = entity.status === 'OPERATING';
+    const currentWait = isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null;
+    // rideStats is looked up for all rides (not just operating) so the
+    // non-ride filter below can use it to drop chronic walk-ons /
+    // walkthroughs / experiences regardless of current status.
+    const [haResult, rideStats, fullDayForecast] = await Promise.all([
+      isOperating ? buildHistoricalAverage(parkSlug, entity.id, now, currentWait, mlPred) : Promise.resolve({ primary: null, baseline: null }),
+      buildRideStats(parkSlug, entity.id, dayType),
+      buildFullDayForecast(parkSlug, entity.id, now, mlPred),
+    ]);
+    const historicalAverage = haResult.primary;
+    const historicalBaseline = haResult.baseline;
+    const meta = lookupRideMetadata(metadataMap, entity.id);
+    const status = entity.status ?? 'UNKNOWN';
+    const ride: Ride = {
+      id: entity.id,
+      name: entity.name,
+      land: resolveLand(entity.id, parkSlug),
+      status,
+      currentWait,
+      historicalAverage,
+      rideStats,
+      prediction: mlPred ? buildPrediction(mlPred) : null,
+      historicalBaseline,
+      recentHistory: recentHistoryMap.get(entity.id) ?? null,
+      lat: meta?.lat ?? null,
+      lng: meta?.lng ?? null,
+      // Persona sort inputs: resolved categories + raw ride facts.
+      categories: resolveCategories(meta),
+      heightMinIn: meta?.heightMinIn ?? null,
+      thrillLevel: meta?.thrillLevel ?? null,
+      pregnancyAdvisory: meta?.pregnancyAdvisory ?? false,
+      transferRequired: meta?.transferRequired ?? false,
+      // Only meaningful when status is DOWN — the scanner only records
+      // OPERATING → DOWN transitions. For other states we leave null.
+      closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
+      predictedReopenAt: (() => {
+        if (status !== 'DOWN') return null;
+        const closedAt = lookupClosedAt(closuresMap, entity.id);
+        if (!closedAt) return null;
+        const profile = closureProfilesMap.get(entity.id);
+        if (!profile) return null;
+        const closedAtMs = new Date(closedAt).getTime();
+        const durationSoFarMin = (now.getTime() - closedAtMs) / 60_000;
+        const isExtended = durationSoFarMin > profile.shortResetThresholdMin;
+        // Suppress break prediction if MAE is too high to be useful.
+        const breakReliable = profile.extendedP50Min != null &&
+          (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
+        const totalMin = isExtended && breakReliable
+          ? profile.extendedP50Min!
+          : profile.p50Min;
+        const predicted = new Date(closedAtMs + totalMin * 60_000);
+        // Only surface a prediction that's still in the future.
+        return predicted.getTime() > now.getTime() ? predicted.toISOString() : null;
+      })(),
+      // Structured closure breakdown for the Closure Intelligence UI.
+      // Only emitted while the ride is DOWN. Two fields require additional
+      // ML work and carry placeholder values until that lands:
+      //   predictedReopenWait  — expected wait (minutes) when the ride reopens
+      //   postReopenWaitDrop   — true briefly after reopen when wait is below typical
+      closureProfile: (() => {
+        if (status !== 'DOWN') return null;
+        const closedAt = lookupClosedAt(closuresMap, entity.id);
+        if (!closedAt) return null;
+        const profile = closureProfilesMap.get(entity.id);
+        if (!profile) return null;
+        const closedAtMs = new Date(closedAt).getTime();
+        const elapsedMinutes = Math.round((now.getTime() - closedAtMs) / 60_000);
+        const isExtended = elapsedMinutes > profile.shortResetThresholdMin;
+        const breakReliable = profile.extendedP50Min != null &&
+          (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
+        const confidenceLevel: 'high' | 'suppressed' = isExtended
+          ? (breakReliable && (profile.extendedSampleCount ?? 0) >= 3 ? 'high' : 'suppressed')
+          : ((profile.sampleCount ?? 0) >= 5 ? 'high' : 'suppressed');
+        return {
+          closureType: (isExtended ? 'break' : 'blip') as 'blip' | 'break',
+          elapsedMinutes,
+          blipEstimateMinutes: Math.round(profile.p50Min),
+          breakEstimateMinutes: Math.round(profile.extendedP50Min ?? profile.p50Min),
+          predictedReopenWait: null as number | null,
+          confidenceLevel,
+          postReopenWaitDrop: false,
+        };
+      })(),
+      fullDayForecast,
+    };
+    // Authoritative verdict from the two-layer engine (Layer 1 deal math +
+    // Layer 2 worth/absolute/star). Drives the badge and the deterministic
+    // "why" reasons.
+    const vres = scoreVerdict(ride);
+    let verdict: Verdict = vres.verdict;
+    let reasons = vres.reasons;
+
+    // Reversion adjustment: downgrade 'go'/'star' → neutral when the ride is
+    // anomalously low (pct_rank ≤ P15), the model expects a spike, and the
+    // user is too far away to beat it to the ride.
+    if (
+      (verdict === 'go' || verdict === 'star') &&
+      (mlPred?.pct_rank ?? 1) <= 0.15 &&
+      (mlPred?.reversion_prob ?? 0) > 0.35 &&
+      userLat !== null && userLng !== null
+    ) {
+      const walkMins = walkingMinutes(
+        { lat: userLat, lng: userLng },
+        { lat: ride.lat, lng: ride.lng },
+      );
+      if (walkMins !== null && walkMins > 15) {
+        verdict = 'neutral';
+        reasons = { ...reasons, primary: 'none', star: false };
+      }
+    }
+
+    const verdictInfo: VerdictInfo = { verdict, reasons };
+    ride.verdict = verdictInfo;
+    return ride;
+  };
+
+  // Per-ride isolation: a doc that slips past loadPredictions and still
+  // throws during assembly degrades only that ride (served as if it had no
+  // doc: prediction null, historical curves, verdict without ML) instead of
+  // failing fetchPark for the whole park.
   const allRides: Ride[] = await Promise.all(
     filterToRides(live.liveData).map(async entity => {
-      const isOperating = entity.status === 'OPERATING';
-      const currentWait = isOperating ? entity.queue?.STANDBY?.waitTime ?? null : null;
-      const mlPred = predictionsMap.get(entity.id);
-      // rideStats is looked up for all rides (not just operating) so the
-      // non-ride filter below can use it to drop chronic walk-ons /
-      // walkthroughs / experiences regardless of current status.
-      const [haResult, rideStats, fullDayForecast] = await Promise.all([
-        isOperating ? buildHistoricalAverage(parkSlug, entity.id, now, currentWait, mlPred) : Promise.resolve({ primary: null, baseline: null }),
-        buildRideStats(parkSlug, entity.id, dayType),
-        buildFullDayForecast(parkSlug, entity.id, now, mlPred),
-      ]);
-      const historicalAverage = haResult.primary;
-      const historicalBaseline = haResult.baseline;
-      const meta = lookupRideMetadata(metadataMap, entity.id);
-      const status = entity.status ?? 'UNKNOWN';
-      const ride: Ride = {
-        id: entity.id,
-        name: entity.name,
-        land: resolveLand(entity.id, parkSlug),
-        status,
-        currentWait,
-        historicalAverage,
-        rideStats,
-        prediction: mlPred ? buildPrediction(mlPred) : null,
-        historicalBaseline,
-        recentHistory: recentHistoryMap.get(entity.id) ?? null,
-        lat: meta?.lat ?? null,
-        lng: meta?.lng ?? null,
-        // Persona sort inputs: resolved categories + raw ride facts.
-        categories: resolveCategories(meta),
-        heightMinIn: meta?.heightMinIn ?? null,
-        thrillLevel: meta?.thrillLevel ?? null,
-        pregnancyAdvisory: meta?.pregnancyAdvisory ?? false,
-        transferRequired: meta?.transferRequired ?? false,
-        // Only meaningful when status is DOWN — the scanner only records
-        // OPERATING → DOWN transitions. For other states we leave null.
-        closedAt: status === 'DOWN' ? lookupClosedAt(closuresMap, entity.id) : null,
-        predictedReopenAt: (() => {
-          if (status !== 'DOWN') return null;
-          const closedAt = lookupClosedAt(closuresMap, entity.id);
-          if (!closedAt) return null;
-          const profile = closureProfilesMap.get(entity.id);
-          if (!profile) return null;
-          const closedAtMs = new Date(closedAt).getTime();
-          const durationSoFarMin = (now.getTime() - closedAtMs) / 60_000;
-          const isExtended = durationSoFarMin > profile.shortResetThresholdMin;
-          // Suppress break prediction if MAE is too high to be useful.
-          const breakReliable = profile.extendedP50Min != null &&
-            (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
-          const totalMin = isExtended && breakReliable
-            ? profile.extendedP50Min!
-            : profile.p50Min;
-          const predicted = new Date(closedAtMs + totalMin * 60_000);
-          // Only surface a prediction that's still in the future.
-          return predicted.getTime() > now.getTime() ? predicted.toISOString() : null;
-        })(),
-        // Structured closure breakdown for the Closure Intelligence UI.
-        // Only emitted while the ride is DOWN. Two fields require additional
-        // ML work and carry placeholder values until that lands:
-        //   predictedReopenWait  — expected wait (minutes) when the ride reopens
-        //   postReopenWaitDrop   — true briefly after reopen when wait is below typical
-        closureProfile: (() => {
-          if (status !== 'DOWN') return null;
-          const closedAt = lookupClosedAt(closuresMap, entity.id);
-          if (!closedAt) return null;
-          const profile = closureProfilesMap.get(entity.id);
-          if (!profile) return null;
-          const closedAtMs = new Date(closedAt).getTime();
-          const elapsedMinutes = Math.round((now.getTime() - closedAtMs) / 60_000);
-          const isExtended = elapsedMinutes > profile.shortResetThresholdMin;
-          const breakReliable = profile.extendedP50Min != null &&
-            (profile.breakMaeMin == null || profile.breakMaeMin <= 80);
-          const confidenceLevel: 'high' | 'suppressed' = isExtended
-            ? (breakReliable && (profile.extendedSampleCount ?? 0) >= 3 ? 'high' : 'suppressed')
-            : ((profile.sampleCount ?? 0) >= 5 ? 'high' : 'suppressed');
-          return {
-            closureType: (isExtended ? 'break' : 'blip') as 'blip' | 'break',
-            elapsedMinutes,
-            blipEstimateMinutes: Math.round(profile.p50Min),
-            breakEstimateMinutes: Math.round(profile.extendedP50Min ?? profile.p50Min),
-            predictedReopenWait: null as number | null,
-            confidenceLevel,
-            postReopenWaitDrop: false,
-          };
-        })(),
-        fullDayForecast,
-      };
-      // Authoritative verdict from the two-layer engine (Layer 1 deal math +
-      // Layer 2 worth/absolute/star). Drives the badge and the deterministic
-      // "why" reasons.
-      const vres = scoreVerdict(ride);
-      let verdict: Verdict = vres.verdict;
-      let reasons = vres.reasons;
-
-      // Reversion adjustment: downgrade 'go'/'star' → neutral when the ride is
-      // anomalously low (pct_rank ≤ P15), the model expects a spike, and the
-      // user is too far away to beat it to the ride.
-      if (
-        (verdict === 'go' || verdict === 'star') &&
-        (mlPred?.pct_rank ?? 1) <= 0.15 &&
-        (mlPred?.reversion_prob ?? 0) > 0.35 &&
-        userLat !== null && userLng !== null
-      ) {
-        const walkMins = walkingMinutes(
-          { lat: userLat, lng: userLng },
-          { lat: ride.lat, lng: ride.lng },
+      const doc = predictionsMap.get(entity.id);
+      const mlPred = doc !== undefined && isUsablePrediction(doc) ? doc : undefined;
+      try {
+        return await assembleRide(entity, mlPred);
+      } catch (err) {
+        if (mlPred === undefined) throw err;
+        console.error(
+          `fetchPark(${parkSlug}): ride ${entity.id} failed with its ML doc; serving without ML:`,
+          err instanceof Error ? err.message : err,
         );
-        if (walkMins !== null && walkMins > 15) {
-          verdict = 'neutral';
-          reasons = { ...reasons, primary: 'none', star: false };
-        }
+        return assembleRide(entity, undefined);
       }
-
-      const verdictInfo: VerdictInfo = { verdict, reasons };
-      ride.verdict = verdictInfo;
-      return ride;
     })
   );
 

@@ -128,16 +128,33 @@ def _read_model_version(model_dir: Path) -> str:
         return "unknown"
 
 
-def _tombstone_doc(ride_id: str, now: datetime, model_version: str) -> dict:
+def _tombstone_doc(
+    ride_id: str, now: datetime, model_version: str, current_wait: float | None
+) -> dict:
     """Replaces a ride's predictions doc when it can't be forecast this run,
-    so the previous run's forecast is never served as live."""
-    return {
+    so the previous run's forecast is never served as live.
+
+    Carries the full prediction-doc shape (flat t* at the current wait,
+    stable/low, empty full_day) because older backends read fields like
+    `full_day.length` unconditionally — a bare tombstone 502'd /v0/waits on
+    2026-10-16. New backends skip it via `degraded`; old ones read a flat,
+    harmless forecast. reversion_prob / pct_rank are optional and left out."""
+    wait = 0.0 if current_wait is None else float(current_wait)
+    doc = {
         "ride_id":         ride_id,
         "updated_at":      now.isoformat(),
+    }
+    doc.update({f"t{h}": wait for h in HORIZONS})
+    doc.update({
+        "trend":           "stable",
+        "trend_delta_30":  0.0,
+        "confidence":      "low",
+        "full_day":        [],
         "degraded":        True,
         "degraded_reason": "insufficient_history",
         "model_version":   model_version,
-    }
+    })
+    return doc
 
 
 def _load_models(model_dir: Path):
@@ -749,11 +766,15 @@ def main() -> int:
         tombstoned = 0
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats, regime_thresholds)
+            current_raw_wait = (
+                None if pd.isna(ride_df["wait_minutes_raw"].iloc[-1])
+                else float(ride_df["wait_minutes_raw"].iloc[-1])
+            )
             if feat_row is None:
                 # Replace (never merge) the old doc so a stale forecast isn't
                 # served as live. Rides with no rows in the window get no
                 # tombstone; their old doc ages out via the backend's 20-min rule.
-                prediction_docs.append(_tombstone_doc(ride_id, now, model_version))
+                prediction_docs.append(_tombstone_doc(ride_id, now, model_version, current_raw_wait))
                 tombstoned += 1
                 continue
             park_id = ride_df["park_id"].iloc[0]
@@ -787,10 +808,7 @@ def main() -> int:
                 close_minutes=close_minutes,
                 morning_df=morning_df,
                 now_minutes=now_minutes,
-                current_raw_wait=(
-                    None if pd.isna(ride_df["wait_minutes_raw"].iloc[-1])
-                    else float(ride_df["wait_minutes_raw"].iloc[-1])
-                ),
+                current_raw_wait=current_raw_wait,
             )
 
             # Reversion probability — day_type must match training-time classify_day_type

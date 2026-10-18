@@ -45,6 +45,13 @@ Revoke by setting it back to `false`. Takes effect on the user's next app launch
 ## Deploying changes
 
 ### Backend (Lambda)
+
+Before deploying the backend:
+1. `git status -sb` must NOT say "ahead" — the Deploy Club 32 workflow builds origin/main, not your laptop. Push first.
+2. Deploy the backend (workflow or `./deploy.sh`).
+3. Verify live: `curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"` must print 200 (the combined endpoint — both parks; without the key it prints 401).
+4. Only then deploy the cron image / models. The cron is the producer; the backend is the consumer. Consumer first, always.
+
 ```bash
 cd app/backend && ./deploy.sh
 ```
@@ -80,6 +87,8 @@ npm run deploy:models
 Before deploying, confirm the new models beat the deployed ones in the notebook's `deployed-vs-new-compare` and `deployed-vs-new-day-profile` cells. After deploying, bump `DEPLOYED_TRAINED_THROUGH` in the compare cell to the deploy date.
 
 The save cell also writes `models/manifest.json` (via `ml.manifest.write_manifest`), and `deploy:models` uploads it with the models. `predict.py` stamps `model_version` (the manifest's `trained_through`) on every prediction doc, and writes a tombstone doc (`degraded: true`) for rides it cannot forecast so the backend never serves a stale forecast as live.
+
+Any new field in a prediction doc must be additive. Tombstones carry the full doc shape so an older backend can still read them.
 
 ### Frontend (Expo web)
 ```bash

@@ -111,15 +111,33 @@ class TestDeriveTrendConfidence:
 
 
 class TestTombstone:
-    def test_shape(self):
-        now = datetime(2026, 8, 24, 19, 0, tzinfo=timezone.utc)
-        assert _tombstone_doc("ride-1", now, "2026-10-04") == {
-            "ride_id": "ride-1",
-            "updated_at": now.isoformat(),
+    NOW = datetime(2026, 8, 24, 19, 0, tzinfo=timezone.utc)
+
+    def test_full_shape(self):
+        # Full doc shape so a backend that reads full_day.length / t* without
+        # checking `degraded` still gets a readable doc.
+        expected = {"ride_id": "ride-1", "updated_at": self.NOW.isoformat()}
+        expected.update({f"t{h}": 35.0 for h in HORIZONS})
+        expected.update({
+            "trend": "stable",
+            "trend_delta_30": 0.0,
+            "confidence": "low",
+            "full_day": [],
             "degraded": True,
             "degraded_reason": "insufficient_history",
             "model_version": "2026-10-04",
-        }
+        })
+        assert _tombstone_doc("ride-1", self.NOW, "2026-10-04", 35.0) == expected
+
+    def test_every_horizon_equals_current_wait(self):
+        doc = _tombstone_doc("ride-1", self.NOW, "v", 13.0)
+        assert [doc[f"t{h}"] for h in HORIZONS] == [13.0] * len(HORIZONS)
+        assert all(isinstance(doc[f"t{h}"], float) for h in HORIZONS)
+        assert "reversion_prob" not in doc and "pct_rank" not in doc
+
+    def test_unknown_wait_is_zero(self):
+        doc = _tombstone_doc("ride-1", self.NOW, "v", None)
+        assert [doc[f"t{h}"] for h in HORIZONS] == [0.0] * len(HORIZONS)
 
 
 class TestReadModelVersion:
