@@ -8,8 +8,13 @@
     res.headline
 
 For each horizon N the scoring rows are training_valid_tN & test. Persistence,
-lookup_delta, Recipe A, and the deployed model are all scored on exactly those
-rows. The forward split gates deploys; the interleaved split is shown only for
+lookup_delta, the recipe (A by default), the `compare` recipe when given, and
+the deployed model are all scored on exactly those rows.
+
+    res = evaluate.run(df_sorted, ..., recipe=RECIPE_A, compare=RECIPE_B, label='recipeB')
+    res.recipe_comparison     # per horizon + day_profile: paired test and verdict
+
+The forward split gates deploys; the interleaved split is shown only for
 comparison with the notebook's old numbers.
 """
 
@@ -26,6 +31,7 @@ import pandas as pd
 
 from . import baselines, deployed, metrics, recipes
 from .manifest import read_manifest
+from .recipes import RECIPE_A, Recipe
 from .splits import forward_split, interleaved_split
 
 log = logging.getLogger("ml.evaluate")
@@ -56,6 +62,7 @@ class EvalResults:
     day_profile: dict
     staleness: pd.DataFrame | None = None
     interleaved: pd.DataFrame | None = None
+    recipe_comparison: pd.DataFrame | None = None
     preds: dict = field(default_factory=dict, repr=False)
 
     @property
@@ -69,6 +76,45 @@ class EvalResults:
 def _lift(base: float, model: float) -> float:
     """Percent improvement of model over base MAE (positive = better)."""
     return (base - model) / base * 100 if base else float("nan")
+
+
+def _col(recipe: Recipe) -> str:
+    """Prediction column name for a recipe: recipe_A, recipe_B, recipe_B2, ..."""
+    return f"recipe_{recipe.name}"
+
+
+def _same_trajectory(a: Recipe, b: Recipe) -> bool:
+    return (a.trajectory_params, a.trajectory_target, a.trajectory_features) == \
+        (b.trajectory_params, b.trajectory_target, b.trajectory_features)
+
+
+def _same_day_profile(a: Recipe, b: Recipe) -> bool:
+    return (a.day_profile_params, a.day_profile_features) == (b.day_profile_params, b.day_profile_features)
+
+
+def verdict(paired: dict) -> str:
+    """'B wins' / 'A wins' / 'noise' for a paired_daily(B, A) result.
+
+    A side wins when the mean daily difference favors it and either clears the
+    95% half-width or the sign test has p < 0.05.
+    """
+    mean, hw, p = paired["mean"], paired["half_width_95"], paired["sign_test_p"]
+    significant = abs(mean) > hw or p < 0.05  # NaN compares False
+    if mean < 0 and significant:
+        return "B wins"
+    if mean > 0 and significant:
+        return "A wins"
+    return "noise"
+
+
+def _comparison_row(name, a_mae: float, b_mae: float, paired: dict) -> dict:
+    """paired is paired_daily(B, A): wins_a there are B's winning days."""
+    return {
+        "horizon": name, "A_mae": a_mae, "B_mae": b_mae,
+        "paired_mean": paired["mean"], "half_width_95": paired["half_width_95"],
+        "wins_B": paired["wins_a"], "wins_A": paired["wins_b"],
+        "sign_test_p": paired["sign_test_p"], "verdict": verdict(paired),
+    }
 
 
 def _git_sha() -> str:
@@ -109,17 +155,23 @@ def score_deployed(
 def _trajectory_block(
     df: pd.DataFrame, train: pd.Series, test: pd.Series, horizon: int,
     ride_cats: list, status_cats: list, deployed_cats: tuple[list, list] | None,
-    model_dir: str, git_ref: str | None,
+    model_dir: str, git_ref: str | None, recipe: Recipe = RECIPE_A, compare: Recipe | None = None,
 ) -> tuple[pd.Series, dict[str, pd.Series], pd.Series]:
     """(scoring rows, {name: preds aligned to df.index}, y) for one horizon."""
     rows = (df[f"training_valid_t{horizon}"] & test).astype(bool)
     y = df[f"target_t{horizon}"]
-    model = recipes.train_trajectory(df, train, horizon, ride_cats, status_cats)
     preds = {
         "persistence": baselines.persistence(df, horizon),
         "lookup_delta": baselines.lookup_delta(df, train, horizon),
-        "recipe_A": recipes.predict_trajectory(model, df[rows], horizon).reindex(df.index),
     }
+    for r in (recipe, compare) if compare is not None else (recipe,):
+        if r is compare and _same_trajectory(recipe, compare):
+            # Identical fit (LightGBM is deterministic here); skip the retrain.
+            preds[_col(r)] = preds[_col(recipe)].copy()
+            continue
+        model = recipes.train_trajectory(df, train, horizon, ride_cats, status_cats, recipe=r)
+        preds[_col(r)] = recipes.predict_trajectory(model, df[rows], horizon).reindex(df.index)
+        del model
     if deployed_cats is not None:
         dep = score_deployed(df, rows, horizon, *deployed_cats, model_dir=model_dir, git_ref=git_ref)
         if dep is not None:
@@ -148,11 +200,10 @@ def _serving_style(scored: pd.DataFrame, day_rows: pd.DataFrame) -> pd.DataFrame
 def _day_profile_block(
     df: pd.DataFrame, train: pd.Series, test: pd.Series, ride_cats: list,
     deployed_cats: tuple[list, list] | None, model_dir: str, git_ref: str | None,
-    is_contaminated: bool, feature_cols: list[str] | None = None,
+    is_contaminated: bool, recipe: Recipe = RECIPE_A, compare: Recipe | None = None,
 ) -> dict:
     rows = (test & df["wait_minutes"].notna()).astype(bool)
     y = df["wait_minutes"]
-    model = recipes.train_day_profile(df, train, ride_cats, feature_cols=feature_cols)
     scored = df.loc[rows]
     day_cols = ["timestamp_utc", "date_la"] + (["park_id"] if "park_id" in df.columns else [])
     crowd_cols = [c for c in ("crowd_level_ratio", "morning_crowd_index") if c in df.columns]
@@ -160,9 +211,17 @@ def _day_profile_block(
     preds = {
         "lookup": baselines.lookup_level(df, train),
         "ride_mean": baselines.ride_mean(df, train),
-        "recipe_A": recipes.predict_day_profile(model, scored).reindex(df.index),
-        "recipe_A_serving": recipes.predict_day_profile(model, serving).reindex(df.index),
     }
+    for r in (recipe, compare) if compare is not None else (recipe,):
+        if r is compare and _same_day_profile(recipe, compare):
+            preds[_col(r)] = preds[_col(recipe)].copy()
+            preds[f"{_col(r)}_serving"] = preds[f"{_col(recipe)}_serving"].copy()
+            continue
+        model = recipes.train_day_profile(df, train, ride_cats, recipe=r)
+        preds[_col(r)] = recipes.predict_day_profile(model, scored).reindex(df.index)
+        preds[f"{_col(r)}_serving"] = recipes.predict_day_profile(model, serving).reindex(df.index)
+        del model
+    primary = f"{_col(recipe)}_serving"
     if deployed_cats is not None:
         booster = deployed.load_booster("day_profile", model_dir, git_ref)
         if booster is not None:
@@ -175,16 +234,19 @@ def _day_profile_block(
     table = pd.concat([mae, lift_vs_lookup], axis=1)
     table.index.name = "model"
     by = {
-        col: metrics.breakdown(df, rows, y, preds, col, baseline="lookup", primary="recipe_A_serving")
+        col: metrics.breakdown(df, rows, y, preds, col, baseline="lookup", primary=primary)
         for col in ("ride_name", "hour_of_day", "park_name")
     }
     paired = {
-        "recipe_A_serving_vs_lookup": metrics.paired_daily(df, rows, y, preds["recipe_A_serving"], preds["lookup"]),
-        "recipe_A_serving_vs_ride_mean": metrics.paired_daily(df, rows, y, preds["recipe_A_serving"], preds["ride_mean"]),
+        f"{primary}_vs_{other}": metrics.paired_daily(df, rows, y, preds[primary], preds[other])
+        for other in ("lookup", "ride_mean", "deployed_serving") if other in preds
     }
-    if "deployed_serving" in preds:
-        paired["recipe_A_serving_vs_deployed_serving"] = metrics.paired_daily(
-            df, rows, y, preds["recipe_A_serving"], preds["deployed_serving"])
+    comparison = None
+    if compare is not None:
+        b = f"{_col(compare)}_serving"
+        pair = metrics.paired_daily(df, rows, y, preds[b], preds[primary])
+        paired[f"{b}_vs_{primary}"] = pair
+        comparison = _comparison_row("day_profile", mae[primary], mae[b], pair)
     return {
         "n_rows": n,
         "mae": table,
@@ -193,32 +255,41 @@ def _day_profile_block(
         "by_hour": by["hour_of_day"],
         "by_park": by["park_name"],
         "paired": paired,
+        "comparison": comparison,
         "preds": {k: v[rows] for k, v in preds.items()},
     }
 
 
-def _headline_row(rows, preds, y, horizon, is_contaminated) -> dict:
+def _headline_row(rows, preds, y, horizon, is_contaminated, recipe: Recipe = RECIPE_A,
+                  compare: Recipe | None = None) -> dict:
     n = _require_same_rows(rows, preds, horizon)
     m = {name: metrics.mae(y[rows], p[rows]) for name, p in preds.items()}
+    a = _col(recipe)
     row = {
         "n_rows": n,
         "persistence": m["persistence"],
         "lookup_delta": m["lookup_delta"],
-        "recipe_A": m["recipe_A"],
+        a: m[a],
+    }
+    if compare is not None:
+        b = _col(compare)
+        row[b] = m[b]
+        row[f"lift_{compare.name}_vs_{recipe.name}"] = _lift(m[a], m[b])
+    row.update({
         "deployed": m.get("deployed", float("nan")),
-        "lift_recipe_vs_persistence": _lift(m["persistence"], m["recipe_A"]),
-        "lift_recipe_vs_lookup": _lift(m["lookup_delta"], m["recipe_A"]),
+        "lift_recipe_vs_persistence": _lift(m["persistence"], m[a]),
+        "lift_recipe_vs_lookup": _lift(m["lookup_delta"], m[a]),
         "lift_deployed_vs_persistence": _lift(m["persistence"], m["deployed"]) if "deployed" in m else float("nan"),
         "deployed_contaminated": is_contaminated if "deployed" in m else None,
-    }
+    })
     return row
 
 
 def staleness(
     df: pd.DataFrame, ride_cats: list, status_cats: list, weeks: int = 4,
-    stale_by_weeks: int = 4, horizons=(30, 60, 120),
+    stale_by_weeks: int = 4, horizons=(30, 60, 120), recipe: Recipe = RECIPE_A,
 ) -> pd.DataFrame:
-    """Recipe A trained through cutoff vs through cutoff - stale_by_weeks, both scored
+    """`recipe` trained through cutoff vs through cutoff - stale_by_weeks, both scored
     on the window after cutoff. lift_gain = fresh_lift - stale_lift (percentage points)."""
     cutoff = df["date_la"].max() - timedelta(weeks=weeks)
     old_cutoff = cutoff - timedelta(weeks=stale_by_weeks)
@@ -230,8 +301,10 @@ def staleness(
         rows = (df[f"training_valid_t{h}"] & test).astype(bool)
         y = df.loc[rows, f"target_t{h}"]
         base = metrics.mae(y, df.loc[rows, "wait_minutes"])
-        fresh = recipes.predict_trajectory(recipes.train_trajectory(df, fresh_train, h, ride_cats, status_cats), df[rows], h)
-        stale = recipes.predict_trajectory(recipes.train_trajectory(df, stale_train, h, ride_cats, status_cats), df[rows], h)
+        fresh = recipes.predict_trajectory(
+            recipes.train_trajectory(df, fresh_train, h, ride_cats, status_cats, recipe=recipe), df[rows], h)
+        stale = recipes.predict_trajectory(
+            recipes.train_trajectory(df, stale_train, h, ride_cats, status_cats, recipe=recipe), df[rows], h)
         out.append({"horizon": f"T+{h}", "baseline": "persistence", "baseline_mae": base,
                     "stale_mae": metrics.mae(y, stale), "fresh_mae": metrics.mae(y, fresh)})
         log.info("staleness T+%d done in %.1fs", h, time.time() - t0)
@@ -239,8 +312,8 @@ def staleness(
     rows = (test & df["wait_minutes"].notna()).astype(bool)
     y = df.loc[rows, "wait_minutes"]
     base = metrics.mae(y, baselines.lookup_level(df, fresh_train)[rows])
-    fresh = recipes.predict_day_profile(recipes.train_day_profile(df, fresh_train, ride_cats), df[rows])
-    stale = recipes.predict_day_profile(recipes.train_day_profile(df, stale_train, ride_cats), df[rows])
+    fresh = recipes.predict_day_profile(recipes.train_day_profile(df, fresh_train, ride_cats, recipe=recipe), df[rows])
+    stale = recipes.predict_day_profile(recipes.train_day_profile(df, stale_train, ride_cats, recipe=recipe), df[rows])
     out.append({"horizon": "day_profile", "baseline": "lookup", "baseline_mae": base,
                 "stale_mae": metrics.mae(y, stale), "fresh_mae": metrics.mae(y, fresh)})
     log.info("staleness day_profile done in %.1fs", time.time() - t0)
@@ -251,15 +324,15 @@ def staleness(
     return table
 
 
-def _interleaved(df, ride_cats, status_cats, horizons, forward_headline) -> pd.DataFrame:
-    """Headline columns on the every-5th-day split, no deployed model."""
+def _interleaved(df, ride_cats, status_cats, horizons, forward_headline, recipe: Recipe = RECIPE_A) -> pd.DataFrame:
+    """Headline columns on the every-5th-day split, no deployed model, primary recipe only."""
     train, test = interleaved_split(df)
     out = {}
     for h in horizons:
         t0 = time.time()
-        rows, preds, y = _trajectory_block(df, train, test, h, ride_cats, status_cats, None, "", None)
-        row = _headline_row(rows, preds, y, h, None)
-        out[h] = {k: row[k] for k in ("n_rows", "persistence", "lookup_delta", "recipe_A",
+        rows, preds, y = _trajectory_block(df, train, test, h, ride_cats, status_cats, None, "", None, recipe=recipe)
+        row = _headline_row(rows, preds, y, h, None, recipe=recipe)
+        out[h] = {k: row[k] for k in ("n_rows", "persistence", "lookup_delta", _col(recipe),
                                        "lift_recipe_vs_persistence", "lift_recipe_vs_lookup")}
         log.info("interleaved T+%d done in %.1fs", h, time.time() - t0)
     table = pd.DataFrame.from_dict(out, orient="index")
@@ -274,17 +347,26 @@ def run(
     deployed_git_ref: str | None = None, staleness_horizons=(30, 60, 120), run_staleness: bool = True,
     label: str = "", write_report: bool = True, report_dir: str = "reports/eval",
     model_dir: str = "models", day_profile_feature_cols: list[str] | None = None,
+    recipe: Recipe = RECIPE_A, compare: Recipe | None = None,
 ) -> EvalResults:
-    """Forward-holdout evaluation of Recipe A, both baselines, and the deployed models.
+    """Forward-holdout evaluation of `recipe`, both baselines, and the deployed models.
 
-    day_profile_feature_cols overrides Recipe A's day-profile feature list (an
-    experiment knob; the deployed model is scored with its own features)."""
+    compare: a second Recipe scored on the identical rows; adds recipe_<name>
+    and lift_<B>_vs_<A> columns, recipe_<B>_vs_recipe_<A> paired tests, and
+    EvalResults.recipe_comparison (one row per horizon plus day_profile).
+    day_profile_feature_cols overrides the primary recipe's day-profile feature
+    list (an experiment knob; the deployed model is scored with its own features)."""
     started = time.time()
     horizons = list(horizons)
+    if day_profile_feature_cols is not None:
+        recipe = recipes.with_(recipe, day_profile_features=tuple(day_profile_feature_cols))
+    if compare is not None and compare.name == recipe.name:
+        raise ValueError(f"compare recipe needs a different name than the primary ({recipe.name!r})")
     train, test = forward_split(df, weeks=weeks, cutoff=cutoff)
     test_days = sorted(set(df.loc[test, "date_la"]))
     if not test_days:
         raise ValueError("Forward split produced no test days")
+    manifest = {}
     if deployed_trained_through is None and deployed_git_ref is None:
         manifest = read_manifest(Path(model_dir) / "manifest.json") or {}
         try:
@@ -306,7 +388,9 @@ def run(
         "test_days": test_days,
         "train_days": int(df.loc[train, "date_la"].nunique()),
         "git_sha": _git_sha(),
-        "recipe": recipes.RECIPE_A,
+        "recipe": recipe,
+        "compare": compare,
+        "deployed_recipe": manifest.get("recipe"),
         "deployed_source": f"git {deployed_git_ref}" if deployed_git_ref else f"working tree {model_dir}/",
         "deployed_trained_through": deployed_trained_through,
         "deployed_contaminated": is_contaminated,
@@ -323,32 +407,40 @@ def run(
         deployed_cats = (ride_cats, status_cats)
 
     headline, big_move, trend, paired, all_preds = {}, {}, {}, {}, {}
+    comparison: list[dict] = []
     by_ride, by_hour, by_park, by_band = {}, {}, {}, {}
     for h in horizons:
         t0 = time.time()
         rows, preds, y = _trajectory_block(
-            df, train, test, h, ride_cats, status_cats, deployed_cats, model_dir, deployed_git_ref)
+            df, train, test, h, ride_cats, status_cats, deployed_cats, model_dir, deployed_git_ref,
+            recipe=recipe, compare=compare)
         if "deployed" not in preds:
             _deployed_note(meta, f"trajectory_t{h}", meta["deployed_source"])
-        headline[h] = _headline_row(rows, preds, y, h, is_contaminated)
+        headline[h] = _headline_row(rows, preds, y, h, is_contaminated, recipe=recipe, compare=compare)
         big_move[h] = {"n_rows": int((rows & ((y - df["wait_minutes"]).abs() >= 10)).sum())}
         big_move[h].update({name: metrics.big_move_mae(df, y[rows], p[rows], h) for name, p in preds.items()})
-        trend[h] = metrics.trend_confusion(df, y[rows], preds["recipe_A"][rows], h)
-        by_ride[h] = metrics.breakdown(df, rows, y, preds, "ride_name")
-        by_hour[h] = metrics.breakdown(df, rows, y, preds, "hour_of_day")
-        by_park[h] = metrics.breakdown(df, rows, y, preds, "park_name")
-        by_band[h] = metrics.breakdown(df, rows, y, preds, "wait_band")
+        a = _col(recipe)
+        trend[h] = metrics.trend_confusion(df, y[rows], preds[a][rows], h)
+        by_ride[h] = metrics.breakdown(df, rows, y, preds, "ride_name", primary=a)
+        by_hour[h] = metrics.breakdown(df, rows, y, preds, "hour_of_day", primary=a)
+        by_park[h] = metrics.breakdown(df, rows, y, preds, "park_name", primary=a)
+        by_band[h] = metrics.breakdown(df, rows, y, preds, "wait_band", primary=a)
         paired[h] = {
-            f"recipe_A_vs_{other}": metrics.paired_daily(df, rows, y, preds["recipe_A"], preds[other])
+            f"{a}_vs_{other}": metrics.paired_daily(df, rows, y, preds[a], preds[other])
             for other in ("persistence", "lookup_delta", "deployed") if other in preds
         }
+        if compare is not None:
+            b = _col(compare)
+            pair = metrics.paired_daily(df, rows, y, preds[b], preds[a])
+            paired[h][f"{b}_vs_{a}"] = pair
+            comparison.append(_comparison_row(h, headline[h][a], headline[h][b], pair))
         all_preds[h] = {name: p[rows] for name, p in preds.items()}
         log.info("T+%d: %d rows, done in %.1fs", h, headline[h]["n_rows"], time.time() - t0)
 
     t0 = time.time()
     day_profile = _day_profile_block(
         df, train, test, ride_cats, deployed_cats, model_dir, deployed_git_ref, is_contaminated,
-        feature_cols=day_profile_feature_cols)
+        recipe=recipe, compare=compare)
     if day_profile["deployed_contaminated"] is None:
         _deployed_note(meta, "day_profile", meta["deployed_source"])
     log.info("day_profile done in %.1fs", time.time() - t0)
@@ -360,16 +452,20 @@ def run(
 
     stale = None
     if run_staleness:
-        stale = staleness(df, ride_cats, status_cats, weeks=weeks, horizons=staleness_horizons)
+        stale = staleness(df, ride_cats, status_cats, weeks=weeks, horizons=staleness_horizons, recipe=recipe)
     inter = None
     if also_interleaved:
-        inter = _interleaved(df, ride_cats, status_cats, horizons, headline_df)
+        inter = _interleaved(df, ride_cats, status_cats, horizons, headline_df, recipe=recipe)
+    recipe_comparison = None
+    if compare is not None:
+        recipe_comparison = pd.DataFrame(comparison + [day_profile["comparison"]]).set_index("horizon")
 
     meta["elapsed_seconds"] = round(time.time() - started, 1)
     results = EvalResults(
         meta=meta, headline=headline_df, big_move=big_move_df, trend=trend,
         by_ride=by_ride, by_hour=by_hour, by_park=by_park, by_band=by_band, paired=paired,
         day_profile=day_profile, staleness=stale, interleaved=inter, preds=all_preds,
+        recipe_comparison=recipe_comparison,
     )
     if write_report:
         from . import report

@@ -4,7 +4,7 @@ from datetime import date, datetime
 import pandas as pd
 
 from ml import evaluate
-from ml.manifest import read_manifest, write_manifest
+from ml.manifest import manifest_for, read_manifest, write_manifest
 
 
 class TestWriteManifest:
@@ -21,6 +21,21 @@ class TestWriteManifest:
         data = json.loads(out.read_text())
         assert data["trained_through"] == "2026-10-04"
         assert data["recipe"] == "B"
+
+
+class TestManifestV2:
+    def test_extra_fields_written(self, tmp_path):
+        from ml.recipes import RECIPE_B
+
+        fields = manifest_for(RECIPE_B, pd.DataFrame({"date_la": [date(2026, 5, 2), date(2026, 10, 15)]}), [30, 60])
+        trained_through = fields.pop("trained_through")
+        name = fields.pop("recipe")
+        data = read_manifest(write_manifest(trained_through, recipe=name, path=tmp_path / "m.json", **fields))
+        assert data["trained_through"] == "2026-10-15" and data["recipe"] == "B"
+        assert data["trajectory_target"] == "delta"
+        assert data["frame_range"] == ["2026-05-02", "2026-10-15"] and data["frame_rows"] == 2
+        assert data["horizons"] == [30, 60]
+        assert "week_of_year" not in data["trajectory_features"]
 
 
 class TestReadManifest:

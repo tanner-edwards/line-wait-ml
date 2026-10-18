@@ -138,3 +138,66 @@ class TestServingStyle:
         day = self._frames().drop(columns=["park_id"])
         out = evaluate._serving_style(day, day)
         assert out["crowd_level_ratio"].nunique() == 1
+
+
+class TestRecipeComparison:
+    TINY = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
+
+    @pytest.fixture(scope="class")
+    def compared(self, frame):
+        from ml.recipes import RECIPE_A, RECIPE_B, with_
+        from ml.tests.conftest import RIDE_CATS, STATUS_CATS
+
+        a = with_(RECIPE_A, trajectory_params=self.TINY, day_profile_params=self.TINY)
+        b = with_(RECIPE_B, trajectory_params=self.TINY, day_profile_params=self.TINY)
+        return evaluate.run(frame, RIDE_CATS, STATUS_CATS, weeks=2, horizons=[30, 60], run_staleness=False,
+                            write_report=False, model_dir="does-not-exist", recipe=a, compare=b)
+
+    def test_both_recipes_on_identical_rows(self, compared):
+        for h in (30, 60):
+            preds = compared.preds[h]
+            assert int(preds["recipe_A"].notna().sum()) == int(preds["recipe_B"].notna().sum()) \
+                == compared.headline.loc[h, "n_rows"]
+            assert preds["recipe_A"].index.equals(preds["recipe_B"].index)
+        dp = compared.day_profile["preds"]
+        assert len(dp["recipe_A_serving"]) == len(dp["recipe_B_serving"]) == compared.day_profile["n_rows"]
+
+    def test_headline_and_paired_columns(self, compared):
+        assert {"recipe_A", "recipe_B", "lift_B_vs_A"} <= set(compared.headline.columns)
+        assert "recipe_B_vs_recipe_A" in compared.paired[30]
+        assert "recipe_B_serving_vs_recipe_A_serving" in compared.day_profile["paired"]
+
+    def test_comparison_frame(self, compared):
+        table = compared.recipe_comparison
+        assert table.index.tolist() == [30, 60, "day_profile"]
+        assert list(table.columns) == ["A_mae", "B_mae", "paired_mean", "half_width_95",
+                                       "wins_B", "wins_A", "sign_test_p", "verdict"]
+        assert set(table["verdict"]) <= {"B wins", "A wins", "noise"}
+        assert table.loc[30, "A_mae"] == compared.headline.loc[30, "recipe_A"]
+
+    def test_no_compare_means_no_comparison(self, results):
+        assert results.recipe_comparison is None
+        assert "recipe_B" not in results.headline.columns
+
+    def test_same_name_rejected(self, frame, cats):
+        from ml.recipes import RECIPE_A
+
+        with pytest.raises(ValueError):
+            evaluate.run(frame, *cats, weeks=2, horizons=[30], run_staleness=False, write_report=False,
+                         model_dir="does-not-exist", compare=RECIPE_A)
+
+
+class TestVerdict:
+    def _p(self, mean, hw, p):
+        return {"mean": mean, "half_width_95": hw, "sign_test_p": p}
+
+    def test_beyond_half_width(self):
+        assert evaluate.verdict(self._p(-0.5, 0.2, 0.3)) == "B wins"
+        assert evaluate.verdict(self._p(0.5, 0.2, 0.3)) == "A wins"
+
+    def test_sign_test_alone_is_enough(self):
+        assert evaluate.verdict(self._p(-0.1, 0.2, 0.01)) == "B wins"
+
+    def test_noise_and_nan(self):
+        assert evaluate.verdict(self._p(-0.1, 0.2, 0.3)) == "noise"
+        assert evaluate.verdict(self._p(float("nan"), float("nan"), float("nan"))) == "noise"

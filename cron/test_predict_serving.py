@@ -11,8 +11,10 @@ from predict import (
     _build_full_day,
     _build_trajectory_row,
     _derive_trend,
-    _read_model_version,
+    _predict_trajectory,
+    _read_manifest,
     _tombstone_doc,
+    TRAJECTORY_FEATURE_COLS,
 )
 from test_predict_full_day import _FakeBooster
 
@@ -140,21 +142,137 @@ class TestTombstone:
         assert [doc[f"t{h}"] for h in HORIZONS] == [0.0] * len(HORIZONS)
 
 
-class TestReadModelVersion:
-    def test_reads_trained_through(self, tmp_path):
-        (tmp_path / "manifest.json").write_text(json.dumps({"trained_through": "2026-10-04", "recipe": "A"}))
-        assert _read_model_version(tmp_path) == "2026-10-04"
+class TestReadManifest:
+    def test_reads_fields(self, tmp_path):
+        (tmp_path / "manifest.json").write_text(json.dumps(
+            {"trained_through": "2026-10-04", "recipe": "B", "trajectory_target": "delta"}))
+        m = _read_manifest(tmp_path)
+        assert m["trained_through"] == "2026-10-04" and m["trajectory_target"] == "delta"
 
-    def test_missing_file_is_unknown(self, tmp_path):
-        assert _read_model_version(tmp_path) == "unknown"
+    def test_missing_file_is_empty(self, tmp_path):
+        assert _read_manifest(tmp_path) == {}
 
-    def test_bad_json_is_unknown(self, tmp_path):
+    def test_bad_json_is_empty(self, tmp_path):
         (tmp_path / "manifest.json").write_text("{not json")
-        assert _read_model_version(tmp_path) == "unknown"
+        assert _read_manifest(tmp_path) == {}
 
-    def test_missing_key_is_unknown(self, tmp_path):
-        (tmp_path / "manifest.json").write_text(json.dumps({"recipe": "A"}))
-        assert _read_model_version(tmp_path) == "unknown"
+    def test_non_object_is_empty(self, tmp_path):
+        (tmp_path / "manifest.json").write_text("[1, 2]")
+        assert _read_manifest(tmp_path) == {}
+
+    def test_v1_manifest_defaults_to_level(self, tmp_path):
+        # The Oct 4 models' manifest: no trajectory_target -> level, as main() reads it.
+        (tmp_path / "manifest.json").write_text(json.dumps({"trained_through": "2026-10-04", "recipe": "A"}))
+        m = _read_manifest(tmp_path)
+        assert m.get("trajectory_target", "level") == "level"
+        assert str(m.get("trained_through", "unknown")) == "2026-10-04"
+
+
+# ── Trajectory prediction from the booster's own feature list (Session 4) ───
+
+class _FakeTrajBooster:
+    """Stands in for a trajectory lgb.Booster: fixed output, records its X."""
+
+    def __init__(self, feature_name_list, output):
+        self._names = list(feature_name_list)
+        self.output = output
+        self.last_X = None
+
+    def feature_name(self):
+        return self._names
+
+    def predict(self, X):
+        assert list(X.columns) == self._names  # LightGBM requires the exact columns
+        self.last_X = X
+        return [self.output]
+
+
+def _feat_row(wait=30.0, **overrides):
+    row = {c: 1.0 for c in TRAJECTORY_FEATURE_COLS}
+    row.update({"wait_minutes": wait, "ride_id_cat": "r1", "status_cat": "OPERATING",
+                "is_holiday": False, "is_holiday_weekend": False})
+    row.update(overrides)
+    return row
+
+
+A_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c != "minutes_until_close"]  # Recipe A's 21
+B_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c != "week_of_year"]       # Recipe B's 21 (arm B3: no week_of_year, + minutes_until_close)
+
+
+class TestPredictTrajectory:
+    CATS = (["r1", "r2"], ["CLOSED", "DOWN", "OPERATING"])
+
+    def _run(self, models, target="level", row=None):
+        return _predict_trajectory(row or _feat_row(), models, *self.CATS, target)
+
+    def test_delta_adds_current_wait(self):
+        preds = self._run({60: _FakeTrajBooster(B_COLS, 7.0)}, "delta")
+        assert preds[60] == 37.0
+
+    def test_delta_clipped_at_zero(self):
+        preds = self._run({60: _FakeTrajBooster(B_COLS, -40.0)}, "delta")
+        assert preds[60] == 0.0
+
+    def test_level_is_model_output(self):
+        preds = self._run({60: _FakeTrajBooster(A_COLS, 42.0)}, "level")
+        assert preds[60] == 42.0
+
+    def test_default_target_is_level(self):
+        preds = _predict_trajectory(_feat_row(), {60: _FakeTrajBooster(A_COLS, 42.0)}, *self.CATS)
+        assert preds[60] == 42.0
+
+    def test_t10_is_current_wait(self):
+        preds = self._run({10: _FakeTrajBooster(B_COLS, 99.0), 60: _FakeTrajBooster(B_COLS, 1.0)}, "delta")
+        assert preds[10] == 30.0 and preds[60] == 31.0
+
+    def test_model_without_week_of_year_runs(self):
+        booster = _FakeTrajBooster(B_COLS, 5.0)
+        self._run({60: booster}, "delta")
+        assert "week_of_year" not in booster.last_X.columns
+        assert isinstance(booster.last_X["ride_id_cat"].dtype, pd.CategoricalDtype)
+        assert list(booster.last_X["status_cat"].cat.categories) == self.CATS[1]
+
+    def test_old_and_new_models_side_by_side(self):
+        old, new = _FakeTrajBooster(A_COLS, 40.0), _FakeTrajBooster(B_COLS, 5.0)
+        preds = self._run({30: old, 60: new}, "level")
+        assert "week_of_year" in old.last_X.columns and "week_of_year" not in new.last_X.columns
+        assert "minutes_until_close" not in old.last_X.columns and "minutes_until_close" in new.last_X.columns
+        assert preds[30] == 40.0 and preds[60] == 5.0
+
+    def test_unknown_column_gets_nan(self):
+        booster = _FakeTrajBooster(B_COLS + ["some_future_feature"], 5.0)
+        self._run({60: booster}, "delta")
+        assert booster.last_X["some_future_feature"].dtype == float
+        assert booster.last_X["some_future_feature"].isna().all()
+
+    def test_unknown_close_reaches_model_as_nan(self):
+        booster = _FakeTrajBooster(B_COLS, 5.0)
+        self._run({60: booster}, "delta", row=_feat_row(minutes_until_close=None))
+        assert booster.last_X["minutes_until_close"].dtype == float
+        assert booster.last_X["minutes_until_close"].isna().all()
+
+    def test_none_value_reaches_model_as_float_nan(self):
+        # crowd_level_ratio is None before 10am; an object column makes LightGBM raise.
+        booster = _FakeTrajBooster(B_COLS, 5.0)
+        self._run({60: booster}, "delta", row=_feat_row(crowd_level_ratio=None))
+        assert booster.last_X["crowd_level_ratio"].dtype == float
+        assert booster.last_X["crowd_level_ratio"].isna().all()
+
+    def test_real_booster_with_none_crowd_ratio(self, tmp_path):
+        import lightgbm as lgb
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        n = 300
+        frame = pd.DataFrame({c: rng.random(n) for c in B_COLS if c not in ("ride_id_cat", "status_cat")})
+        frame["ride_id_cat"] = pd.Categorical(rng.choice(self.CATS[0], n), categories=self.CATS[0])
+        frame["status_cat"] = pd.Categorical(["OPERATING"] * n, categories=self.CATS[1])
+        frame = frame[B_COLS]
+        lgb.LGBMRegressor(n_estimators=3, verbose=-1).fit(frame, rng.random(n)).booster_.save_model(
+            str(tmp_path / "t.txt"))
+        booster = lgb.Booster(model_file=str(tmp_path / "t.txt"))
+        preds = self._run({60: booster}, "delta", row=_feat_row(crowd_level_ratio=None))
+        assert preds[60] >= 0.0
 
 
 # ── Crowd features via crowd_features (Session 3) ───────────────────────────

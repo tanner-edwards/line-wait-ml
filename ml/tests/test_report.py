@@ -50,3 +50,19 @@ def test_pipe_table_keeps_int_columns():
 
     df = pd.DataFrame({"n": [24236], "mae": [1.5]}, index=pd.Index([30], name="horizon"))
     assert report._pipe_table(df).splitlines()[2] == "| 30 | 24236 | 1.50 |"
+
+
+def test_recipe_comparison_section_renders(frame):
+    from ml.recipes import RECIPE_A, RECIPE_B, with_
+    from ml.tests.conftest import RIDE_CATS, STATUS_CATS
+
+    tiny = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
+    res = evaluate.run(frame, RIDE_CATS, STATUS_CATS, weeks=2, horizons=[30], run_staleness=False,
+                       write_report=False, model_dir="does-not-exist",
+                       recipe=with_(RECIPE_A, trajectory_params=tiny, day_profile_params=tiny),
+                       compare=with_(RECIPE_B, trajectory_params=tiny, day_profile_params=tiny))
+    text = report.render(res)
+    assert "## Recipe comparison: B (delta) vs A (level)" in text
+    assert "verdict" in text and "day_profile" in text
+    assert text.index("## Recipe comparison") < text.index("## Big-move MAE")
+    assert "Compared with B trajectory (delta target, 21 features)" in text

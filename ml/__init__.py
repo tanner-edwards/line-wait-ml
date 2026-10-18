@@ -12,12 +12,15 @@ from .metrics import big_move_mae, breakdown, mae, paired_daily, trend_class, tr
 from .recipes import (
     DAY_PROFILE_FEATURE_COLS,
     RECIPE_A,
+    RECIPE_B,
+    Recipe,
     TRAJECTORY_FEATURE_COLS,
     add_categoricals,
     predict_day_profile,
     predict_trajectory,
     train_day_profile,
     train_trajectory,
+    with_,
 )
 from .report import render, write
 from .splits import day_type, forward_split, interleaved_split, wait_band

@@ -57,11 +57,15 @@ def _header(res: "EvalResults") -> list[str]:
         f"- Cutoff: {m['cutoff']} (train = {m['train_days']} days on or before; test = {m['weeks']} weeks after)",
         f"- Test days ({len(days)}): {', '.join(str(d) for d in days)}",
         f"- Git: `{m['git_sha']}`",
-        f"- Recipe A trajectory: `{m['recipe']['trajectory']}`",
-        f"- Recipe A day-profile: `{m['recipe']['day_profile']}`",
-        f"- Deployed models: {m['deployed_source']}, trained through "
-        f"{m['deployed_trained_through'] or 'unknown'} -> **{_contaminated_tag(m['deployed_contaminated'])}**",
     ]
+    for role, r in (("Recipe", m["recipe"]), ("Compared with", m.get("compare"))):
+        if r is not None:
+            lines += _recipe_lines(role, r)
+    deployed_recipe = f" (recipe {m['deployed_recipe']})" if m.get("deployed_recipe") else ""
+    lines.append(
+        f"- Deployed models: {m['deployed_source']}, trained through "
+        f"{m['deployed_trained_through'] or 'unknown'}{deployed_recipe} -> "
+        f"**{_contaminated_tag(m['deployed_contaminated'])}**")
     if m["deployed_contaminated"]:
         lines.append("  - CONTAMINATED: the deployed models saw some test days; their numbers are shown "
                      "for reference and excluded from any verdict.")
@@ -71,8 +75,27 @@ def _header(res: "EvalResults") -> list[str]:
     return lines
 
 
+def _recipe_lines(role: str, r) -> list[str]:
+    return [
+        f"- {role} {r.name} trajectory ({r.trajectory_target} target, {len(r.trajectory_features)} features): "
+        f"`{r.trajectory_params}`",
+        f"- {role} {r.name} day-profile ({len(r.day_profile_features)} features): `{r.day_profile_params}`",
+    ]
+
+
+def _comparison_section(res: "EvalResults") -> list[str]:
+    a, b = res.meta["recipe"], res.meta["compare"]
+    return [
+        f"## Recipe comparison: {b.name} ({b.trajectory_target}) vs {a.name} ({a.trajectory_target})", "",
+        f"Same rows for both. paired_mean = mean daily MAE({b.name}) - MAE({a.name}); negative = {b.name} better. "
+        f"Verdict: a side wins when the mean favors it and clears the 95% half-width or the sign test "
+        f"has p < 0.05; otherwise noise. day_profile is serving-style.", "",
+        _table(res.recipe_comparison), "",
+    ]
+
+
 def _trend_section(res: "EvalResults") -> list[str]:
-    lines = ["## Trend word (Recipe A)", "",
+    lines = [f"## Trend word (Recipe {res.meta['recipe'].name})", "",
              "Serving thresholds: pred - wait >= +5 rising, <= -5 falling, else stable.", ""]
     for h, t in res.trend.items():
         lines += [
@@ -107,7 +130,7 @@ def _breakdown_section(res: "EvalResults") -> list[str]:
             lines += [f"### By {title}, T+{h}", ""]
             if title == "ride":
                 worse = table.index[table["worse_than_persistence"]].tolist()
-                lines += [f"Rides where Recipe A loses to persistence: {', '.join(map(str, worse)) or 'none'}", ""]
+                lines += [f"Rides where Recipe {res.meta['recipe'].name} loses to persistence: {', '.join(map(str, worse)) or 'none'}", ""]
             lines += [_table(table), ""]
     return lines
 
@@ -116,7 +139,7 @@ def _day_profile_section(res: "EvalResults") -> list[str]:
     dp = res.day_profile
     lines = [
         "## Day-profile", "",
-        f"Scoring rows: {dp['n_rows']:,} (test days, wait present). `recipe_A_serving` replaces "
+        f"Scoring rows: {dp['n_rows']:,} (test days, wait present). `recipe_{res.meta['recipe'].name}_serving` replaces "
         "crowd_level_ratio / morning_crowd_index with each day's 13:00 value, as `_build_full_day` does — "
         "this is the production-equivalent number.",
         f"Deployed day-profile: **{_contaminated_tag(dp['deployed_contaminated'])}**", "",
@@ -134,12 +157,16 @@ def render(res: "EvalResults") -> str:
         "", "## Headline (MAE, minutes; lift in %)", "",
         "Every column is scored on the identical rows (training_valid_tN on test days).", "",
         _table(res.headline), "",
+    ]
+    if res.recipe_comparison is not None:
+        lines += _comparison_section(res)
+    lines += [
         "## Big-move MAE (|target - wait| >= 10)", "", _table(res.big_move), "",
     ]
     lines += _trend_section(res) + _paired_section(res) + _breakdown_section(res) + _day_profile_section(res)
     if res.staleness is not None:
         lines += ["## Staleness", "",
-                  "Recipe A trained through the cutoff (fresh) vs four weeks earlier (stale), both scored on "
+                  f"Recipe {res.meta['recipe'].name} trained through the cutoff (fresh) vs four weeks earlier (stale), both scored on "
                   "the test window. lift_gain is in percentage points.", "",
                   _table(res.staleness), ""]
     if res.interleaved is not None:

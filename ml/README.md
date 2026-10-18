@@ -18,7 +18,7 @@ res.by_ride[60].head(20)  # per-ride MAE and lift at T+60, worst first
 
 That also writes `reports/eval/YYYY-MM-DD_baseline.md` (commit it). For quick iteration pass `horizons=[30, 60, 120]` and `run_staleness=False`. If you edit a module under `ml/`, restart the kernel or `importlib.reload` it.
 
-## Save cell: write the manifest
+## Save cell: write the manifest (superseded in Session 4 by the `EXPORT` cell below)
 
 Add this line to the notebook's save cell, after the model files are written to `models/`:
 
@@ -157,3 +157,53 @@ print(f"crowd_level_ratio: {non_null:,} non-null of {len(df_sorted):,} rows ({10
 **Deploy order:** run `deploy:cron` first, then `deploy:models`. From this code on, `_build_full_day` takes the day-profile columns from `day_profile_model.feature_name()` and feeds NaN for any feature the row lacks. That means the new code runs with the deployed 18-feature model (which has `morning_crowd_index`) and with a retrained 17-feature model. The cron code in production today still hard-selects 18 columns, and LightGBM raises on a feature-count mismatch, so shipping the retrained models before this code would break Full Day. Once this code is live, either order is safe for future model changes. The JSONs are safe in both orders: a missing `_meta` is read as the legacy format, and old code given v2 keys misses and returns None, as it does today. `DAY_PROFILE_FEATURE_COLS` is still the training-time list, and the parity test still enforces it.
 
 Re-run the variant experiment: `.venv/bin/python -m ml.experiments.session3_crowd_variants`. It needs a fresh `df_features_cache.pkl`.
+
+## Session 4 cells
+
+Recipes are now objects (`ml.recipes.Recipe`): `RECIPE_A` is the Session 3 training, `RECIPE_B` is the candidate the experiment chose (`reports/eval/2026-10-18_session4-recipes.md`; re-run with `.venv/bin/python -m ml.experiments.session4_recipes`). Recipe B's trajectory models predict the *change* from the current wait (delta target), with 600 trees × 63 leaves and 21 features: A's list minus `week_of_year`, plus `minutes_until_close`. Its Full Day model keeps A's 17 features, `week_of_year` included, at 600 × 63. The experiment tested `week_of_year` both ways on both models. Keeping it lost at T+30 for trajectory and was noise at the other horizons; for Full Day it was better by 0.20 MAE on 26 of 28 days. Training and saving moved into `ml/export.py`, so the notebook stops training models itself.
+
+### Superseded cells (turn each into a markdown note)
+
+- `66fd9f25` (train-evaluate-function): `ml.recipes.train_trajectory(..., recipe=...)` replaces it.
+- `52063cc0` (trivial-baselines, trains all 12 into `models`): `ml.export.train_all` refits all 12 + day-profile on every row; the baselines live in the scoreboard.
+- `fi01ab23` (feature importances of `models`): no `models` dict any more. For importances use `_models['trajectory'][60].feature_importances_` after the `EXPORT` cell.
+- `16b64138` (day-profile-train → `model_day_profile`): `train_all` trains the day-profile model with the recipe's features.
+
+Keep running everything that builds features and targets, and the reversion cells `rv01ab23`, `pb01cd23` (→ `ride_percentile_buckets`), `rm01ef45` (→ `reversion_model`). The `EXPORT` cell needs them.
+
+### Scoreboard cell
+
+```python
+import sys, importlib; sys.path.insert(0, '.')
+import ml.recipes, ml.evaluate, ml.report
+for _m in (ml.recipes, ml.report, ml.evaluate): importlib.reload(_m)
+from ml import evaluate
+from ml.recipes import RECIPE_A, RECIPE_B
+res = evaluate.run(df_sorted, RIDE_ID_CATEGORIES, STATUS_CATEGORIES, weeks=4,
+                   recipe=RECIPE_A, compare=RECIPE_B, label='recipeB')
+res.recipe_comparison     # per horizon + day_profile: A_mae, B_mae, paired test, verdict
+```
+
+`deployed_trained_through` comes from `models/manifest.json`. The report gains a "Recipe comparison" section right after the headline. Read it before exporting: B ships only when it wins at T+30, T+60 and T+120 and the Full Day row is not worse.
+
+### `EXPORT` cell (replaces the save cell `0e095970`)
+
+```python
+# ── EXPORT: refit on all rows and write models/ (guarded) ──
+if not globals().get('EXPORT_MODELS', False):
+    print('Skipping export. Set EXPORT_MODELS = True and re-run this cell to write models/.')
+else:
+    import sys, importlib; sys.path.insert(0, '.')
+    import ml.recipes, ml.export, ml.manifest
+    for _m in (ml.recipes, ml.manifest, ml.export): importlib.reload(_m)
+    from ml.recipes import RECIPE_B as RECIPE
+    from ml.export import train_all, export
+    _models = train_all(df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES)
+    manifest = export(_models, df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES,
+                      reversion_model=reversion_model, ride_percentile_buckets=ride_percentile_buckets,
+                      crowd_keyed_by=CROWD_KEYED_BY)
+```
+
+`RECIPE` is whichever recipe the comparison chose. If B lost, use `from ml.recipes import RECIPE_A as RECIPE`: A refit on every row still fixes the staleness. `train_all` fits on every row (no holdout), so the refit cannot be scored. The forward scoreboard you ran before it is the deploy gate. `export` writes into a temp directory and moves the files into `models/` only after every file is written, so a failure leaves `models/` as it was. It writes the v2 `manifest.json` (`recipe`, `trajectory_target`, both feature lists, `horizons`, `frame_rows`, `frame_range`, plus the v1 fields), which `predict.py` reads to turn delta outputs back into levels.
+
+Deploy with the runbook in `internal-docs/operations.md`, "Retrain and deploy models (biweekly)". The cron image goes out **before** the models.

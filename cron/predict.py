@@ -62,6 +62,9 @@ FULL_DAY_SLOTS = [
     for start in range(420, 1440, 30)
 ]
 
+# The row dict _build_trajectory_row + main() can build. Models pick their own
+# columns from it by booster.feature_name() (Recipe B drops week_of_year);
+# ml/tests/test_recipes.py asserts every deployed recipe's list is a subset.
 TRAJECTORY_FEATURE_COLS = [
     "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3", "wait_delta_1",
     "park_crowd_median",
@@ -69,14 +72,13 @@ TRAJECTORY_FEATURE_COLS = [
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
     "minutes_since_last_status_change", "closure_duration_minutes",
-    # minutes_until_close / total_operating_hours were tried here and dropped
-    # after a controlled same-data ablation showed no consistent effect at
-    # any horizon (small deltas, no direction by horizon) — unlike day_profile,
-    # where the same ablation showed a clean, consistent improvement. Kept in
-    # DAY_PROFILE_FEATURE_COLS only.
     "minutes_at_current_level", "wait_regime_danger_zone",
     "crowd_level_ratio",
     "ride_id_cat", "status_cat",
+    # Recipe B only (Session 4, arm B3: helped at every horizon once the
+    # midnight-close bug was fixed). Recipe A models don't ask for it; main()
+    # adds it to the row from today's park close.
+    "minutes_until_close",
 ]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -117,15 +119,19 @@ def _download_models(bucket_name: str, dest: Path) -> None:
         log.warning("manifest.json missing from bucket; model_version will be 'unknown'")
 
 
-def _read_model_version(model_dir: Path) -> str:
-    """`trained_through` from models/manifest.json, or "unknown" when the file
-    is missing, unparseable, or lacks the key."""
+def _read_manifest(model_dir: Path) -> dict:
+    """models/manifest.json as a dict, or {} when it is missing or unparseable.
+
+    Callers default the fields: model_version = trained_through or 'unknown';
+    trajectory_target = 'level' (every pre-Session-4 model)."""
     try:
         manifest = json.loads((model_dir / "manifest.json").read_text())
-        return str(manifest["trained_through"])
+        if not isinstance(manifest, dict):
+            raise ValueError("not a JSON object")
+        return manifest
     except Exception as e:
-        log.warning("Could not read model_version from manifest.json (%s); using 'unknown'", e)
-        return "unknown"
+        log.warning("Could not read manifest.json (%s); model_version 'unknown', trajectory_target 'level'", e)
+        return {}
 
 
 def _tombstone_doc(
@@ -421,6 +427,46 @@ def _build_trajectory_row(
 
 # ── Prediction helpers ────────────────────────────────────────────────────────
 
+def _predict_trajectory(
+    feat_row: dict,
+    traj_models: dict,
+    ride_id_cats: list[str],
+    status_cats: list[str],
+    trajectory_target: str = "level",
+) -> dict[int, float]:
+    """Level forecast per horizon for one ride, plus t10 = current wait.
+
+    Each model's columns come from its own feature_name(), so a model with or
+    without week_of_year (or any feature the row lacks, fed as NaN) runs with
+    the same code. A 'delta' model predicts the change from the
+    walk-on-normalized current wait, which is added back. Clipped at 0.
+    """
+    current = float(feat_row["wait_minutes"])
+    frames: dict[tuple, pd.DataFrame] = {}
+    preds: dict[int, float] = {}
+    for h, m in traj_models.items():
+        cols = tuple(m.feature_name())
+        X = frames.get(cols)
+        if X is None:
+            # None (e.g. crowd_level_ratio before 10am) must reach LightGBM as a
+            # float NaN; an object column makes predict() raise.
+            row = {c: (float("nan") if feat_row.get(c) is None else feat_row[c]) for c in cols}
+            X = pd.DataFrame([row], columns=list(cols))
+            if "ride_id_cat" in X.columns:
+                X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
+            if "status_cat" in X.columns:
+                X["status_cat"] = pd.Categorical(X["status_cat"], categories=status_cats)
+            frames[cols] = X
+        raw = float(m.predict(X)[0])
+        pred = current + raw if trajectory_target == "delta" else raw
+        preds[h] = max(0.0, round(pred, 1))
+    # The T+10 model loses to "wait stays the same", so t10 is the
+    # (normalized) current wait. The model stays loaded/downloaded for
+    # now so HORIZONS and the GCS file list are unchanged.
+    preds[10] = current
+    return preds
+
+
 def _derive_trend(
     current_wait: float,
     lag1: float,
@@ -700,8 +746,11 @@ def main() -> int:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
         traj_models, day_profile_model, ride_id_cats, status_cats, reversion_model, percentile_buckets, regime_thresholds, crowd_baselines = _load_models(model_dir)
-        model_version = _read_model_version(model_dir)
-        log.info("model_version: %s", model_version)
+        manifest = _read_manifest(model_dir)
+        model_version = str(manifest.get("trained_through", "unknown"))
+        trajectory_target = manifest.get("trajectory_target", "level")
+        log.info("model_version: %s, trajectory_target: %s, recipe: %s",
+                 model_version, trajectory_target, manifest.get("recipe", "unknown"))
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -726,8 +775,8 @@ def main() -> int:
         # Today's (open_minutes, close_minutes) per park — one read per park
         # (not per ride), (None, None) fail-open when the schedule doc is
         # missing or there's no OPERATING entry today. Feeds day_profile's
-        # minutes_until_close / total_operating_hours (trajectory doesn't use
-        # these — see TRAJECTORY_FEATURE_COLS), and still masks full_day slots
+        # minutes_until_close / total_operating_hours (Recipe B trajectory
+        # models also read minutes_until_close), and still masks full_day slots
         # past close regardless of what the model predicts.
         park_hours = {
             park_id: get_todays_hours(db, park_id, now_la)
@@ -781,18 +830,11 @@ def main() -> int:
             feat_row["park_crowd_median"] = park_crowd_median
             feat_row["crowd_level_ratio"] = crowd_by_park.get(park_id)
             open_minutes, close_minutes = park_hours.get(park_id, (None, None))
+            feat_row["minutes_until_close"] = (
+                minutes_until_close(now_minutes, close_minutes) if close_minutes is not None else None
+            )
 
-            X = pd.DataFrame([feat_row])[TRAJECTORY_FEATURE_COLS]
-            X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
-            X["status_cat"]  = pd.Categorical(X["status_cat"],  categories=status_cats)
-            traj_preds = {
-                h: max(0.0, round(float(m.predict(X)[0]), 1))
-                for h, m in traj_models.items()
-            }
-            # The T+10 model loses to "wait stays the same", so t10 is the
-            # (normalized) current wait. The model stays loaded/downloaded for
-            # now so HORIZONS and the GCS file list are unchanged.
-            traj_preds[10] = float(feat_row["wait_minutes"])
+            traj_preds = _predict_trajectory(feat_row, traj_models, ride_id_cats, status_cats, trajectory_target)
 
             trend, trend_delta_30, confidence = _derive_trend(
                 feat_row["wait_minutes"], feat_row["wait_lag_1"], traj_preds
