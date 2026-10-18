@@ -18,7 +18,11 @@ from datetime import date
 from pathlib import Path
 
 import lightgbm as lgb
+import logging
+import numpy as np
 import pandas as pd
+
+log = logging.getLogger(__name__)
 
 from .recipes import CAT_COLS, add_categoricals
 
@@ -79,9 +83,16 @@ def predict_with_booster(
     cols = booster.feature_name()
     sources = {CAT_COLS.get(c, c) for c in cols}
     missing = sorted(sources - set(df.columns))
+    present = sorted(sources - set(missing))
+    X = add_categoricals(df.loc[rows, present], ride_cats, status_cats)
     if missing:
-        raise ValueError(f"Frame is missing columns the deployed model needs: {missing}")
-    X = add_categoricals(df.loc[rows, sorted(sources)], ride_cats, status_cats)[cols]
+        # A deployed model older than the frame may want a feature that training
+        # no longer produces (e.g. morning_crowd_index after Session 3). Serving
+        # feeds NaN for those, so grade the model the same way instead of failing.
+        log.warning("deployed model wants columns the frame lacks; feeding NaN: %s", missing)
+        for c in missing:
+            X[c] = np.nan
+    X = X[cols]
     return pd.Series(booster.predict(X), index=X.index)
 
 

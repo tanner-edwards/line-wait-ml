@@ -37,7 +37,7 @@ SERVING_MINUTE = 13 * 60  # _build_full_day uses the crowd values current at ser
 KNOWN_ISSUES = [
     "Midnight close is encoded as 0 in minutes_until_close / total_operating_hours (data bug, Session 2).",
     "Ticketed-event rows (Oogie Boogie Bash, Grad Nite) are present after public close.",
-    "crowd_level_ratio and morning_crowd_index baselines are keyed by month.",
+    "crowd_level_ratio baselines are keyed (day_type, hour) resort-wide since Session 3; per-park keying measured as noise overall but helps DCA 18:00-21:00 (reports/eval/2026-10-16_session3-variants.md).",
     "OPERATING rows with a posted wait of 0 on walkthrough rides are included as-is.",
 ]
 
@@ -129,28 +129,34 @@ def _trajectory_block(
 
 def _serving_style(scored: pd.DataFrame, day_rows: pd.DataFrame) -> pd.DataFrame:
     """Copy of `scored` with crowd_level_ratio / morning_crowd_index replaced, per
-    date_la, by the value on the poll (any row of `day_rows`) closest to 13:00
-    local — the single value _build_full_day feeds to every slot of the day."""
+    date_la (and per park_id when both frames have it), by the value on the poll
+    (any row of `day_rows`) closest to 13:00 local — the single value
+    _build_full_day feeds to every slot of the day for that ride's park."""
+    cols = [c for c in ("crowd_level_ratio", "morning_crowd_index") if c in day_rows.columns]
+    keys = ["date_la"] + (["park_id"] if "park_id" in day_rows.columns and "park_id" in scored.columns else [])
     local = day_rows["timestamp_utc"].dt.tz_convert(LA_TZ)
     distance = (local.dt.hour * 60 + local.dt.minute - SERVING_MINUTE).abs()
-    pick = distance.groupby(day_rows["date_la"]).idxmin()
-    at_13 = day_rows.loc[pick.to_numpy(), ["date_la", "crowd_level_ratio", "morning_crowd_index"]].set_index("date_la")
+    pick = distance.groupby([day_rows[k] for k in keys]).idxmin()
+    at_13 = day_rows.loc[pick.to_numpy(), keys + cols]
+    merged = scored[keys].merge(at_13, on=keys, how="left")
     out = scored.copy()
-    for col in ("crowd_level_ratio", "morning_crowd_index"):
-        out[col] = scored["date_la"].map(at_13[col]).astype(float)
+    for col in cols:
+        out[col] = merged[col].to_numpy().astype(float)
     return out
 
 
 def _day_profile_block(
     df: pd.DataFrame, train: pd.Series, test: pd.Series, ride_cats: list,
     deployed_cats: tuple[list, list] | None, model_dir: str, git_ref: str | None,
-    is_contaminated: bool,
+    is_contaminated: bool, feature_cols: list[str] | None = None,
 ) -> dict:
     rows = (test & df["wait_minutes"].notna()).astype(bool)
     y = df["wait_minutes"]
-    model = recipes.train_day_profile(df, train, ride_cats)
+    model = recipes.train_day_profile(df, train, ride_cats, feature_cols=feature_cols)
     scored = df.loc[rows]
-    serving = _serving_style(scored, df.loc[test, ["timestamp_utc", "date_la", "crowd_level_ratio", "morning_crowd_index"]])
+    day_cols = ["timestamp_utc", "date_la"] + (["park_id"] if "park_id" in df.columns else [])
+    crowd_cols = [c for c in ("crowd_level_ratio", "morning_crowd_index") if c in df.columns]
+    serving = _serving_style(scored, df.loc[test, day_cols + crowd_cols])
     preds = {
         "lookup": baselines.lookup_level(df, train),
         "ride_mean": baselines.ride_mean(df, train),
@@ -267,9 +273,12 @@ def run(
     horizons=HORIZONS, also_interleaved: bool = False, deployed_trained_through: date | None = None,
     deployed_git_ref: str | None = None, staleness_horizons=(30, 60, 120), run_staleness: bool = True,
     label: str = "", write_report: bool = True, report_dir: str = "reports/eval",
-    model_dir: str = "models",
+    model_dir: str = "models", day_profile_feature_cols: list[str] | None = None,
 ) -> EvalResults:
-    """Forward-holdout evaluation of Recipe A, both baselines, and the deployed models."""
+    """Forward-holdout evaluation of Recipe A, both baselines, and the deployed models.
+
+    day_profile_feature_cols overrides Recipe A's day-profile feature list (an
+    experiment knob; the deployed model is scored with its own features)."""
     started = time.time()
     horizons = list(horizons)
     train, test = forward_split(df, weeks=weeks, cutoff=cutoff)
@@ -338,7 +347,8 @@ def run(
 
     t0 = time.time()
     day_profile = _day_profile_block(
-        df, train, test, ride_cats, deployed_cats, model_dir, deployed_git_ref, is_contaminated)
+        df, train, test, ride_cats, deployed_cats, model_dir, deployed_git_ref, is_contaminated,
+        feature_cols=day_profile_feature_cols)
     if day_profile["deployed_contaminated"] is None:
         _deployed_note(meta, "day_profile", meta["deployed_source"])
     log.info("day_profile done in %.1fs", time.time() - t0)

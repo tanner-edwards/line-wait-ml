@@ -38,7 +38,7 @@ TRAJECTORY_FEATURE_COLS = [
 DAY_PROFILE_FEATURE_COLS = [
     "ride_id_cat",
     "hour_of_day", "day_of_week", "week_of_year", "month",
-    "temp_high_f", "morning_crowd_index", "crowd_level_ratio",
+    "temp_high_f", "crowd_level_ratio",
     "is_holiday", "is_holiday_weekend",
     "days_until_next_holiday", "days_since_last_holiday",
     "minutes_until_close", "total_operating_hours",
@@ -99,13 +99,20 @@ def train_trajectory(
 
 def train_day_profile(
     df: pd.DataFrame, train_mask: pd.Series, ride_cats: list, params: dict | None = None,
+    feature_cols: list[str] | None = None,
 ) -> lgb.LGBMRegressor:
-    """Fit on train_mask & wait_minutes.notna(), target wait_minutes."""
+    """Fit on train_mask & wait_minutes.notna(), target wait_minutes.
+
+    feature_cols overrides DAY_PROFILE_FEATURE_COLS for an experiment (e.g. a
+    feature dropped); predict_day_profile uses whatever the model was fit on.
+    """
+    cols = list(feature_cols or DAY_PROFILE_FEATURE_COLS)
     rows = train_mask & df["wait_minutes"].notna()
-    X = _features(df, rows, DAY_PROFILE_FEATURE_COLS, ride_cats, [])
+    X = _features(df, rows, cols, ride_cats, [])
     model = lgb.LGBMRegressor(**(params or RECIPE_A["day_profile"]))
     model.fit(X, df.loc[rows, "wait_minutes"], categorical_feature=["ride_id_cat"])
     model.ride_cats_, model.status_cats_ = list(ride_cats), []
+    model.day_profile_cols_ = cols
     return model
 
 
@@ -121,5 +128,6 @@ def predict_trajectory(model: lgb.LGBMRegressor, df: pd.DataFrame, horizon: int)
 
 def predict_day_profile(model: lgb.LGBMRegressor, df: pd.DataFrame) -> pd.Series:
     """Predictions for every row of df."""
-    X = _features(df, None, DAY_PROFILE_FEATURE_COLS, model.ride_cats_, [])
+    cols = getattr(model, "day_profile_cols_", DAY_PROFILE_FEATURE_COLS)
+    X = _features(df, None, cols, model.ride_cats_, [])
     return pd.Series(model.predict(X), index=df.index, name="recipe_day_profile")

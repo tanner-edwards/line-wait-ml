@@ -100,10 +100,41 @@ class TestDeployedScoring:
         assert "recipe_A_vs_deployed" in res.paired[30]
         assert {"deployed", "deployed_serving"} <= set(res.day_profile["mae"].index)
 
-    def test_missing_feature_column_raises(self, frame, cats, model_dir):
+    def test_missing_feature_column_is_fed_nan(self, frame, cats, model_dir, caplog):
+        # A deployed model may want a feature the frame no longer carries
+        # (morning_crowd_index after Session 3). Serving feeds NaN; the grader
+        # must do the same rather than fail the whole run.
         from ml.deployed import load_booster, predict_with_booster
 
         booster = load_booster(30, model_dir=str(model_dir))
         rows = frame["training_valid_t30"]
-        with pytest.raises(ValueError, match="wait_lag_1"):
-            predict_with_booster(booster, frame.drop(columns=["wait_lag_1"]), rows, *cats)
+        with caplog.at_level("WARNING", logger="ml.deployed"):
+            preds = predict_with_booster(booster, frame.drop(columns=["wait_lag_1"]), rows, *cats)
+        assert len(preds) == int(rows.sum()) and preds.notna().all()
+        assert "wait_lag_1" in caplog.text
+
+
+class TestServingStyle:
+    def _frames(self):
+        import pandas as pd
+
+        ts = pd.to_datetime(["2026-09-01 12:50", "2026-09-01 13:00", "2026-09-01 15:00"]).tz_localize(
+            "America/Los_Angeles").tz_convert("UTC")
+        rows = []
+        for park, base in (("p-dl", 1.0), ("p-dca", 2.0)):
+            for i, t in enumerate(ts):
+                rows.append({"timestamp_utc": t, "date_la": date(2026, 9, 1), "park_id": park,
+                             "crowd_level_ratio": base + i, "morning_crowd_index": base * 10})
+        return pd.DataFrame(rows)
+
+    def test_value_at_13_per_park(self):
+        day = self._frames()
+        out = evaluate._serving_style(day, day)
+        assert out.loc[day["park_id"] == "p-dl", "crowd_level_ratio"].tolist() == [2.0] * 3
+        assert out.loc[day["park_id"] == "p-dca", "crowd_level_ratio"].tolist() == [3.0] * 3
+        assert out.loc[day["park_id"] == "p-dca", "morning_crowd_index"].tolist() == [20.0] * 3
+
+    def test_without_park_id_one_value_per_day(self):
+        day = self._frames().drop(columns=["park_id"])
+        out = evaluate._serving_style(day, day)
+        assert out["crowd_level_ratio"].nunique() == 1

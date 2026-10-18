@@ -71,3 +71,89 @@ Smoke check on the raw cache (read-only): `.venv/bin/python ml/smoke_clean.py --
 The forward split gates deploys. The interleaved split (every 5th day, the notebook's old method) is shown only for comparison; it overstates lift and never decides anything.
 
 Tests: `.venv/bin/python -m pytest ml/tests -q`. Optional smoke run on a pickled frame: `.venv/bin/python ml/smoke_run.py --frame <path>`.
+
+## Session 3 cells
+
+**Winners** (`reports/eval/2026-10-16_session3-variants.md`, forward split, expected tables fit on train days only):
+
+- `crowd_level_ratio` → **V1, keyed `(day_type, hour)`**, resort-wide. Day-profile serving-style MAE 6.45 (V0 month-keyed: 7.09). Per park (V2) came in at 6.34, but the paired gap vs V1 (−0.10 ± 0.14) is inside the noise.
+- `morning_crowd_index` → **M2, dropped** from `DAY_PROFILE_FEATURE_COLS` (`cron/predict.py` and `ml/recipes.py`). Headliner P75 per park (M1) came in at 6.37 vs 6.41 with it dropped, paired −0.04 ± 0.09, also noise. The current all-rides median (M0) is worse than dropping it (+0.04 ± 0.03).
+- Regime thresholds → keyed by `ride_name`, with `ride_id` as the fallback (not scored. The fix is for correctness on overlays).
+
+All training-time expected tables below are fit on **all rows**. Production should see every day. The experiment used the train mask instead. Both go through the same functions. Paste each body over the cell with the same tag.
+
+Also edit the day-profile training cell (`16b64138`): delete `'morning_crowd_index',` from its feature list so it matches `DAY_PROFILE_FEATURE_COLS`.
+
+### `FEATURES: morning-crowd-index` (`m1n2o3p4`)
+
+Replace the whole cell body with:
+
+```python
+# ── FEATURES: morning-crowd-index ── dropped in Session 3 (no keying beat leaving it out).
+# See reports/eval/2026-10-16_session3-variants.md; the functions remain in cron/crowd_features.py.
+```
+
+### `FEATURES: minutes-at-current-level` (`feat-minutes-at-level`): threshold lines only
+
+Replace the four lines from `# Per-ride P25 / P75 thresholds across all operating data` through `df_sorted = df_sorted.merge(_percs, on='ride_id', how='left')` with:
+
+```python
+# Per-ride P25 / P75 thresholds, keyed by ride_name (seasonal overlays share a
+# ride_id with their base ride) with ride_id as fallback. Same dict is exported
+# by the save cell, so training and serving classify regimes identically.
+import sys; sys.path.insert(0, 'cron')
+from crowd_features import regime_thresholds
+ride_regime_thresholds = regime_thresholds(df_sorted)
+_thr = pd.DataFrame({k: v for k, v in ride_regime_thresholds.items() if k != '_meta'}).T
+df_sorted['_p25'] = df_sorted['ride_name'].map(_thr['p25']).fillna(df_sorted['ride_id'].map(_thr['p25']))
+df_sorted['_p75'] = df_sorted['ride_name'].map(_thr['p75']).fillna(df_sorted['ride_id'].map(_thr['p75']))
+```
+
+The rest of the cell is unchanged. Thresholds are now rounded to 2 dp at training time too, matching what serving has always used.
+
+### `FEATURE: crowd-level-ratio` (`crowd-level-ratio-feature`)
+
+```python
+# ── FEATURE: crowd-level-ratio ──────────────────────────────────────────────
+# Real-time park busyness: 2h (12-poll) rolling sum of operating waits /
+# expected sum for (day_type, hour). Session 3: month dropped from the key so
+# a new month never misses; logic lives in cron/crowd_features.py and is
+# shared with predict.py (parity-tested in cron/test_crowd_features.py).
+# Null before hour 10 and when any poll in the window has < 8 rides.
+import sys; sys.path.insert(0, 'cron')
+from crowd_features import crowd_expected_table, crowd_level_ratio_frame
+
+CROWD_KEYED_BY = ('day_type', 'hour')
+_all_rows = pd.Series(True, index=df_sorted.index)
+df_sorted['crowd_level_ratio'] = crowd_level_ratio_frame(df_sorted, _all_rows, CROWD_KEYED_BY)
+crowd_level_baselines = crowd_expected_table(df_sorted, _all_rows, CROWD_KEYED_BY)
+
+non_null = df_sorted['crowd_level_ratio'].notna().sum()
+print(f"crowd_level_ratio: {non_null:,} non-null of {len(df_sorted):,} rows ({100*non_null/len(df_sorted):.1f}%), "
+      f"{len(crowd_level_baselines) - 1} baseline keys")
+```
+
+### `SAVE: save-all-models` (`0e095970`): JSON exports
+
+`ride_regime_thresholds` (minutes-at-level cell) and `crowd_level_baselines` (crowd-ratio cell) are now built upstream, so in the save cell:
+
+1. Delete the three `baselines_path` lines that write `morning_baselines.json` and change the `print(f"\n{len(models) + 1} models + category map + morning baselines saved ...")` text to drop "+ morning baselines". `predict.py` no longer downloads that file. The copy already in GCS is harmless and stays.
+2. Replace the block from `# Ride regime thresholds (P25/P75 per ride ...` through `print("Saved ride_regime_thresholds.json")` with:
+
+```python
+    # Ride regime thresholds: by ride_name with ride_id fallback, _meta included
+    Path("models/ride_regime_thresholds.json").write_text(json.dumps(ride_regime_thresholds, indent=2))
+    print("Saved ride_regime_thresholds.json")
+```
+
+3. Replace the block from `# Crowd level baselines: expected park sum per (day_type, hour, month)` through `print(f'Saved crowd_level_baselines.json ...')` with:
+
+```python
+    # Crowd level baselines: expected 2h park sum per CROWD_KEYED_BY, _meta included
+    Path('models/crowd_level_baselines.json').write_text(json.dumps(crowd_level_baselines, indent=2))
+    print(f'Saved crowd_level_baselines.json ({len(crowd_level_baselines) - 1} buckets)')
+```
+
+**Deploy order:** run `deploy:cron` first, then `deploy:models`. From this code on, `_build_full_day` takes the day-profile columns from `day_profile_model.feature_name()` and feeds NaN for any feature the row lacks. That means the new code runs with the deployed 18-feature model (which has `morning_crowd_index`) and with a retrained 17-feature model. The cron code in production today still hard-selects 18 columns, and LightGBM raises on a feature-count mismatch, so shipping the retrained models before this code would break Full Day. Once this code is live, either order is safe for future model changes. The JSONs are safe in both orders: a missing `_meta` is read as the legacy format, and old code given v2 keys misses and returns None, as it does today. `DAY_PROFILE_FEATURE_COLS` is still the training-time list, and the parity test still enforces it.
+
+Re-run the variant experiment: `.venv/bin/python -m ml.experiments.session3_crowd_variants`. It needs a fresh `df_features_cache.pkl`.

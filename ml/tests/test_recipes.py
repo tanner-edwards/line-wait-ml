@@ -46,3 +46,11 @@ class TestDayProfile:
         model = train_day_profile(frame, train, cats[0], params=TINY)
         pred = predict_day_profile(model, frame)
         assert np.isfinite(pred).all() and len(pred) == len(frame)
+
+    def test_feature_cols_override(self, frame, cats):
+        train, _ = forward_split(frame, weeks=2)
+        cols = [c for c in DAY_PROFILE_FEATURE_COLS if c != "temp_high_f"]
+        model = train_day_profile(frame, train, cats[0], params=TINY, feature_cols=cols)
+        assert model.booster_.feature_name() == cols
+        no_column = frame.drop(columns=["temp_high_f"])
+        assert np.isfinite(predict_day_profile(model, no_column)).all()
