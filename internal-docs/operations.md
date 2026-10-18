@@ -115,9 +115,9 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
    Check: the next execution after the deploy is `SUCCEEDED`. In the Firebase console (`predictions` collection), docs have `updated_at` under 15 minutes old and `model_version` is still the **old** date. This is new code with old models, and it has to work.
 3. **Back up the bucket (mandatory).**
    ```bash
-   gsutil -m cp gs://club32-models/* gs://club32-models/backup-$(date +%F)/
+   gcloud storage cp "gs://club32-models/*" "gs://club32-models/backup-$(date +%F)/"   # not gsutil -m: it crashes Python on this Mac; quote the URLs so zsh leaves * alone
    ```
-   Check: `gsutil ls gs://club32-models/backup-$(date +%F)/` lists the 12 `trajectory_t*.txt`, `day_profile.txt`, the JSONs and `manifest.json`.
+   Check: `gcloud storage ls "gs://club32-models/backup-$(date +%F)/"` lists 20 files: the 12 `trajectory_t*.txt`, `day_profile.txt`, the JSONs and `manifest.json`.
 4. **Export.** In the notebook, set `EXPORT_MODELS = True` and run the `EXPORT` cell (body in `ml/README.md`, "Session 4 cells").
    ```bash
    cat models/manifest.json
@@ -131,7 +131,7 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
    Check within one cycle (10 minutes): the execution is `SUCCEEDED`; the `predictions` docs carry the **new** `model_version`; the endpoint returns 200 (`curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"`); a spot-check ride (Space Mountain) has `t60` within a plausible range of its current wait and a non-empty `full_day`.
 6. **Rollback if anything fails.**
    ```bash
-   gsutil -m cp gs://club32-models/backup-<date>/* gs://club32-models/
+   gcloud storage cp "gs://club32-models/backup-<date>/*" gs://club32-models/
    ```
    The next cycle picks it up. No code rollback is needed, because the new code reads old models.
 

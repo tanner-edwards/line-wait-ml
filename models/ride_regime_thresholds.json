@@ -1,4 +1,274 @@
 {
+  "_meta": {
+    "keyed_by": [
+      "ride_name"
+    ],
+    "version": 2
+  },
+  "\"it's a small world\"": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Adventureland Treehouse inspired by Walt Disney\u2019s Swiss Family Robinson": {
+    "p25": 0.0,
+    "p75": 0.0
+  },
+  "Alice in Wonderland": {
+    "p25": 15.0,
+    "p75": 25.0
+  },
+  "Astro Orbitor": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "Autopia": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "Big Thunder Mountain Railroad": {
+    "p25": 20.0,
+    "p75": 35.0
+  },
+  "Buzz Lightyear Astro Blasters": {
+    "p25": 5.0,
+    "p75": 20.0
+  },
+  "Casey Jr. Circus Train": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Chip 'n' Dale's GADGETcoaster": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "Davy Crockett's Explorer Canoes": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Disneyland Monorail": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Disneyland Railroad": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Dumbo the Flying Elephant": {
+    "p25": 15.0,
+    "p75": 25.0
+  },
+  "Finding Nemo Submarine Voyage": {
+    "p25": 5.0,
+    "p75": 20.0
+  },
+  "Games of Pixar Pier": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Golden Zephyr": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Goofy's Sky School": {
+    "p25": 20.0,
+    "p75": 40.0
+  },
+  "Grizzly River Run": {
+    "p25": 5.0,
+    "p75": 40.0
+  },
+  "Guardians of the Galaxy - Mission: BREAKOUT!": {
+    "p25": 35.0,
+    "p75": 70.0
+  },
+  "Guardians of the Galaxy - Monsters After Dark": {
+    "p25": 45.0,
+    "p75": 75.0
+  },
+  "Haunted Mansion": {
+    "p25": 5.0,
+    "p75": 35.0
+  },
+  "Haunted Mansion Holiday": {
+    "p25": 30.0,
+    "p75": 50.0
+  },
+  "Hyperspace Mountain": {
+    "p25": 55.0,
+    "p75": 80.0
+  },
+  "Incredicoaster": {
+    "p25": 20.0,
+    "p75": 40.0
+  },
+  "Indiana Jones\u2122 Adventure": {
+    "p25": 30.0,
+    "p75": 50.0
+  },
+  "Inside Out Emotional Whirlwind": {
+    "p25": 5.0,
+    "p75": 15.0
+  },
+  "Jessie's Critter Carousel": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Jumpin' Jellyfish": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Jungle Cruise": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "King Arthur Carrousel": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Luigi's Honkin' Haul-O-Ween": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "Luigi's Rollickin' Roadsters": {
+    "p25": 10.0,
+    "p75": 30.0
+  },
+  "Mad Tea Party": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Mark Twain Riverboat": {
+    "p25": 10.0,
+    "p75": 10.0
+  },
+  "Mater's Graveyard JamBOOree": {
+    "p25": 5.0,
+    "p75": 20.0
+  },
+  "Mater's Junkyard Jamboree": {
+    "p25": 5.0,
+    "p75": 20.0
+  },
+  "Matterhorn Bobsleds": {
+    "p25": 20.0,
+    "p75": 40.0
+  },
+  "Mickey & Minnie's Runaway Railway": {
+    "p25": 15.0,
+    "p75": 40.0
+  },
+  "Mickey's PhilharMagic": {
+    "p25": 10.0,
+    "p75": 10.0
+  },
+  "Millennium Falcon: Smugglers Run": {
+    "p25": 10.0,
+    "p75": 30.0
+  },
+  "Monsters, Inc. Mike & Sulley to the Rescue!": {
+    "p25": 20.0,
+    "p75": 40.0
+  },
+  "Mr. Toad's Wild Ride": {
+    "p25": 10.0,
+    "p75": 15.0
+  },
+  "Peter Pan's Flight": {
+    "p25": 25.0,
+    "p75": 35.0
+  },
+  "Pinocchio's Daring Journey": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Pirate's Lair on Tom Sawyer Island": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Pirates of the Caribbean": {
+    "p25": 10.0,
+    "p75": 25.0
+  },
+  "Pixar Pal-A-Round - Swinging": {
+    "p25": 10.0,
+    "p75": 30.0
+  },
+  "Pixar Pal-A-Round \u2013 Non-Swinging": {
+    "p25": 10.0,
+    "p75": 30.0
+  },
+  "Radiator Springs Racers": {
+    "p25": 55.0,
+    "p75": 90.0
+  },
+  "Redwood Creek Challenge Trail": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Roger Rabbit's Car Toon Spin": {
+    "p25": 20.0,
+    "p75": 40.0
+  },
+  "Sailing Ship Columbia": {
+    "p25": 10.0,
+    "p75": 10.0
+  },
+  "Silly Symphony Swings": {
+    "p25": 5.0,
+    "p75": 5.0
+  },
+  "Snow White's Enchanted Wish": {
+    "p25": 10.0,
+    "p75": 15.0
+  },
+  "Soarin' Over California": {
+    "p25": 25.0,
+    "p75": 50.0
+  },
+  "Soarin\u2019 Across America": {
+    "p25": 25.0,
+    "p75": 45.0
+  },
+  "Space Mountain": {
+    "p25": 35.0,
+    "p75": 55.0
+  },
+  "Star Tours - The Adventures Continue": {
+    "p25": 5.0,
+    "p75": 20.0
+  },
+  "Star Wars: Rise of the Resistance": {
+    "p25": 35.0,
+    "p75": 60.0
+  },
+  "Storybook Land Canal Boats": {
+    "p25": 5.0,
+    "p75": 15.0
+  },
+  "The Little Mermaid - Ariel's Undersea Adventure": {
+    "p25": 5.0,
+    "p75": 25.0
+  },
+  "The Many Adventures of Winnie the Pooh": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Tiana's Bayou Adventure": {
+    "p25": 10.0,
+    "p75": 50.0
+  },
+  "Toy Story Midway Mania!": {
+    "p25": 35.0,
+    "p75": 50.0
+  },
+  "WEB SLINGERS: A Spider-Man Adventure": {
+    "p25": 30.0,
+    "p75": 45.0
+  },
+  "Walt Disney's Enchanted Tiki Room": {
+    "p25": 3.75,
+    "p75": 5.0
+  },
   "07952343-3498-404b-8337-734de9a185c1": {
     "p25": 5.0,
     "p75": 5.0
@@ -28,20 +298,16 @@
     "p75": 25.0
   },
   "2108cc58-80df-4fff-9b91-735e89873ffd": {
-    "p25": 30.0,
-    "p75": 60.0
+    "p25": 45.0,
+    "p75": 75.0
   },
   "2295351d-ce6b-4c04-92d5-5b416372c5b5": {
     "p25": 30.0,
     "p75": 45.0
   },
-  "24066306-d364-4048-b4c9-a0e81980c5b4": {
-    "p25": 5.0,
-    "p75": 20.0
-  },
   "2aedc657-1ee2-4545-a1ce-14753f28cc66": {
     "p25": 30.0,
-    "p75": 45.0
+    "p75": 50.0
   },
   "34b1d70f-11c4-42df-935e-d5582c9f1a8e": {
     "p25": 35.0,
@@ -56,7 +322,7 @@
     "p75": 5.0
   },
   "40524fba-5d84-49e7-9204-f493dbe2d5a4": {
-    "p25": 15.0,
+    "p25": 20.0,
     "p75": 40.0
   },
   "46097afe-a1ea-4807-93d3-14d14f36e55f": {
@@ -125,14 +391,14 @@
   },
   "7a09a2f0-e226-4f3e-86f8-2598ab67ec44": {
     "p25": 10.0,
-    "p75": 25.0
+    "p75": 30.0
   },
   "82aeb29b-504a-416f-b13f-f41fa5b766aa": {
     "p25": 10.0,
     "p75": 25.0
   },
   "86ab3069-110d-49c5-a7e7-29ddf28695a6": {
-    "p25": 30.0,
+    "p25": 35.0,
     "p75": 50.0
   },
   "88197808-3c56-4198-a5a4-6066541251cf": {
@@ -153,7 +419,7 @@
   },
   "9167db1d-e5e7-46da-a07f-ae30a87bc4c4": {
     "p25": 35.0,
-    "p75": 60.0
+    "p75": 55.0
   },
   "9d401ad3-49b2-469f-ac73-93eb429428fb": {
     "p25": 10.0,
@@ -185,7 +451,7 @@
   },
   "c60c768b-3461-465c-8f4f-b44b087506fc": {
     "p25": 55.0,
-    "p75": 85.0
+    "p75": 90.0
   },
   "c8a4b7b1-c1b2-4dfe-b73c-4e834b4a73db": {
     "p25": 5.0,
@@ -221,7 +487,7 @@
   },
   "e1fbc7a1-2cd1-4282-b373-ac11d9d9d38a": {
     "p25": 5.0,
-    "p75": 20.0
+    "p75": 25.0
   },
   "e27b1db8-9ec9-4f8b-9ca6-fd6377de66ee": {
     "p25": 0.0,
@@ -244,7 +510,7 @@
     "p75": 40.0
   },
   "ff52cb64-c1d5-4feb-9d43-5dbd429bac81": {
-    "p25": 20.0,
-    "p75": 40.0
+    "p25": 5.0,
+    "p75": 35.0
   }
 }

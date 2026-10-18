@@ -1,6 +1,73 @@
 {
-  "trained_through": "2026-10-04",
-  "exported_at": "2026-10-15T06:15:19.627038+00:00",
-  "git_sha": "64e16f2",
-  "recipe": "A"
+  "trained_through": "2026-10-18",
+  "exported_at": "2026-10-18T22:07:43.155683+00:00",
+  "git_sha": "de025cf",
+  "recipe": "B",
+  "trajectory_target": "delta",
+  "trajectory_features": [
+    "wait_minutes",
+    "wait_lag_1",
+    "wait_lag_2",
+    "wait_lag_3",
+    "wait_delta_1",
+    "park_crowd_median",
+    "hour_of_day",
+    "day_of_week",
+    "month",
+    "is_holiday",
+    "is_holiday_weekend",
+    "days_until_next_holiday",
+    "days_since_last_holiday",
+    "minutes_since_last_status_change",
+    "closure_duration_minutes",
+    "minutes_at_current_level",
+    "wait_regime_danger_zone",
+    "crowd_level_ratio",
+    "ride_id_cat",
+    "status_cat",
+    "minutes_until_close"
+  ],
+  "day_profile_features": [
+    "ride_id_cat",
+    "hour_of_day",
+    "day_of_week",
+    "week_of_year",
+    "month",
+    "temp_high_f",
+    "crowd_level_ratio",
+    "is_holiday",
+    "is_holiday_weekend",
+    "days_until_next_holiday",
+    "days_since_last_holiday",
+    "minutes_until_close",
+    "total_operating_hours",
+    "had_closure_today",
+    "max_closure_duration_today_min",
+    "hours_since_reopen",
+    "closure_start_hour"
+  ],
+  "horizons": [
+    10,
+    20,
+    30,
+    40,
+    50,
+    60,
+    90,
+    120,
+    150,
+    180,
+    210,
+    240
+  ],
+  "frame_rows": 955685,
+  "frame_range": [
+    "2026-05-02",
+    "2026-10-18"
+  ],
+  "crowd_keyed_by": [
+    "day_type",
+    "hour"
+  ],
+  "reversion_exported": true
 }
