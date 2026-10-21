@@ -102,7 +102,7 @@ describe('POST /v1/feedback', () => {
       repeatIntent: 5,
       repeatIntentNote: null,
       overallFreeText: 'great app',
-    });
+    }, null);
   });
 
   it('accepts a fully blank submission — all optional fields null', async () => {
@@ -124,7 +124,7 @@ describe('POST /v1/feedback', () => {
       repeatIntent: null,
       repeatIntentNote: null,
       overallFreeText: null,
-    });
+    }, null);
   });
 
   it('stores tripId: null when the user has no active/recent trip', async () => {
@@ -135,8 +135,20 @@ describe('POST /v1/feedback', () => {
     expect(res.statusCode).toBe(200);
     expect(mockedFeedback.submitFeedback).toHaveBeenCalledWith(
       'u1',
-      expect.objectContaining({ tripId: null })
+      expect.objectContaining({ tripId: null }),
+      null
     );
+  });
+
+  it('records the x-app-version header as appVersion', async () => {
+    mockedGetTrip.mockResolvedValue(null);
+    const event = buildEvent({ clarity: 3 });
+    event.headers['x-app-version'] = '1.1.0';
+
+    const res = await handler(event);
+
+    expect(res.statusCode).toBe(200);
+    expect(mockedFeedback.submitFeedback).toHaveBeenCalledWith('u1', expect.anything(), '1.1.0');
   });
 
   it('rejects an out-of-range rating with 400', async () => {

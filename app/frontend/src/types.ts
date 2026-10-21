@@ -283,6 +283,12 @@ export interface TripRecord {
   promoCode?: string;
 }
 
+// Server-evaluated feature flags (GET /v1/flags). Mirrors the backend's
+// FeatureFlags in app/backend/src/featureFlags.ts.
+export interface FeatureFlags {
+  freeTrip: boolean;
+}
+
 export interface UserResponse {
   userId: string;
   freeTripClaimed: boolean;

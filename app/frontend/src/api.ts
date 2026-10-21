@@ -6,11 +6,22 @@ import {
   Persona,
   RecommendationsResponse,
   TripRecord,
+  FeatureFlags,
   UserResponse,
 } from './types';
+import Constants from 'expo-constants';
 
 const BASE_URL = process.env.EXPO_PUBLIC_API_BASE_URL ?? '';
 const API_KEY = process.env.EXPO_PUBLIC_API_KEY ?? '';
+const APP_VERSION = Constants.expoConfig?.version ?? null;
+
+// Sent on every request. x-app-version lets the backend evaluate feature
+// flags (minAppVersion) for this build.
+function baseHeaders(): Record<string, string> {
+  const headers: Record<string, string> = { 'x-api-key': API_KEY };
+  if (APP_VERSION) headers['x-app-version'] = APP_VERSION;
+  return headers;
+}
 
 export class ApiError extends Error {
   constructor(public readonly statusCode: number | null, message: string) {
@@ -45,7 +56,7 @@ export async function fetchWaits(
   // include premium (predictive) fields for entitled users. Absent token →
   // free tier (current waits only). Optional so a token hiccup never blanks
   // the waits screen.
-  const headers: Record<string, string> = { 'x-api-key': API_KEY };
+  const headers: Record<string, string> = baseHeaders();
   if (idToken) headers['authorization'] = `Bearer ${idToken}`;
 
   let res: Response;
@@ -106,7 +117,7 @@ export async function fetchRecommendations({
   if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 
   const headers: Record<string, string> = {
-    'x-api-key': API_KEY,
+    ...baseHeaders(),
     'content-type': 'application/json',
   };
   if (idToken) headers['authorization'] = `Bearer ${idToken}`;
@@ -188,7 +199,7 @@ export async function fetchDeviceNotifications(deviceId: string): Promise<Notifi
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}/v1/devices/${encodeURIComponent(deviceId)}/notifications`, {
-      headers: { 'x-api-key': API_KEY },
+      headers: baseHeaders(),
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
@@ -206,6 +217,23 @@ export async function fetchDeviceNotifications(deviceId: string): Promise<Notifi
   }
   const body = (await res.json()) as { notifications: NotificationLogEntry[] };
   return body.notifications ?? [];
+}
+
+// --- Feature flags ---
+
+// Booleans already evaluated by the backend for this build's x-app-version.
+export async function fetchFeatureFlags(): Promise<FeatureFlags> {
+  if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
+  let res: Response;
+  try {
+    res = await fetch(`${BASE_URL}/v1/flags`, { headers: baseHeaders() });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Network error';
+    throw new ApiError(null, message);
+  }
+  if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+  const data = (await res.json()) as { flags: FeatureFlags };
+  return data.flags;
 }
 
 // --- User + trip endpoints ---
@@ -226,7 +254,7 @@ export async function fetchUserTrip(idToken: string): Promise<TripRecord | null>
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}/v1/users/trip`, {
-      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+      headers: { ...baseHeaders(), 'authorization': `Bearer ${idToken}` },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
@@ -249,7 +277,7 @@ export async function fetchUserMe(idToken: string): Promise<UserResponse> {
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}/v1/users/me`, {
-      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+      headers: { ...baseHeaders(), 'authorization': `Bearer ${idToken}` },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
@@ -282,7 +310,7 @@ export async function checkPromoCode(idToken: string, code: string): Promise<voi
   try {
     res = await fetch(`${BASE_URL}/v1/promo/check?code=${encodeURIComponent(code)}`, {
       method: 'GET',
-      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+      headers: { ...baseHeaders(), 'authorization': `Bearer ${idToken}` },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
@@ -353,7 +381,7 @@ export async function deleteAccount(idToken: string): Promise<void> {
   try {
     res = await fetch(`${BASE_URL}/v1/users/me`, {
       method: 'DELETE',
-      headers: { 'x-api-key': API_KEY, 'authorization': `Bearer ${idToken}` },
+      headers: { ...baseHeaders(), 'authorization': `Bearer ${idToken}` },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Network error';
@@ -380,7 +408,7 @@ async function postJson(path: string, body: object): Promise<unknown> {
     res = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       headers: {
-        'x-api-key': API_KEY,
+        ...baseHeaders(),
         'content-type': 'application/json',
       },
       body: JSON.stringify(body),
@@ -413,7 +441,7 @@ async function authedPostJson(path: string, idToken: string, body: object): Prom
     res = await fetch(`${BASE_URL}${path}`, {
       method: 'POST',
       headers: {
-        'x-api-key': API_KEY,
+        ...baseHeaders(),
         'content-type': 'application/json',
         'authorization': `Bearer ${idToken}`,
       },

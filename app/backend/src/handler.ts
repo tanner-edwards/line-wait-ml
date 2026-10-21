@@ -56,6 +56,7 @@ import {
   invalidateEntitlement,
 } from './entitlement';
 import { purchaseTrip } from './tripPurchase';
+import { evaluateFlags, getAppVersion, isFlagEnabled } from './featureFlags';
 import {
   DAILY_PARKS_VALUES,
   DailyParks,
@@ -449,7 +450,7 @@ function corsHeaders(): Record<string, string> {
   const origin = process.env.CORS_ORIGIN ?? '*';
   return {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Headers': 'x-api-key, content-type, authorization',
+    'Access-Control-Allow-Headers': 'x-api-key, content-type, authorization, x-app-version',
     'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
   };
 }
@@ -504,6 +505,7 @@ type RouteKind =
   | { kind: 'promo-validate' }
   | { kind: 'promo-check' }
   | { kind: 'feedback-submit' }
+  | { kind: 'flags' }
   | { kind: 'unknown' };
 
 function routeFromPath(
@@ -551,6 +553,7 @@ function routeFromPath(
     if (path.endsWith('/v1/users/me')) return { kind: 'user-me' };
     if (path.endsWith('/v1/users/trip')) return { kind: 'user-trip' };
     if (path.endsWith('/v1/promo/check')) return { kind: 'promo-check' };
+    if (path.endsWith('/v1/flags')) return { kind: 'flags' };
     const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
     if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
   }
@@ -628,6 +631,10 @@ export async function handler(
 
   if (route.kind === 'feedback-submit') {
     return handleFeedbackSubmit(event);
+  }
+
+  if (route.kind === 'flags') {
+    return handleFlags(event);
   }
 
   if (route.kind === 'device-register') {
@@ -1243,7 +1250,7 @@ async function handleFeedbackSubmit(
       ...ratings,
       ...notes,
       overallFreeText,
-    } as Omit<FeedbackRecord, 'userId' | 'timestamp' | 'appVersion'>);
+    } as Omit<FeedbackRecord, 'userId' | 'timestamp' | 'appVersion'>, getAppVersion(event));
     return jsonResponse(200, { ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
@@ -1266,6 +1273,16 @@ async function handleClaimFreeTrip(
     return jsonResponse(
       403,
       errorBody('APPLE_SIGN_IN_REQUIRED', 'Free trips require signing in with Apple')
+    );
+  }
+
+  // Flag-aware builds never show the claim screen when this is off; only
+  // pre-flag builds (no x-app-version header) can still land here, and their
+  // claim screen renders this message above a Skip button.
+  if (!(await isFlagEnabled('freeTrip', getAppVersion(event)))) {
+    return jsonResponse(
+      403,
+      errorBody('FEATURE_DISABLED', "Free trips aren't available right now. Tap Skip to continue.")
     );
   }
 
@@ -1296,6 +1313,15 @@ async function handleClaimFreeTrip(
     const status = message === 'Free trip already claimed' ? 409 : 500;
     return jsonResponse(status, errorBody(status === 409 ? 'CONFLICT' : 'INTERNAL_ERROR', message));
   }
+}
+
+// No Firebase auth — anonymous users and the sign-in screen need flags too.
+// Returns booleans already evaluated for the caller's x-app-version.
+async function handleFlags(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const flags = await evaluateFlags(getAppVersion(event));
+  return jsonResponse(200, { flags });
 }
 
 async function handlePromoValidate(

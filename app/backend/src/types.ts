@@ -389,7 +389,7 @@ export interface FeedbackRecord {
   userId: string;
   tripId: string | null;
   timestamp: string; // ISO, set server-side on write
-  appVersion: null;  // deferred — always null for now
+  appVersion: string | null; // x-app-version header; null from pre-header builds
   predictionTrust: number | null;     // 1-5
   predictionTrustNote: string | null;
   clarity: number | null;             // 1-5

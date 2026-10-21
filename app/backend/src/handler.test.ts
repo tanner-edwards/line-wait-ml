@@ -139,7 +139,7 @@ describe('handler — CORS headers', () => {
     const result = await handler(buildEvent('/v0/waits/disneyland'));
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
-    expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type, authorization');
+    expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type, authorization, x-app-version');
     expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, POST, DELETE, OPTIONS');
   });
 

@@ -5,13 +5,14 @@ import { FeedbackRecord } from './types';
 
 export async function submitFeedback(
   userId: string,
-  fields: Omit<FeedbackRecord, 'userId' | 'timestamp' | 'appVersion'>
+  fields: Omit<FeedbackRecord, 'userId' | 'timestamp' | 'appVersion'>,
+  appVersion: string | null = null
 ): Promise<void> {
   const db = getFirestore();
   const record: FeedbackRecord = {
     userId,
     timestamp: new Date().toISOString(),
-    appVersion: null,
+    appVersion,
     ...fields,
   };
   await db.collection('feedback').add(record);

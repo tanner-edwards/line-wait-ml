@@ -119,7 +119,7 @@ Resources:
       StageName: prod
       Cors:
         AllowOrigin: !Sub "'${CorsOrigin}'"
-        AllowHeaders: "'x-api-key, content-type, authorization'"
+        AllowHeaders: "'x-api-key, content-type, authorization, x-app-version'"
         AllowMethods: "'GET, POST, DELETE, OPTIONS'"
 
   WaitsApiKey:
@@ -332,6 +332,14 @@ Resources:
           Properties:
             RestApiId: !Ref WaitsApi
             Path: /v1/users/trip
+            Method: get
+            Auth:
+              ApiKeyRequired: true
+        Flags:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/flags
             Method: get
             Auth:
               ApiKeyRequired: true

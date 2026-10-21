@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useTrip } from '../context/TripContext';
+import { useFeatureFlags } from '../context/FeatureFlagsContext';
 import { ClaimFreeTripScreen } from '../screens/ClaimFreeTripScreen';
 import { SignInScreen } from '../screens/SignInScreen';
 import { OnboardingNavigator } from '../onboarding/OnboardingNavigator';
@@ -24,6 +25,7 @@ export function RootNavigator(): React.ReactElement {
   const { persona, loading: personaLoading } = usePersona();
   const { isStale: dailyIsStale, loading: dailyLoading } = useDailyContext();
   const { hasActiveTrip, loading: tripLoading } = useTrip();
+  const flags = useFeatureFlags();
 
   if (authLoading || personaLoading || dailyLoading || tripLoading) {
     return (
@@ -48,7 +50,8 @@ export function RootNavigator(): React.ReactElement {
 
   // Free trip gate: shown once after onboarding for users who haven't claimed
   // their free trip yet. Skip if they already have an active trip (e.g. paid IAP).
-  if (!user?.isAnonymous && userRecord && !userRecord.freeTripClaimed && !userRecord.bypass && !hasActiveTrip && !skippedFreeTrip) {
+  // Gated by the server-side freeTrip flag (off until /v1/flags says otherwise).
+  if (flags.freeTrip && !user?.isAnonymous && userRecord && !userRecord.freeTripClaimed && !userRecord.bypass && !hasActiveTrip && !skippedFreeTrip) {
     return <ClaimFreeTripScreen onSkip={() => setSkippedFreeTrip(true)} />;
   }
 

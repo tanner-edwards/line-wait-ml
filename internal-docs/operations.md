@@ -42,6 +42,31 @@ Revoke by setting it back to `false`. Takes effect on the user's next app launch
 
 ---
 
+## Toggling a feature flag
+
+All flags live in one Firestore doc: **`config/featureFlags`**. Each top-level field is a flag:
+
+| Field | Type | Value |
+|---|---|---|
+| `<flagName>.enabled` | boolean | `true` / `false` |
+| `<flagName>.minAppVersion` | string (optional) | e.g. `1.1.0`. Builds below this version get the flag off |
+
+Current flags: `freeTrip` (the "first trip free" claim screen and `/v1/users/trip/claim-free`).
+
+Example:
+```
+freeTrip: { enabled: true, minAppVersion: "1.1.0" }
+```
+
+How the backend decides (`app/backend/src/featureFlags.ts`):
+- The app sends its version in the `x-app-version` header. With the header, a flag is on when `enabled` is `true` AND the version is at least `minAppVersion`.
+- **No header** (builds released before 1.1.0): only `enabled` counts and `minAppVersion` is ignored, so old App Store builds keep working.
+- If the doc or flag is missing, or a version is malformed, the flag is **off**. The doc must exist before any backend deploy, or the free trip turns off for everyone.
+
+Changes take effect within ~60s (backend cache) and on the app's next launch or foreground. No deploy needed.
+
+---
+
 ## Deploying changes
 
 ### Backend (Lambda)
