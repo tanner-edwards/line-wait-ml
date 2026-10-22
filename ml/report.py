@@ -108,6 +108,58 @@ def _trend_section(res: "EvalResults") -> list[str]:
     return lines
 
 
+def _classifier_section(res: "EvalResults") -> list[str]:
+    names = [r.name for r in (res.meta["recipe"], res.meta.get("compare")) if r is not None]
+    lines = ["## Classifiers", ""]
+    if not res.classifiers:
+        lines += [f"No classifiers in this recipe ({', '.join(names)}); the trend word comes from the regression.", ""]
+        return lines
+    lines += ["Trained on the train half, scored on training_valid_tN & test days (the same rows as the trajectory "
+              "headline). top_decile = precision of the 10% highest probabilities. At T+30 the band table adds "
+              "the call rate and precision at the recipe's tau_call (the trend-word threshold).", ""]
+    summary = pd.DataFrame([
+        {"classifier": name, "recipe": sc["recipe"], "label": str(list(sc["label"])), "n": sc["n"],
+         "base_rate": sc["base_rate"], "auc": sc["auc"], "ap": sc["ap"], "top_decile": sc["top_decile_precision"]}
+        for name, sc in res.classifiers.items()
+    ]).set_index("classifier")
+    lines += [_table(summary), ""]
+    for name, sc in res.classifiers.items():
+        lines += [f"### {name}: by current-wait band", "", _table(sc["bands"]), ""]
+    for name, sc in res.classifiers.items():
+        if sc["direction"] == "fall" or sc["horizon"] == 30:
+            lines += [f"### {name}: reliability (mean predicted vs observed, by quantile bin)", "",
+                      _table(sc["reliability"]), ""]
+    return lines
+
+
+def _trend_clf_section(res: "EvalResults") -> list[str]:
+    if not res.trend_clf:
+        return []
+    lines = ["## Trend word: regression vs classifier", ""]
+    for key, t in res.trend_clf.items():
+        h = key if isinstance(key, int) else int(str(key).split(":")[1])
+        reg = res.trend.get(h)
+        lines += [f"### T+{h} (recipe {t['recipe']})", "",
+                  "Same rows. Regression = pred - wait >= +5 / <= -5; classifier = recipes.derive_trend on "
+                  "p_rise_30 / p_fall_30 with the recipe's per-band thresholds (trough counts as rising, peak "
+                  "as falling).", ""]
+        if reg is not None and len(reg["per_class"]) and t["n"] == int(reg["matrix"].values.sum()):
+            side = pd.concat({"regression": reg["per_class"], "classifier": t["per_class"]}, axis=1)
+            lines += [_table(side), ""]
+        else:
+            lines += [_table(t["per_class"]), ""]
+        lines += ["Classifier word, rows = actual, columns = predicted.", "", _table(t["matrix"]), "",
+                  f"- Word called (not stable): regression {t['regression_called_share']:.1%} of rows, right "
+                  f"{t['regression_called_precision']:.1%}; classifier {t['called_share']:.1%}, right "
+                  f"{t['called_precision']:.1%}.",
+                  f"- Arrow shown (classifier word not stable and confidence not low): {t['arrow_shown']:.1%} of rows, "
+                  f"right {t['arrow_precision']:.1%}.",
+                  "- Confidence share (classifier): " + ", ".join(
+                      f"{c} {v:.1%}" for c, v in t["confidence_share"].items())
+                  + ". `low` gates the verdict engine's use of the ML curve (layer1.ts:64).", ""]
+    return lines
+
+
 def _paired_table(paired: dict) -> pd.DataFrame:
     table = pd.DataFrame.from_dict(paired, orient="index")
     table.index.name = "comparison (a vs b; mean < 0 = a better)"
@@ -163,7 +215,7 @@ def render(res: "EvalResults") -> str:
     lines += [
         "## Big-move MAE (|target - wait| >= 10)", "", _table(res.big_move), "",
     ]
-    lines += _trend_section(res) + _paired_section(res) + _breakdown_section(res) + _day_profile_section(res)
+    lines += _trend_section(res) + _classifier_section(res) + _trend_clf_section(res) + _paired_section(res) + _breakdown_section(res) + _day_profile_section(res)
     if res.staleness is not None:
         lines += ["## Staleness", "",
                   f"Recipe {res.meta['recipe'].name} trained through the cutoff (fresh) vs four weeks earlier (stale), both scored on "

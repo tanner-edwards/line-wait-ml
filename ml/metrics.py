@@ -51,8 +51,17 @@ def trend_confusion(
     if y is None:
         y = df.loc[p.index, f"target_t{horizon}"]
     wait = df.loc[y.index, "wait_minutes"]
-    actual = trend_class(y - wait, thr)
-    predicted = trend_class(p - wait, thr)
+    return trend_confusion_from_words(trend_class(y - wait, thr), trend_class(p - wait, thr))
+
+
+def trend_confusion_from_words(actual: pd.Series, predicted: pd.Series) -> dict:
+    """trend_confusion for words already derived (e.g. by recipes.derive_trend).
+
+    'trough' counts as rising and 'peak' as falling, the direction the arrow shows.
+    """
+    collapse = {"trough": "rising", "peak": "falling"}
+    actual = pd.Series(actual).replace(collapse)
+    predicted = pd.Series(predicted, index=actual.index).replace(collapse)
     matrix = (
         pd.crosstab(actual.rename("actual"), predicted.rename("predicted"))
         .reindex(index=TREND_CLASSES, columns=TREND_CLASSES, fill_value=0)
@@ -130,3 +139,48 @@ def paired_daily(
         "wins_b": wins_b,
         "sign_test_p": float(binomtest(wins_a, decided).pvalue) if decided else float("nan"),
     }
+
+
+def reliability(p, y, bins: int = 10) -> pd.DataFrame:
+    """Mean predicted probability vs observed rate per quantile bin of p (ties merge bins)."""
+    p, y = np.asarray(p, dtype=float), np.asarray(y, dtype=float)
+    q = pd.qcut(p, bins, labels=False, duplicates="drop")
+    out = pd.DataFrame({"bin": q, "p": p, "y": y}).groupby("bin").agg(
+        n=("y", "size"), mean_p=("p", "mean"), observed=("y", "mean"))
+    return out
+
+
+def classifier_scores(y, p, bands, taus: dict | None = None, top: float = 0.10) -> dict:
+    """AUC, average precision, top-decile precision, reliability and a per-band table.
+
+    y: bool labels, p: probabilities, bands: band name per row (same length).
+    taus: {band: tau} -> the band table adds call_rate / precision at p >= tau
+    (a None tau never calls). AUC is NaN when y has a single class.
+    """
+    from sklearn.metrics import average_precision_score, roc_auc_score
+
+    y = np.asarray(y, dtype=bool)
+    p = np.asarray(p, dtype=float)
+    bands = np.asarray(bands)
+    two_classes = 0 < y.sum() < len(y)
+    k = max(1, int(top * len(p)))
+    out = {
+        "n": int(len(y)),
+        "base_rate": float(y.mean()) if len(y) else float("nan"),
+        "auc": float(roc_auc_score(y, p)) if two_classes else float("nan"),
+        "ap": float(average_precision_score(y, p)) if y.any() else float("nan"),
+        "top_decile_precision": float(y[np.argsort(-p, kind="stable")[:k]].mean()) if len(y) else float("nan"),
+        "reliability": reliability(p, y) if len(y) else pd.DataFrame(),
+    }
+    rows = []
+    for b in pd.unique(bands):
+        m = bands == b
+        row = {"band": b, "n": int(m.sum()), "base_rate": float(y[m].mean())}
+        if taus is not None:
+            tau = taus.get(b)
+            call = (p >= tau) & m if tau is not None else np.zeros(len(p), bool)
+            row.update({"tau": tau, "call_rate": float(call.sum() / m.sum()),
+                        "precision": float(y[call].mean()) if call.any() else float("nan")})
+        rows.append(row)
+    out["bands"] = pd.DataFrame(rows).set_index("band") if rows else pd.DataFrame()
+    return out

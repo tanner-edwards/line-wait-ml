@@ -10,7 +10,12 @@ from predict import (
     HORIZONS,
     _build_full_day,
     _build_trajectory_row,
+    _curve_confidence,
     _derive_trend,
+    _derive_trend_from_probs,
+    _load_models,
+    _model_files,
+    _predict_classifiers,
     _predict_trajectory,
     _read_manifest,
     _tombstone_doc,
@@ -93,7 +98,7 @@ class TestDeriveTrendConfidence:
         # too would make it 9 of 12 and read as high.
         preds = {10: 40.0, 20: 40.0, 30: 40.0}
         preds.update({h: (40.0 if i < 6 else 20.0) for i, h in enumerate(self.LATER)})
-        trend, delta30, confidence = _derive_trend(30.0, 30.0, preds)
+        trend, delta30, confidence, source = _derive_trend(30.0, 30.0, preds)
         assert delta30 == 10.0
         assert confidence == "medium"
 
@@ -124,6 +129,7 @@ class TestTombstone:
             "trend": "stable",
             "trend_delta_30": 0.0,
             "confidence": "low",
+            "curve_confidence": "low",
             "full_day": [],
             "degraded": True,
             "degraded_reason": "insufficient_history",
@@ -421,3 +427,202 @@ class TestDayProfileColumnsFromModel:
         from predict import DAY_PROFILE_FEATURE_COLS
         X, _, cols = self._run(DAY_PROFILE_FEATURE_COLS)
         assert list(X.columns) == cols and len(cols) == 17
+
+
+# ── Classifiers and the probability-derived trend word (Session 5) ─────────
+
+# Shared with ml/tests/test_recipes.py (parity with ml.recipes.derive_trend).
+TREND_THRESHOLDS = {
+    "<=10":  {"call": {"rise": 0.60, "fall": 0.50}, "high": {"rise": 0.80, "fall": None}},
+    "15-25": {"call": {"rise": 0.45, "fall": 0.40}, "high": {"rise": 0.70, "fall": 0.75}},
+    "30-60": {"call": {"rise": 0.40, "fall": 0.45}, "high": {"rise": 0.65, "fall": 0.70}},
+    ">60":   {"call": {"rise": None, "fall": 0.50}, "high": {"rise": None, "fall": 0.80}},
+}
+
+# (current, lag1, p_rise_30, p_fall_30) -> (trend, confidence)
+TREND_GRID = [
+    # <=10 band
+    ((5.0, 5.0, 0.60, 0.10), ("rising", "medium")),       # exactly tau_call
+    ((5.0, 5.0, 0.59, 0.10), ("stable", "low")),          # just under; 0.59 >= 0.30
+    ((10.0, 5.0, 0.85, 0.05), ("trough", "high")),        # +5 since lag -> trough
+    ((5.0, 10.0, 0.05, 0.90), ("peak", "medium")),        # high fall tau is None -> never high
+    ((5.0, 5.0, 0.10, 0.12), ("stable", "high")),         # both < 0.15
+    ((5.0, 5.0, 0.20, 0.10), ("stable", "medium")),       # both < 0.30
+    # 15-25 band
+    ((20.0, 20.0, 0.45, 0.10), ("rising", "medium")),
+    ((20.0, 20.0, 0.44, 0.10), ("stable", "low")),
+    ((25.0, 25.0, 0.10, 0.75), ("falling", "high")),
+    ((20.0, 20.0, 0.50, 0.50), ("stable", "low")),        # tie -> stable
+    ((20.0, 20.0, 0.50, 0.55), ("falling", "medium")),    # both called, fall bigger
+    ((20.0, 15.0, 0.70, 0.10), ("trough", "high")),
+    # 30-60 band
+    ((30.0, 30.0, 0.40, 0.39), ("rising", "medium")),
+    ((60.0, 60.0, 0.10, 0.45), ("falling", "medium")),
+    ((45.0, 55.0, 0.10, 0.70), ("peak", "high")),
+    ((45.0, 41.0, 0.70, 0.10), ("rising", "high")),       # +4 since lag -> not a trough
+    ((45.0, 45.0, 0.29, 0.14), ("stable", "medium")),
+    # >60 band
+    ((65.0, 65.0, 0.99, 0.10), ("stable", "low")),        # rise tau None never fires
+    ((90.0, 90.0, 0.05, 0.80), ("falling", "high")),
+    ((90.0, 90.0, 0.05, 0.06), ("stable", "high")),
+]
+
+
+class TestTrendFromProbs:
+    def test_grid(self):
+        for args, expected in TREND_GRID:
+            assert _derive_trend_from_probs(*args, TREND_THRESHOLDS) == expected, args
+
+    def test_missing_inputs_are_none(self):
+        assert _derive_trend_from_probs(20.0, 20.0, 0.9, 0.1, None) is None
+        assert _derive_trend_from_probs(20.0, 20.0, None, 0.1, TREND_THRESHOLDS) is None
+        assert _derive_trend_from_probs(20.0, 20.0, 0.9, float("nan"), TREND_THRESHOLDS) is None
+        assert _derive_trend_from_probs(20.0, 20.0, 0.9, 0.1, {"<=10": TREND_THRESHOLDS["<=10"]}) is None
+
+    def test_derive_trend_uses_classifier_when_given(self):
+        preds = {h: 20.0 for h in HORIZONS}  # flat curve: regression says stable / low
+        trend, delta30, conf, source = _derive_trend(
+            20.0, 20.0, preds, {"p_rise_30": 0.9, "p_fall_30": 0.1}, TREND_THRESHOLDS)
+        assert (trend, delta30, conf, source) == ("rising", 0.0, "high", "classifier")
+
+    def test_falls_back_to_regression(self):
+        preds = {h: 40.0 for h in HORIZONS}
+        today = ("rising", 10.0, "high", "regression")
+        assert _derive_trend(30.0, 30.0, preds) == today
+        assert _derive_trend(30.0, 30.0, preds, None, TREND_THRESHOLDS) == today
+        assert _derive_trend(30.0, 30.0, preds, {}, TREND_THRESHOLDS) == today
+        assert _derive_trend(30.0, 30.0, preds, {"p_rise_30": 0.1, "p_fall_30": 0.9}, None) == today
+        # Only the 60-minute classifiers present -> no T+30 probabilities -> regression.
+        assert _derive_trend(30.0, 30.0, preds, {"p_rise_60": 0.1}, TREND_THRESHOLDS) == today
+
+
+def _tiny_classifier(tmp_path, name="clf.txt"):
+    import lightgbm as lgb
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    n = 300
+    cats = (["r1", "r2"], ["CLOSED", "DOWN", "OPERATING"])
+    frame = pd.DataFrame({c: rng.random(n) for c in B_COLS if c not in ("ride_id_cat", "status_cat")})
+    frame["ride_id_cat"] = pd.Categorical(rng.choice(cats[0], n), categories=cats[0])
+    frame["status_cat"] = pd.Categorical(["OPERATING"] * n, categories=cats[1])
+    frame = frame[B_COLS]
+    y = (frame["wait_minutes"] > 0.5).astype(int)
+    lgb.LGBMClassifier(n_estimators=3, verbose=-1).fit(frame, y).booster_.save_model(str(tmp_path / name))
+    return lgb.Booster(model_file=str(tmp_path / name)), cats
+
+
+class TestPredictClassifiers:
+    def test_real_booster_with_none_feature(self, tmp_path):
+        booster, cats = _tiny_classifier(tmp_path)
+        probs = _predict_classifiers(
+            _feat_row(crowd_level_ratio=None, minutes_until_close=None),
+            {"p_rise_30": booster, "p_fall_30": booster}, *cats)
+        assert set(probs) == {"p_rise_30", "p_fall_30"}
+        assert all(0.0 <= v <= 1.0 for v in probs.values())
+        assert probs["p_rise_30"] == round(probs["p_rise_30"], 3)
+
+    def test_columns_follow_feature_name(self):
+        booster = _FakeTrajBooster(B_COLS, 0.4567)
+        probs = _predict_classifiers(_feat_row(crowd_level_ratio=None), {"p_fall_60": booster},
+                                     ["r1", "r2"], ["CLOSED", "DOWN", "OPERATING"])
+        assert probs == {"p_fall_60": 0.457}
+        assert booster.last_X["crowd_level_ratio"].dtype == float
+        assert isinstance(booster.last_X["ride_id_cat"].dtype, pd.CategoricalDtype)
+
+    def test_no_classifiers_is_empty(self):
+        assert _predict_classifiers(_feat_row(), {}, ["r1"], ["OPERATING"]) == {}
+
+
+V3_MANIFEST = {
+    "trained_through": "2026-10-21", "recipe": "B", "trajectory_target": "delta",
+    "classifiers": {
+        "p_fall_30": {"file": "clf_fall_30.txt", "horizon": 30, "direction": "fall", "label": ["flat", 5]},
+        "p_fall_60": {"file": "clf_fall_60.txt", "horizon": 60, "direction": "fall", "label": ["flat", 5]},
+        "p_rise_30": {"file": "clf_rise_30.txt", "horizon": 30, "direction": "rise", "label": ["flat", 5]},
+        "p_rise_60": {"file": "clf_rise_60.txt", "horizon": 60, "direction": "rise", "label": ["flat", 5]},
+    },
+    "trend_thresholds": TREND_THRESHOLDS,
+}
+FIXED_FILES = [f"trajectory_t{h}.txt" for h in HORIZONS] + [
+    "day_profile.txt", "feature_categories.json", "ride_regime_thresholds.json", "crowd_level_baselines.json"]
+
+
+class TestModelFiles:
+    def test_v3_manifest_adds_classifier_files(self):
+        assert _model_files(V3_MANIFEST) == FIXED_FILES + [
+            "clf_fall_30.txt", "clf_fall_60.txt", "clf_rise_30.txt", "clf_rise_60.txt"]
+
+    def test_old_manifest_has_no_classifiers_and_no_reversion(self):
+        files = _model_files({"trained_through": "2026-10-18", "recipe": "B", "reversion_exported": True})
+        assert files == FIXED_FILES
+        assert "reversion_model.txt" not in files and "ride_percentile_buckets.json" not in files
+        assert _model_files({}) == FIXED_FILES
+
+
+class TestLoadModels:
+    def _models_dir(self, tmp_path, classifier_files=()):
+        import shutil
+
+        booster, cats = _tiny_classifier(tmp_path, "src.txt")
+        d = tmp_path / "models"
+        d.mkdir()
+        for name in [f"trajectory_t{h}.txt" for h in HORIZONS] + ["day_profile.txt", *classifier_files]:
+            shutil.copy(tmp_path / "src.txt", d / name)
+        (d / "feature_categories.json").write_text(json.dumps(
+            {"ride_id_categories": cats[0], "status_categories": cats[1]}))
+        (d / "ride_regime_thresholds.json").write_text("{}")
+        (d / "crowd_level_baselines.json").write_text("{}")
+        return d
+
+    def test_without_classifier_files(self, tmp_path):
+        d = self._models_dir(tmp_path)
+        (d / "manifest.json").write_text(json.dumps({"trained_through": "2026-10-18", "recipe": "B"}))
+        traj, _, ride_cats, _, classifiers, _, _ = _load_models(d)
+        assert classifiers == {} and len(traj) == len(HORIZONS) and ride_cats == ["r1", "r2"]
+
+    def test_no_manifest_at_all(self, tmp_path):
+        d = self._models_dir(tmp_path)
+        assert _load_models(d)[4] == {}
+
+    def test_v3_manifest_loads_classifiers(self, tmp_path):
+        files = [spec["file"] for spec in V3_MANIFEST["classifiers"].values()]
+        d = self._models_dir(tmp_path, files)
+        classifiers = _load_models(d, V3_MANIFEST)[4]
+        assert sorted(classifiers) == ["p_fall_30", "p_fall_60", "p_rise_30", "p_rise_60"]
+
+    def test_listed_but_missing_file_is_skipped(self, tmp_path):
+        d = self._models_dir(tmp_path, ["clf_rise_30.txt"])
+        assert list(_load_models(d, V3_MANIFEST)[4]) == ["p_rise_30"]
+
+
+class TestCurveConfidence:
+    """_curve_confidence is the pre-Session-5 confidence rule, now its own field."""
+    LATER = [40, 50, 60, 90, 120, 150, 180, 210, 240]
+
+    def _preds(self, n_agree, t30=40.0, agree=40.0, disagree=20.0):
+        preds = {10: 30.0, 20: 30.0, 30: t30}
+        preds.update({h: (agree if i < n_agree else disagree) for i, h in enumerate(self.LATER)})
+        return preds
+
+    def test_matches_pre_session5_fixtures(self):
+        # Same fixtures as TestDeriveTrendConfidence: 6 of 9 medium, 7 high, 4 low.
+        assert _curve_confidence(30.0, self._preds(6)) == "medium"
+        assert _curve_confidence(30.0, self._preds(7)) == "high"
+        assert _curve_confidence(30.0, self._preds(4)) == "low"
+        assert _curve_confidence(30.0, {h: 40.0 for h in HORIZONS}) == "high"
+
+    def test_flat_t30_is_low(self):
+        assert _curve_confidence(30.0, {h: 31.5 for h in HORIZONS}) == "low"
+
+    def test_regression_path_equals_curve_confidence(self):
+        for n in range(10):
+            preds = self._preds(n)
+            assert _derive_trend(30.0, 30.0, preds)[2] == _curve_confidence(30.0, preds)
+
+    def test_classifier_path_keeps_both_separate(self):
+        flat = {h: 20.0 for h in HORIZONS}
+        trend, _, conf, source = _derive_trend(20.0, 20.0, flat, {"p_rise_30": 0.9, "p_fall_30": 0.1},
+                                               TREND_THRESHOLDS)
+        assert (trend, conf, source) == ("rising", "high", "classifier")
+        assert _curve_confidence(20.0, flat) == "low"  # the engine still ignores a flat curve

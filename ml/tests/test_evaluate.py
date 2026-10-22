@@ -149,7 +149,8 @@ class TestRecipeComparison:
         from ml.tests.conftest import RIDE_CATS, STATUS_CATS
 
         a = with_(RECIPE_A, trajectory_params=self.TINY, day_profile_params=self.TINY)
-        b = with_(RECIPE_B, trajectory_params=self.TINY, day_profile_params=self.TINY)
+        b = with_(RECIPE_B, trajectory_params=self.TINY, day_profile_params=self.TINY,
+                  classifier_params=dict(n_estimators=5, num_leaves=7, verbose=-1))
         return evaluate.run(frame, RIDE_CATS, STATUS_CATS, weeks=2, horizons=[30, 60], run_staleness=False,
                             write_report=False, model_dir="does-not-exist", recipe=a, compare=b)
 
@@ -185,6 +186,54 @@ class TestRecipeComparison:
         with pytest.raises(ValueError):
             evaluate.run(frame, *cats, weeks=2, horizons=[30], run_staleness=False, write_report=False,
                          model_dir="does-not-exist", compare=RECIPE_A)
+
+
+class TestClassifiers:
+    TINY = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
+    TINY_CLF = dict(n_estimators=10, num_leaves=7, learning_rate=0.1, verbose=-1)
+    THRESHOLDS = {b: {"call": {"rise": 0.3, "fall": 0.3}, "high": {"rise": 0.7, "fall": 0.7}}
+                  for b in ("<=10", "15-25", "30-60", ">60")}
+
+    @pytest.fixture(scope="class")
+    def clf_results(self, frame):
+        from ml.recipes import RECIPE_A, RECIPE_B, with_
+        from ml.tests.conftest import RIDE_CATS, STATUS_CATS
+
+        a = with_(RECIPE_A, trajectory_params=self.TINY, day_profile_params=self.TINY)
+        b = with_(RECIPE_B, trajectory_params=self.TINY, day_profile_params=self.TINY,
+                  classifier_params=self.TINY_CLF, classifier_labels={"fall": ("flat", 5), "rise": ("flat", 5)},
+                  trend_thresholds=self.THRESHOLDS)
+        return evaluate.run(frame, RIDE_CATS, STATUS_CATS, weeks=2, horizons=[30, 60], run_staleness=False,
+                            write_report=False, model_dir="does-not-exist", recipe=a, compare=b)
+
+    def test_four_classifiers_scored_on_trajectory_rows(self, clf_results):
+        assert sorted(clf_results.classifiers) == ["p_fall_30", "p_fall_60", "p_rise_30", "p_rise_60"]
+        for name, sc in clf_results.classifiers.items():
+            assert sc["n"] == clf_results.headline.loc[sc["horizon"], "n_rows"]
+            assert 0.5 < sc["auc"] <= 1.0 and 0 <= sc["top_decile_precision"] <= 1
+            assert sc["recipe"] == "B" and sc["label"] == ("flat", 5)
+            assert sc["bands"]["n"].sum() == sc["n"]
+        assert "precision" in clf_results.classifiers["p_rise_30"]["bands"].columns  # tau_call at T+30
+        assert "precision" not in clf_results.classifiers["p_rise_60"]["bands"].columns
+
+    def test_probability_word_on_same_rows(self, clf_results):
+        t = clf_results.trend_clf[30]
+        assert t["n"] == clf_results.headline.loc[30, "n_rows"]
+        assert int(t["matrix"].values.sum()) == int(clf_results.trend[30]["matrix"].values.sum())
+        assert abs(sum(t["confidence_share"].values()) - 1) < 1e-9
+        assert 0 <= t["arrow_shown"] <= t["called_share"] <= 1
+
+    def test_trend_summary_has_source_level(self, clf_results):
+        summary = clf_results.trend_summary
+        assert summary.index.names == ["source", "horizon", "class"]
+        assert set(summary.index.get_level_values("source")) == {"regression", "classifier"}
+
+    def test_no_classifiers_means_empty(self, results):
+        assert results.classifiers == {} and results.trend_clf == {}
+        assert set(results.trend_summary.index.get_level_values("source")) == {"regression"}
+
+    def test_deployed_without_classifiers_noted(self, clf_results):
+        assert any("no classifiers" in n for n in clf_results.meta["notes"])
 
 
 class TestVerdict:

@@ -9,7 +9,14 @@ from ml.manifest import read_manifest, recipe_from_manifest
 from ml.recipes import RECIPE_A, RECIPE_B, with_
 
 TINY = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
-TINY_B = with_(RECIPE_B, trajectory_params=TINY, day_profile_params=TINY)
+TINY_CLF = dict(n_estimators=5, num_leaves=7, learning_rate=0.1, verbose=-1)
+THRESHOLDS = {b: {"call": {"rise": 0.5, "fall": 0.5}, "high": {"rise": 0.8, "fall": None}}
+              for b in ("<=10", "15-25", "30-60", ">60")}
+ALERT = {"field": "p_rise_30", "threshold": 0.6, "min_current_wait": 10}
+TINY_B = with_(RECIPE_B, trajectory_params=TINY, day_profile_params=TINY, classifier_params=TINY_CLF,
+               classifier_labels={"fall": ("flat", 5), "rise": ("flat", 5)},
+               trend_thresholds=THRESHOLDS, alert=ALERT)
+CLF_FILES = {"clf_fall_30.txt", "clf_fall_60.txt", "clf_rise_30.txt", "clf_rise_60.txt"}
 
 
 @pytest.fixture(scope="module")
@@ -42,18 +49,28 @@ class TestTrainAll:
         assert models["rows"]["trajectory_t60"] == int(frame_with_park["training_valid_t60"].sum())
         assert models["trajectory"][60].recipe_ == TINY_B
 
+    def test_four_classifiers(self, models, frame_with_park):
+        assert sorted(models["classifiers"]) == ["p_fall_30", "p_fall_60", "p_rise_30", "p_rise_60"]
+        assert models["classifiers"]["p_rise_60"].recipe_ == TINY_B
+        assert models["classifiers"]["p_rise_60"].horizon_ == 60
+        assert models["rows"]["p_fall_30"] == int(frame_with_park["training_valid_t30"].sum())
+
+    def test_recipe_without_classifiers_trains_none(self, frame_with_park):
+        from ml.tests.conftest import RIDE_CATS, STATUS_CATS
+
+        no_clf = with_(TINY_B, classifier_labels=None)
+        assert train_all(frame_with_park, no_clf, RIDE_CATS, STATUS_CATS, horizons=[30])["classifiers"] == {}
+
 
 class TestExport:
-    def test_writes_every_file_and_v2_manifest(self, models, frame_with_park, tmp_path):
-        reversion = lgb.LGBMRegressor(**TINY).fit(frame_with_park[["wait_minutes"]].fillna(0),
-                                                 frame_with_park["hour_of_day"])
-        manifest = _export(models, frame_with_park, tmp_path / "models",
-                           reversion_model=reversion, ride_percentile_buckets={"r1__9_weekday": {"p50": 5.0}})
+    def test_writes_every_file_and_v3_manifest(self, models, frame_with_park, tmp_path):
+        manifest = _export(models, frame_with_park, tmp_path / "models")
         names = {p.name for p in (tmp_path / "models").iterdir()}
-        expected = {f"trajectory_t{h}.txt" for h in HORIZONS} | {
+        expected = {f"trajectory_t{h}.txt" for h in HORIZONS} | CLF_FILES | {
             "day_profile.txt", "feature_categories.json", "ride_regime_thresholds.json",
-            "crowd_level_baselines.json", "reversion_model.txt", "ride_percentile_buckets.json", "manifest.json"}
+            "crowd_level_baselines.json", "manifest.json"}
         assert names == expected
+        assert len(names) == 21  # 12 trajectory + day_profile + 4 clf + 4 JSON
         on_disk = read_manifest(tmp_path / "models" / "manifest.json")
         assert on_disk == manifest
         assert manifest["recipe"] == "B" and manifest["trajectory_target"] == "delta"
@@ -63,27 +80,46 @@ class TestExport:
         assert manifest["trained_through"] == str(frame_with_park["date_la"].max())
         assert manifest["frame_rows"] == len(frame_with_park)
         assert manifest["frame_range"] == [str(frame_with_park["date_la"].min()), manifest["trained_through"]]
-        assert manifest["reversion_exported"] is True
+        assert "reversion_exported" not in manifest
+        assert manifest["classifiers"]["p_rise_30"] == {
+            "file": "clf_rise_30.txt", "horizon": 30, "direction": "rise", "label": ["flat", 5]}
+        assert {c["file"] for c in manifest["classifiers"].values()} == CLF_FILES
+        assert manifest["trend_thresholds"] == THRESHOLDS and manifest["alert"] == ALERT
+        assert recipe_from_manifest(manifest) == with_(TINY_B, trajectory_params=RECIPE_B.trajectory_params,
+                                                        day_profile_params=RECIPE_B.day_profile_params,
+                                                        classifier_params=RECIPE_B.classifier_params)
+        clf = lgb.Booster(model_file=str(tmp_path / "models" / "clf_rise_30.txt"))
+        assert clf.feature_name() == list(RECIPE_B.trajectory_features)
         booster = lgb.Booster(model_file=str(tmp_path / "models" / "trajectory_t60.txt"))
         assert booster.feature_name() == list(RECIPE_B.trajectory_features)
         cats = json.loads((tmp_path / "models" / "feature_categories.json").read_text())
         assert set(cats) == {"ride_id_categories", "status_categories"}
         assert not list(tmp_path.glob(".export-*"))  # temp dir cleaned up
 
-    def test_reversion_files_left_alone_when_not_given(self, models, frame_with_park, tmp_path):
+    def test_stale_reversion_files_removed(self, models, frame_with_park, tmp_path):
         out = tmp_path / "models"
         out.mkdir()
         (out / "reversion_model.txt").write_text("old reversion")
-        manifest = _export(models, frame_with_park, out)
-        assert (out / "reversion_model.txt").read_text() == "old reversion"
+        (out / "ride_percentile_buckets.json").write_text("{}")
+        (out / "morning_baselines.json").write_text("{}")  # unrelated files stay
+        _export(models, frame_with_park, out)
+        assert not (out / "reversion_model.txt").exists()
         assert not (out / "ride_percentile_buckets.json").exists()
-        assert manifest["reversion_exported"] is False
+        assert (out / "morning_baselines.json").exists()
+        assert CLF_FILES <= {p.name for p in out.iterdir()}
+
+    def test_refuses_missing_classifiers(self, models, frame_with_park, tmp_path):
+        partial = {**models, "classifiers": {k: v for k, v in models["classifiers"].items() if k != "p_rise_60"}}
+        with pytest.raises(ValueError):
+            _export(partial, frame_with_park, tmp_path / "models")
+        assert not (tmp_path / "models").exists() or not list((tmp_path / "models").iterdir())
 
     def test_failure_leaves_out_dir_untouched(self, models, frame_with_park, tmp_path, monkeypatch):
         out = tmp_path / "models"
         out.mkdir()
         (out / "sentinel.txt").write_text("keep me")
         (out / "trajectory_t60.txt").write_text("old model")
+        (out / "reversion_model.txt").write_text("old reversion")
 
         def boom(*a, **k):
             raise RuntimeError("thresholds failed")
@@ -91,7 +127,8 @@ class TestExport:
         monkeypatch.setattr(export_mod.crowd_features, "regime_thresholds", boom)
         with pytest.raises(RuntimeError):
             _export(models, frame_with_park, out)
-        assert sorted(p.name for p in out.iterdir()) == ["sentinel.txt", "trajectory_t60.txt"]
+        # A failed export deletes nothing, stale reversion files included.
+        assert sorted(p.name for p in out.iterdir()) == ["reversion_model.txt", "sentinel.txt", "trajectory_t60.txt"]
         assert (out / "trajectory_t60.txt").read_text() == "old model"
         assert not list(tmp_path.glob(".export-*"))
 

@@ -58,17 +58,24 @@ function slotStart(r: Ride): number | null {
 
 // Today's remaining predicted waits, each with minutes-from-now.
 // ML curve (t10..t240) owns the near 4h; fullDayForecast owns beyond, remaining only.
+// Whether the ML curve is trusted: the curve's own vote-count confidence
+// (Session 5); docs without it fall back to `confidence`, which was the same
+// rule before the trend word moved to the classifiers.
+function curveUsable(p: Ride['prediction']): boolean {
+  return !!p && (p.curveConfidence ?? p.confidence) !== 'low';
+}
+
 function remainingCurve(r: Ride): { wait: number; dt: number }[] {
   const out: { wait: number; dt: number }[] = [];
   const p = r.prediction;
-  if (p && p.confidence !== 'low') {
+  if (p && curveUsable(p)) {
     const curve: [number, number][] = [
       [10, p.t10], [20, p.t20], [30, p.t30], [40, p.t40], [50, p.t50], [60, p.t60],
       [90, p.t90], [120, p.t120], [150, p.t150], [180, p.t180], [210, p.t210], [240, p.t240],
     ];
     for (const [dt, w] of curve) if (w != null) out.push({ wait: w, dt });
   }
-  const mlMax = (p && p.confidence !== 'low') ? ML_MAX_HORIZON : 0;
+  const mlMax = curveUsable(p) ? ML_MAX_HORIZON : 0;
   const ss = slotStart(r);
   if (r.fullDayForecast && ss != null) {
     for (const s of r.fullDayForecast) {

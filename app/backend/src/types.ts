@@ -88,8 +88,12 @@ export interface Prediction {
   t210: number;
   t240: number;
   trend: 'rising' | 'falling' | 'stable' | 'peak' | 'trough';
+  // t30 − current. No longer the source of `trend` (Session 5); delete once no supported app version reads it.
   trendDelta30: number;
   confidence: 'high' | 'medium' | 'low';
+  // Vote-count agreement of the t10..t240 curve; gates the verdict engine's use
+  // of the curve (scoring/layer1.ts). Old docs without it fall back to `confidence`.
+  curveConfidence?: 'high' | 'medium' | 'low';
   updatedAt: string;
 }
 

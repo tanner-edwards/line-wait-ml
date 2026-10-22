@@ -151,3 +151,25 @@ describe('neutral', () => {
     expect(r.verdict).toBe('neutral');
   });
 });
+
+describe('ML curve gate — curveConfidence (Session 5)', () => {
+  function pred(confidence: 'high' | 'medium' | 'low', curveConfidence?: 'high' | 'medium' | 'low') {
+    const w = 12;
+    return {
+      t10: w, t20: w, t30: w, t40: w, t50: w, t60: w, t90: w, t120: w, t150: w, t180: w, t210: w, t240: w,
+      trend: 'stable', trendDelta30: 0, confidence, curveConfidence, updatedAt: new Date().toISOString(),
+    } as Ride['prediction'];
+  }
+  const usesCurve = (p: Ride['prediction']) => dealVerdict(makeRide({ current: 30, prediction: p })).todayP30 !== null;
+
+  it('uses the curve when the word confidence is low but the curve confidence is high', () => {
+    expect(usesCurve(pred('low', 'high'))).toBe(true);
+  });
+  it('ignores the curve when the curve confidence is low, whatever the word says', () => {
+    expect(usesCurve(pred('high', 'low'))).toBe(false);
+  });
+  it('falls back to confidence on docs without curveConfidence', () => {
+    expect(usesCurve(pred('high'))).toBe(true);
+    expect(usesCurve(pred('low'))).toBe(false);
+  });
+});

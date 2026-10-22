@@ -12,7 +12,7 @@ res = evaluate.run(df_sorted, RIDE_ID_CATEGORIES, STATUS_CATEGORIES,
                    weeks=4, also_interleaved=True,
                    deployed_trained_through=date(2026, 10, 4), label='baseline')
 res.headline              # horizon x {persistence, lookup_delta, recipe_A, deployed, lift %}
-res.trend_summary         # recall / precision per trend class, per horizon
+res.trend_summary         # recall / precision per trend class, per (source, horizon)
 res.by_ride[60].head(20)  # per-ride MAE and lift at T+60, worst first
 ```
 
@@ -169,7 +169,7 @@ Recipes are now objects (`ml.recipes.Recipe`): `RECIPE_A` is the Session 3 train
 - `fi01ab23` (feature importances of `models`): no `models` dict any more. For importances use `_models['trajectory'][60].feature_importances_` after the `EXPORT` cell.
 - `16b64138` (day-profile-train → `model_day_profile`): `train_all` trains the day-profile model with the recipe's features.
 
-Keep running everything that builds features and targets, and the reversion cells `rv01ab23`, `pb01cd23` (→ `ride_percentile_buckets`), `rm01ef45` (→ `reversion_model`). The `EXPORT` cell needs them.
+Keep running everything that builds features and targets. (Until Session 5 the reversion cells `rv01ab23`, `pb01cd23`, `rm01ef45` fed the `EXPORT` cell; see "Session 5 cells".)
 
 ### Scoreboard cell
 
@@ -207,3 +207,59 @@ else:
 `RECIPE` is whichever recipe the comparison chose. If B lost, use `from ml.recipes import RECIPE_A as RECIPE`: A refit on every row still fixes the staleness. `train_all` fits on every row (no holdout), so the refit cannot be scored. The forward scoreboard you ran before it is the deploy gate. `export` writes into a temp directory and moves the files into `models/` only after every file is written, so a failure leaves `models/` as it was. It writes the v2 `manifest.json` (`recipe`, `trajectory_target`, both feature lists, `horizons`, `frame_rows`, `frame_range`, plus the v1 fields), which `predict.py` reads to turn delta outputs back into levels.
 
 Deploy with the runbook in `internal-docs/operations.md`, "Retrain and deploy models (biweekly)". The cron image goes out **before** the models.
+
+## Session 5 cells
+
+Recipe B now carries four direction classifiers (`p_fall_30`, `p_fall_60`, `p_rise_30`, `p_rise_60`), trained by `ml.export.train_all` with the trajectory models and written as `clf_{fall,rise}_{30,60}.txt`. The trend word and its confidence come from `p_rise_30` / `p_fall_30` with per-band thresholds (`ml.recipes.derive_trend`, mirrored in `cron/predict.py`), and the backend's far-away downgrade reads `p_rise_30`. Labels, thresholds and the alert threshold come from `reports/eval/2026-10-21_session5-classifiers.md` (re-run with `.venv/bin/python -m ml.experiments.session5_classifiers`). The scoreboard scores the classifiers whenever the recipe has them ("Classifiers" and "Trend word: regression vs classifier" sections).
+
+Each prediction doc also carries `curve_confidence`, the pre-Session-5 vote-count rule on the trajectory curve. The backend verdict engine gates its use of t10..t240 on it (`scoring/layer1.ts`, falling back to `confidence` on older docs), so the new word confidence (−25 points of `low` rows in the experiment) governs only the arrow and the AI prompt and never reaches the engine.
+
+The reversion model is retired: `export` no longer takes `reversion_model` / `ride_percentile_buckets`, and it deletes stale `reversion_model.txt` / `ride_percentile_buckets.json` from `models/`. The manifest is v3 (`classifiers`, `trend_thresholds`, `trend_bands`, `alert`); `predict.py` downloads the classifier files the manifest lists.
+
+### Superseded cells (turn each into a markdown note)
+
+`rv01ab23` (ANALYSIS: reversion-frequency):
+
+```markdown
+**Superseded (Session 5).** The reversion-frequency analysis motivated the reversion model, which is retired. Its alert is now `p_rise_30` from Recipe B's rise classifier, gated in the backend at the threshold in `reports/eval/2026-10-21_session5-classifiers.md`.
+```
+
+`pb01cd23` (FEATURES: ride-percentile-buckets):
+
+```markdown
+**Superseded (Session 5).** `ride_percentile_buckets` only fed the reversion model's `pct_rank`. Nothing reads `ride_percentile_buckets.json` any more; `ml.export.export` deletes it from `models/` and the runbook removes it from the bucket.
+```
+
+`rm01ef45` (TRAIN: reversion-model):
+
+```markdown
+**Superseded (Session 5).** The reversion model (`(target_t30 − wait)/wait ≥ 0.40`, no wait floor, trained on the interleaved split) is replaced by the direction classifiers that `ml.export.train_all` fits with Recipe B. The Session 5 experiment scored it against them on the forward split (alert section of `reports/eval/2026-10-21_session5-classifiers.md`).
+```
+
+### `EXPORT` cell (`0e095970`)
+
+Same cell, without the two reversion arguments:
+
+```python
+# ── EXPORT: refit on all rows and write models/ (ml/export.py) ──
+# GUARDED: this cell is a no-op under Run All. To export models, run a cell
+# containing `EXPORT_MODELS = True` first, then run this cell on its own.
+# Deploy with internal-docs/operations.md "Retrain and deploy models (biweekly)":
+# the cron image goes out BEFORE the models.
+if not globals().get('EXPORT_MODELS', False):
+    print('Skipping export. Set EXPORT_MODELS = True and re-run this cell to write models/.')
+else:
+    import sys, importlib; sys.path.insert(0, '.')
+    import ml.recipes, ml.manifest, ml.export
+    for _m in (ml.recipes, ml.manifest, ml.export):
+        importlib.reload(_m)
+    # RECIPE is whichever recipe the scoreboard's comparison chose. If B lost,
+    # use RECIPE_A here: A refit on every row still fixes the staleness.
+    from ml.recipes import RECIPE_B as RECIPE
+    from ml.export import train_all, export
+    _models = train_all(df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES)
+    manifest = export(_models, df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES,
+                      crowd_keyed_by=CROWD_KEYED_BY)
+```
+
+The notebook's current copy defaults the guard to `globals().get('EXPORT_MODELS', True)`, which exports under Run All despite its comment; the body above uses `False`, as the Session 4 body here did. `train_all` now also fits the four classifiers on every valid row (300 trees × 63 leaves each), so the export takes a few minutes longer. It writes 21 files: 12 trajectory, `day_profile.txt`, 4 `clf_*.txt`, `feature_categories.json`, `ride_regime_thresholds.json`, `crowd_level_baselines.json`, `manifest.json`.

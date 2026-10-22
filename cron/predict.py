@@ -2,19 +2,24 @@
 
 For each ride with enough recent data:
   - Computes trajectory predictions (T+10 → T+240 minutes)
-  - Derives trend / confidence from the forecast curve
+  - Scores the direction classifiers (p_fall_30/60, p_rise_30/60) when the
+    manifest lists them, and derives trend / confidence from p_rise_30 /
+    p_fall_30 with the manifest's per-band thresholds (Session 5); without
+    classifiers, from the forecast curve as before
   - Computes a 34-slot full-day forecast (7:00 AM – 11:30 PM PT)
   - Writes to predictions/{ride_id} in Firestore
 
 Environment variables:
   MODEL_BUCKET                   GCS bucket containing model .txt files +
-                                 feature_categories.json
+                                 feature_categories.json; manifest.json lists
+                                 the classifier files to download
   GOOGLE_APPLICATION_CREDENTIALS path to service-account key (local dev only)
 """
 from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import sys
 import tempfile
@@ -97,26 +102,35 @@ def _init_firestore() -> firestore.Client:
     return firestore.client()
 
 
+def _model_files(manifest: dict) -> list[str]:
+    """Files to download besides manifest.json: the fixed set plus every
+    classifier file the manifest lists (none for a pre-Session-5 manifest)."""
+    files = (
+        [f"trajectory_t{h}.txt" for h in HORIZONS]
+        + ["day_profile.txt", "feature_categories.json",
+           "ride_regime_thresholds.json", "crowd_level_baselines.json"]
+    )
+    for spec in (manifest.get("classifiers") or {}).values():
+        if isinstance(spec, dict) and spec.get("file"):
+            files.append(spec["file"])
+    return files
+
+
 def _download_models(bucket_name: str, dest: Path) -> None:
     dest.mkdir(parents=True, exist_ok=True)
     client = storage.Client()
     bucket = client.bucket(bucket_name)
-    files = (
-        [f"trajectory_t{h}.txt" for h in HORIZONS]
-        + ["day_profile.txt", "feature_categories.json",
-           "reversion_model.txt", "ride_percentile_buckets.json",
-           "ride_regime_thresholds.json", "crowd_level_baselines.json"]
-    )
-    for name in files:
-        bucket.blob(name).download_to_filename(str(dest / name))
-        log.info("Downloaded %s", name)
-    # manifest.json only stamps model_version on the docs — a missing one must
-    # not fail the job, unlike the model files above.
+    # manifest.json first: it names the classifier files. A missing one must
+    # not fail the job (model_version 'unknown', no classifiers), unlike the
+    # model files below.
     try:
         bucket.blob("manifest.json").download_to_filename(str(dest / "manifest.json"))
         log.info("Downloaded manifest.json")
     except Exception:
         log.warning("manifest.json missing from bucket; model_version will be 'unknown'")
+    for name in _model_files(_read_manifest(dest)):
+        bucket.blob(name).download_to_filename(str(dest / name))
+        log.info("Downloaded %s", name)
 
 
 def _read_manifest(model_dir: Path) -> dict:
@@ -144,7 +158,8 @@ def _tombstone_doc(
     stable/low, empty full_day) because older backends read fields like
     `full_day.length` unconditionally — a bare tombstone 502'd /v0/waits on
     2026-10-16. New backends skip it via `degraded`; old ones read a flat,
-    harmless forecast. reversion_prob / pct_rank are optional and left out."""
+    harmless forecast. The classifier probabilities and trend_source are
+    optional and left out."""
     wait = 0.0 if current_wait is None else float(current_wait)
     doc = {
         "ride_id":         ride_id,
@@ -155,6 +170,7 @@ def _tombstone_doc(
         "trend":           "stable",
         "trend_delta_30":  0.0,
         "confidence":      "low",
+        "curve_confidence": "low",
         "full_day":        [],
         "degraded":        True,
         "degraded_reason": "insufficient_history",
@@ -163,15 +179,25 @@ def _tombstone_doc(
     return doc
 
 
-def _load_models(model_dir: Path):
+def _load_models(model_dir: Path, manifest: dict | None = None):
+    """(traj, day_profile, ride_id_cats, status_cats, classifiers, regime_thresholds,
+    crowd_baselines). classifiers is {name: Booster} for every file the manifest
+    lists that exists, {} when it lists none (old models -> regression word)."""
+    if manifest is None:
+        manifest = _read_manifest(model_dir)
     traj = {h: lgb.Booster(model_file=str(model_dir / f"trajectory_t{h}.txt")) for h in HORIZONS}
     day_profile = lgb.Booster(model_file=str(model_dir / "day_profile.txt"))
     cats = json.loads((model_dir / "feature_categories.json").read_text())
-    reversion = lgb.Booster(model_file=str(model_dir / "reversion_model.txt"))
-    pct_buckets = json.loads((model_dir / "ride_percentile_buckets.json").read_text())
+    classifiers = {}
+    for name, spec in (manifest.get("classifiers") or {}).items():
+        path = model_dir / str((spec or {}).get("file", ""))
+        if path.is_file():
+            classifiers[name] = lgb.Booster(model_file=str(path))
+        else:
+            log.warning("Classifier %s listed in manifest but %s is missing; skipped", name, path.name)
     regime_thresholds = json.loads((model_dir / "ride_regime_thresholds.json").read_text())
     crowd_baselines = json.loads((model_dir / "crowd_level_baselines.json").read_text())
-    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], reversion, pct_buckets, regime_thresholds, crowd_baselines
+    return traj, day_profile, cats["ride_id_categories"], cats["status_categories"], classifiers, regime_thresholds, crowd_baselines
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
@@ -427,6 +453,39 @@ def _build_trajectory_row(
 
 # ── Prediction helpers ────────────────────────────────────────────────────────
 
+def _feature_frame(feat_row: dict, model, ride_id_cats: list[str], status_cats: list[str],
+                   frames: dict[tuple, pd.DataFrame]) -> pd.DataFrame:
+    """One-row X in the model's own feature_name() order, cached per column list."""
+    cols = tuple(model.feature_name())
+    X = frames.get(cols)
+    if X is None:
+        # None (e.g. crowd_level_ratio before 10am) must reach LightGBM as a
+        # float NaN; an object column makes predict() raise.
+        row = {c: (float("nan") if feat_row.get(c) is None else feat_row[c]) for c in cols}
+        X = pd.DataFrame([row], columns=list(cols))
+        if "ride_id_cat" in X.columns:
+            X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
+        if "status_cat" in X.columns:
+            X["status_cat"] = pd.Categorical(X["status_cat"], categories=status_cats)
+        frames[cols] = X
+    return X
+
+
+def _predict_classifiers(
+    feat_row: dict,
+    clf_models: dict,
+    ride_id_cats: list[str],
+    status_cats: list[str],
+) -> dict[str, float]:
+    """{p_fall_30, p_fall_60, p_rise_30, p_rise_60: probability} for the classifiers
+    loaded, rounded to 3 places; X built exactly as for the trajectory models."""
+    frames: dict[tuple, pd.DataFrame] = {}
+    return {
+        name: round(float(m.predict(_feature_frame(feat_row, m, ride_id_cats, status_cats, frames))[0]), 3)
+        for name, m in clf_models.items()
+    }
+
+
 def _predict_trajectory(
     feat_row: dict,
     traj_models: dict,
@@ -445,18 +504,7 @@ def _predict_trajectory(
     frames: dict[tuple, pd.DataFrame] = {}
     preds: dict[int, float] = {}
     for h, m in traj_models.items():
-        cols = tuple(m.feature_name())
-        X = frames.get(cols)
-        if X is None:
-            # None (e.g. crowd_level_ratio before 10am) must reach LightGBM as a
-            # float NaN; an object column makes predict() raise.
-            row = {c: (float("nan") if feat_row.get(c) is None else feat_row[c]) for c in cols}
-            X = pd.DataFrame([row], columns=list(cols))
-            if "ride_id_cat" in X.columns:
-                X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
-            if "status_cat" in X.columns:
-                X["status_cat"] = pd.Categorical(X["status_cat"], categories=status_cats)
-            frames[cols] = X
+        X = _feature_frame(feat_row, m, ride_id_cats, status_cats, frames)
         raw = float(m.predict(X)[0])
         pred = current + raw if trajectory_target == "delta" else raw
         preds[h] = max(0.0, round(pred, 1))
@@ -467,18 +515,98 @@ def _predict_trajectory(
     return preds
 
 
+# ── Trend word from the classifiers (Session 5) ─────────────────────────────
+# Mirrors ml/recipes.py derive_trend / band_of exactly (cron can't import ml/);
+# ml/tests/test_recipes.py runs both on the same grid.
+
+STABLE_HIGH = 0.15
+STABLE_MEDIUM = 0.30
+PEAK_TROUGH_LAG = 5
+
+
+def _band_of(current: float) -> str:
+    c = float(current)
+    if c <= 10:
+        return "<=10"
+    if c <= 25:
+        return "15-25"
+    if c <= 60:
+        return "30-60"
+    return ">60"
+
+
+def _missing(v) -> bool:
+    return v is None or (isinstance(v, float) and math.isnan(v))
+
+
+def _derive_trend_from_probs(current, lag1, p_rise_30, p_fall_30, thresholds) -> tuple[str, str] | None:
+    """(trend, confidence), or None when a probability, the current wait, or the
+    band's thresholds are missing. See ml/recipes.py derive_trend."""
+    if thresholds is None or _missing(current) or _missing(p_rise_30) or _missing(p_fall_30):
+        return None
+    band = thresholds.get(_band_of(current))
+    if not band:
+        return None
+    call, high = band.get("call") or {}, band.get("high") or {}
+
+    def reaches(p, tau):
+        return tau is not None and p >= tau
+
+    lag_ok = not _missing(lag1)
+    if reaches(p_rise_30, call.get("rise")) and p_rise_30 > p_fall_30:
+        trend = "trough" if lag_ok and current - lag1 >= PEAK_TROUGH_LAG else "rising"
+        confidence = "high" if reaches(p_rise_30, high.get("rise")) else "medium"
+    elif reaches(p_fall_30, call.get("fall")) and p_fall_30 > p_rise_30:
+        trend = "peak" if lag_ok and lag1 - current >= PEAK_TROUGH_LAG else "falling"
+        confidence = "high" if reaches(p_fall_30, high.get("fall")) else "medium"
+    else:
+        trend = "stable"
+        top = max(p_rise_30, p_fall_30)
+        confidence = "high" if top < STABLE_HIGH else ("medium" if top < STABLE_MEDIUM else "low")
+    return trend, confidence
+
+
+def _curve_confidence(current_wait: float, preds: dict[int, float]) -> str:
+    """Vote-count agreement of the trajectory curve: low when |t30 - current| < 2,
+    else how many of the 9 horizons after T+30 (T+40 .. T+240) share the T+30
+    direction: high >= 7 of 9, medium >= 5 of 9, else low. Gates the backend
+    verdict engine's use of the curve; the pre-Session-5 `confidence` rule."""
+    delta30 = round(preds[30] - current_wait, 1)
+    # T+30 is excluded because delta30 comes from it (a guaranteed agreeing
+    # vote); T+10/T+20 because t10 is just the current wait.
+    if abs(delta30) < 2:
+        return "low"
+    deltas = [preds[h] - current_wait for h in HORIZONS if h > 30]
+    same_dir = sum(1 for d in deltas if (d >= 0) == (delta30 >= 0))
+    return "high" if same_dir >= 7 else ("medium" if same_dir >= 5 else "low")
+
+
 def _derive_trend(
     current_wait: float,
     lag1: float,
     preds: dict[int, float],
-) -> tuple[str, float, str]:
-    """Return (trend, trend_delta_30, confidence) from the trajectory predictions.
+    probs: dict[str, float] | None = None,
+    thresholds: dict | None = None,
+) -> tuple[str, float, str, str]:
+    """Return (trend, trend_delta_30, confidence, trend_source).
 
-    confidence counts how many of the 9 horizons after T+30 (T+40 .. T+240)
-    agree with delta30's direction: high >= 7 of 9, medium >= 5 of 9.
+    With p_rise_30 / p_fall_30 in `probs` and the manifest's trend_thresholds,
+    the word and confidence come from the classifiers (trend_source
+    'classifier'). Otherwise from the trajectory curve as before Session 5
+    ('regression'): confidence counts how many of the 9 horizons after T+30
+    (T+40 .. T+240) agree with delta30's direction: high >= 7 of 9, medium >= 5 of 9.
+
+    trend_delta_30 is t30 - current either way; since Session 5 it is no longer
+    the source of the word (delete once no supported app version reads it).
     """
     t30   = preds[30]
     delta30 = round(t30 - current_wait, 1)
+
+    if probs:
+        derived = _derive_trend_from_probs(
+            current_wait, lag1, probs.get("p_rise_30"), probs.get("p_fall_30"), thresholds)
+        if derived is not None:
+            return derived[0], delta30, derived[1], "classifier"
 
     # Base direction from T+30 delta
     if delta30 >= 5:
@@ -490,17 +618,9 @@ def _derive_trend(
     else:
         trend = "stable"
 
-    # Confidence: how many of the 9 horizons after T+30 share delta30's
-    # direction? T+30 is excluded because delta30 comes from it (a guaranteed
-    # agreeing vote); T+10/T+20 because t10 is just the current wait.
-    if abs(delta30) < 2:
-        confidence = "low"
-    else:
-        deltas = [preds[h] - current_wait for h in HORIZONS if h > 30]
-        same_dir = sum(1 for d in deltas if (d >= 0) == (delta30 >= 0))
-        confidence = "high" if same_dir >= 7 else ("medium" if same_dir >= 5 else "low")
-
-    return trend, delta30, confidence
+    # Regression path: the word's confidence is the curve's vote count, as
+    # before Session 5 (so curve_confidence == confidence for old models).
+    return trend, delta30, _curve_confidence(current_wait, preds), "regression"
 
 
 def _read_today_closures(
@@ -699,39 +819,6 @@ def _build_full_day(
     return slots
 
 
-# ── Reversion inference ───────────────────────────────────────────────────────
-
-_REVERSION_BREAKPOINTS = [0.05, 0.10, 0.15, 0.25, 0.50, 0.75, 0.85, 0.90, 0.95]
-_REVERSION_PCT_KEYS    = ["p5", "p10", "p15", "p25", "p50", "p75", "p85", "p90", "p95"]
-
-
-def _compute_pct_rank(
-    wait: float,
-    ride_id: str,
-    hour: int,
-    day_type: str,
-    buckets: dict,
-) -> float:
-    """Interpolate current wait into [0,1] percentile rank using pre-computed bucket breakpoints.
-    Falls back to 0.5 (neutral) when the bucket is absent or has no breakpoints."""
-    key = f"{ride_id}__{hour}_{day_type}"
-    b = buckets.get(key)
-    if not b:
-        return 0.5
-    breakpoints = list(zip(_REVERSION_BREAKPOINTS, [b.get(k, 0) for k in _REVERSION_PCT_KEYS]))
-    if wait <= breakpoints[0][1]:
-        return breakpoints[0][0]
-    if wait >= breakpoints[-1][1]:
-        return breakpoints[-1][0]
-    for i in range(len(breakpoints) - 1):
-        pct_lo, val_lo = breakpoints[i]
-        pct_hi, val_hi = breakpoints[i + 1]
-        if val_lo <= wait <= val_hi:
-            t = (wait - val_lo) / (val_hi - val_lo) if val_hi > val_lo else 0.5
-            return round(pct_lo + t * (pct_hi - pct_lo), 3)
-    return 0.5
-
-
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> int:
@@ -745,12 +832,13 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmpdir:
         model_dir = Path(tmpdir)
         _download_models(bucket_name, model_dir)
-        traj_models, day_profile_model, ride_id_cats, status_cats, reversion_model, percentile_buckets, regime_thresholds, crowd_baselines = _load_models(model_dir)
         manifest = _read_manifest(model_dir)
+        traj_models, day_profile_model, ride_id_cats, status_cats, clf_models, regime_thresholds, crowd_baselines = _load_models(model_dir, manifest)
         model_version = str(manifest.get("trained_through", "unknown"))
         trajectory_target = manifest.get("trajectory_target", "level")
-        log.info("model_version: %s, trajectory_target: %s, recipe: %s",
-                 model_version, trajectory_target, manifest.get("recipe", "unknown"))
+        trend_thresholds = manifest.get("trend_thresholds")
+        log.info("model_version: %s, trajectory_target: %s, recipe: %s, classifiers: %d",
+                 model_version, trajectory_target, manifest.get("recipe", "unknown"), len(clf_models))
 
         db = _init_firestore()
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=LOOKBACK_MINUTES)
@@ -835,9 +923,10 @@ def main() -> int:
             )
 
             traj_preds = _predict_trajectory(feat_row, traj_models, ride_id_cats, status_cats, trajectory_target)
+            probs = _predict_classifiers(feat_row, clf_models, ride_id_cats, status_cats) if clf_models else {}
 
-            trend, trend_delta_30, confidence = _derive_trend(
-                feat_row["wait_minutes"], feat_row["wait_lag_1"], traj_preds
+            trend, trend_delta_30, confidence, trend_source = _derive_trend(
+                feat_row["wait_minutes"], feat_row["wait_lag_1"], traj_preds, probs, trend_thresholds
             )
 
             full_day = _build_full_day(
@@ -852,35 +941,6 @@ def main() -> int:
                 now_minutes=now_minutes,
                 current_raw_wait=current_raw_wait,
             )
-
-            # Reversion probability — day_type must match training-time classify_day_type
-            feat_dow = int(feat_row["day_of_week"])  # JS convention: Sun=0, Sat=6
-            if hol["is_holiday"]:          rev_day_type = "holiday"
-            elif feat_dow in (0, 6):       rev_day_type = "weekend"
-            else:                          rev_day_type = "weekday"
-
-            pct_rank = _compute_pct_rank(
-                float(feat_row["wait_minutes"]),
-                ride_id,
-                int(feat_row["hour_of_day"]),
-                rev_day_type,
-                percentile_buckets,
-            )
-            wait_delta_1 = float(feat_row["wait_minutes"]) - float(feat_row["wait_lag_1"])
-
-            X_rev = pd.DataFrame([{
-                "pct_rank":           pct_rank,
-                "wait_delta_1":       wait_delta_1,
-                "hour_of_day":        feat_row["hour_of_day"],
-                "day_of_week":        feat_row["day_of_week"],
-                "week_of_year":       feat_row["week_of_year"],
-                "park_crowd_median":  park_crowd_median,
-                "is_holiday":         feat_row["is_holiday"],
-                "is_holiday_weekend": feat_row["is_holiday_weekend"],
-                "ride_id_cat":        ride_id,
-            }])
-            X_rev["ride_id_cat"] = pd.Categorical(X_rev["ride_id_cat"], categories=ride_id_cats)
-            reversion_prob = round(float(reversion_model.predict(X_rev)[0]), 3)
 
             prediction_docs.append({
                 "ride_id":        ride_id,
@@ -898,12 +958,18 @@ def main() -> int:
                 "t210":           traj_preds[210],
                 "t240":           traj_preds[240],
                 "trend":          trend,
+                # t30 - current. No longer the source of `trend` (Session 5);
+                # delete once no supported app version reads it.
                 "trend_delta_30": trend_delta_30,
                 "confidence":     confidence,
+                # Vote-count agreement of the trajectory curve; gates the backend
+                # verdict engine's use of t10..t240 (scoring/layer1.ts).
+                # `confidence` now describes the trend word only.
+                "curve_confidence": _curve_confidence(feat_row["wait_minutes"], traj_preds),
+                "trend_source":   trend_source,
                 "full_day":       full_day,
-                "reversion_prob": reversion_prob,
-                "pct_rank":       pct_rank,
                 "model_version":  model_version,
+                **probs,
             })
 
         predicted = len(prediction_docs) - tombstoned

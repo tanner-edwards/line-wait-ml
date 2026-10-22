@@ -148,3 +148,153 @@ class TestDeltaTarget:
         model = train_trajectory(frame, train, 30, *cats, params=TINY)
         assert model.recipe_.trajectory_target == "level"
         assert model.recipe_.trajectory_params == TINY
+
+
+# ── Direction classifiers and the trend word (Session 5) ────────────────────
+
+import pandas as pd  # noqa: E402
+
+from ml.recipes import (  # noqa: E402
+    BANDS,
+    CLASSIFIER_NAMES,
+    band_of,
+    classifier_file,
+    classifier_label,
+    derive_trend,
+    predict_classifier,
+    train_classifier,
+)
+
+TINY_CLF = dict(n_estimators=5, num_leaves=7, learning_rate=0.1, verbose=-1)
+FLAT5 = {"fall": ("flat", 5), "rise": ("flat", 5)}
+
+
+def _clf_recipe(labels=FLAT5):
+    return with_(RECIPE_B, name="Bc", classifier_params=TINY_CLF, classifier_labels=labels)
+
+
+class TestLabels:
+    def _frame(self):
+        # current, target -> d = target - current
+        return pd.DataFrame({
+            "wait_minutes": [5.0, 10.0, 15.0, 20.0, 30.0, 30.0, 50.0, None],
+            "target_t30":   [10.0, 5.0, 21.0, 10.0, 35.0, 18.0, 50.0, 40.0],
+        })
+
+    def test_flat5(self):
+        f = self._frame()
+        assert classifier_label(f, 30, "rise", ("flat", 5)).tolist() == [True, False, True, False, True, False, False, False]
+        assert classifier_label(f, 30, "fall", ("flat", 5)).tolist() == [False, True, False, True, False, True, False, False]
+
+    def test_flat10(self):
+        f = self._frame()
+        assert classifier_label(f, 30, "rise", ("flat", 10)).tolist() == [False] * 8
+        assert classifier_label(f, 30, "fall", ("flat", 10)).tolist() == [False, False, False, True, False, True, False, False]
+
+    def test_pct_has_a_floor(self):
+        f = self._frame()
+        # 5 -> 10 is +100% but current < 15; 15 -> 21 is +40%; 20 -> 10 is -50%; 30 -> 18 is -40%.
+        assert classifier_label(f, 30, "rise", ("pct", 0.40, 15)).tolist() == [False, False, True, False, False, False, False, False]
+        assert classifier_label(f, 30, "fall", ("pct", 0.40, 15)).tolist() == [False, False, False, True, False, True, False, False]
+
+    def test_bad_direction(self):
+        with pytest.raises(ValueError):
+            classifier_label(self._frame(), 30, "up", ("flat", 5))
+
+
+class TestClassifiers:
+    def test_recipe_flags(self):
+        assert not RECIPE_A.has_classifiers and RECIPE_A.classifier_names == []
+        r = _clf_recipe()
+        assert r.has_classifiers and r.classifier_features == r.trajectory_features
+        assert r.classifier_names == CLASSIFIER_NAMES
+        assert [classifier_file(n) for n in CLASSIFIER_NAMES] == [
+            "clf_fall_30.txt", "clf_fall_60.txt", "clf_rise_30.txt", "clf_rise_60.txt"]
+
+    def test_labels_normalized_to_tuples(self):
+        r = with_(RECIPE_B, classifier_labels={"fall": ["pct", 0.4, 15], "rise": ["flat", 5]})
+        assert r.classifier_labels == {"fall": ("pct", 0.4, 15), "rise": ("flat", 5)}
+
+    def test_round_trip_probabilities(self, frame, cats):
+        train, _ = forward_split(frame, weeks=2)
+        r = _clf_recipe()
+        for direction in ("fall", "rise"):
+            model = train_classifier(frame, train, 30, direction, *cats, r)
+            assert model.recipe_ == r and model.direction_ == direction and model.horizon_ == 30
+            assert model.booster_.feature_name() == list(r.trajectory_features)
+            p = predict_classifier(model, frame, 30)
+            valid = frame["training_valid_t30"]
+            assert p.index.equals(frame.index)
+            assert p[valid].between(0, 1).all()
+            assert p[~valid].isna().all()
+
+    def test_no_labels_refuses(self, frame, cats):
+        train, _ = forward_split(frame, weeks=2)
+        with pytest.raises(ValueError):
+            train_classifier(frame, train, 30, "rise", *cats, RECIPE_A)
+
+
+class TestDeriveTrend:
+    def test_bands(self):
+        assert [band_of(c) for c in (0, 5, 10, 15, 25, 30, 60, 65, 120)] == [
+            "<=10", "<=10", "<=10", "15-25", "15-25", "30-60", "30-60", ">60", ">60"]
+        assert BANDS == ["<=10", "15-25", "30-60", ">60"]
+
+    def test_table(self):
+        from test_predict_serving import TREND_GRID, TREND_THRESHOLDS
+
+        for args, expected in TREND_GRID:
+            assert derive_trend(*args, TREND_THRESHOLDS) == expected, args
+
+    def test_missing_thresholds_are_none(self):
+        from test_predict_serving import TREND_THRESHOLDS
+
+        assert derive_trend(20.0, 20.0, 0.9, 0.1, None) is None
+        assert derive_trend(20.0, 20.0, None, 0.1, TREND_THRESHOLDS) is None
+        assert derive_trend(float("nan"), 20.0, 0.9, 0.1, TREND_THRESHOLDS) is None
+        assert derive_trend(20.0, 20.0, 0.9, 0.1, {">60": TREND_THRESHOLDS[">60"]}) is None
+
+    def test_missing_lag_means_no_peak_or_trough(self):
+        from test_predict_serving import TREND_THRESHOLDS
+
+        assert derive_trend(20.0, None, 0.9, 0.1, TREND_THRESHOLDS) == ("rising", "high")
+        assert derive_trend(20.0, float("nan"), 0.1, 0.9, TREND_THRESHOLDS) == ("falling", "high")
+
+    def test_parity_with_predict(self):
+        """ml.recipes.derive_trend and cron/predict.py's mirror agree everywhere on a dense grid."""
+        import itertools
+
+        import predict
+        from test_predict_serving import TREND_GRID, TREND_THRESHOLDS
+
+        currents = [0.0, 5.0, 10.0, 15.0, 25.0, 30.0, 45.0, 60.0, 65.0, 120.0, float("nan")]
+        lags = [None, float("nan"), 0.0, 5.0, 10.0, 20.0, 40.0, 70.0]
+        ps = [None, 0.0, 0.1, 0.149, 0.15, 0.29, 0.3, 0.4, 0.45, 0.5, 0.6, 0.65, 0.7, 0.75, 0.8, 0.99]
+        tables = [TREND_THRESHOLDS, None, {"15-25": TREND_THRESHOLDS["15-25"]}]
+        n = 0
+        for c, lag, pr, pf, t in itertools.product(currents, lags, ps, ps, tables):
+            assert derive_trend(c, lag, pr, pf, t) == predict._derive_trend_from_probs(c, lag, pr, pf, t), (c, lag, pr, pf)
+            n += 1
+        for args, _ in TREND_GRID:
+            assert derive_trend(*args, TREND_THRESHOLDS) == predict._derive_trend_from_probs(*args, TREND_THRESHOLDS)
+        assert predict.STABLE_HIGH == 0.15 and predict.STABLE_MEDIUM == 0.30
+        assert [predict._band_of(c) for c in currents[:-1]] == [band_of(c) for c in currents[:-1]]
+        assert n > 10_000
+
+
+class TestRecipeBSession5:
+    def test_has_classifiers_and_thresholds_for_every_band(self):
+        assert RECIPE_B.has_classifiers and RECIPE_B.classifier_names == CLASSIFIER_NAMES
+        assert set(RECIPE_B.trend_thresholds) == set(BANDS)
+        for band in RECIPE_B.trend_thresholds.values():
+            assert set(band) == {"call", "high"}
+            assert all(set(side) == {"rise", "fall"} for side in band.values())
+
+    def test_alert_matches_backend_constant(self):
+        import re
+        from pathlib import Path
+
+        ts = (Path(__file__).resolve().parents[2] / "app" / "backend" / "src" / "mlPredictions.ts").read_text()
+        threshold = float(re.search(r"P_RISE_ALERT_THRESHOLD = ([0-9.]+);", ts).group(1))
+        minimum = int(re.search(r"ALERT_MIN_CURRENT_WAIT = (\d+);", ts).group(1))
+        assert RECIPE_B.alert == {"field": "p_rise_30", "threshold": threshold, "min_current_wait": minimum}

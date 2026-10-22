@@ -27,7 +27,13 @@ import {
 import { ensureRideStatsLoaded, lookupRideStats } from './rideStats';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './recommendations/rideMetadata';
 import { loadCurrentClosures, lookupClosedAt } from './currentClosures';
-import { isUsablePrediction, loadPredictions, MLPredictionDoc } from './mlPredictions';
+import {
+  ALERT_MIN_CURRENT_WAIT,
+  isUsablePrediction,
+  loadPredictions,
+  MLPredictionDoc,
+  P_RISE_ALERT_THRESHOLD,
+} from './mlPredictions';
 import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
@@ -233,6 +239,7 @@ function buildPrediction(mlPred: MLPredictionDoc): Prediction {
     trend:       mlPred.trend as Prediction['trend'],
     trendDelta30: mlPred.trend_delta_30,
     confidence:  mlPred.confidence as Prediction['confidence'],
+    curveConfidence: (mlPred.curve_confidence ?? mlPred.confidence) as Prediction['confidence'],
     updatedAt:   mlPred.updated_at,
   };
 }
@@ -387,13 +394,14 @@ export async function fetchPark(
     let verdict: Verdict = vres.verdict;
     let reasons = vres.reasons;
 
-    // Reversion adjustment: downgrade 'go'/'star' → neutral when the ride is
-    // anomalously low (pct_rank ≤ P15), the model expects a spike, and the
-    // user is too far away to beat it to the ride.
+    // Far-away downgrade: 'go'/'star' → neutral when the rise classifier
+    // expects the wait to climb within 30 min (p_rise_30 ≥ threshold), the
+    // wait is above 10 (5 → 10 is noise), and the user is too far away to beat
+    // it to the ride. Docs without p_rise_30 (older models) never downgrade.
     if (
       (verdict === 'go' || verdict === 'star') &&
-      (mlPred?.pct_rank ?? 1) <= 0.15 &&
-      (mlPred?.reversion_prob ?? 0) > 0.35 &&
+      (mlPred?.p_rise_30 ?? 0) >= P_RISE_ALERT_THRESHOLD &&
+      currentWait !== null && currentWait > ALERT_MIN_CURRENT_WAIT &&
       userLat !== null && userLng !== null
     ) {
       const walkMins = walkingMinutes(

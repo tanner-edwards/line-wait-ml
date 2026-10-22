@@ -110,7 +110,7 @@ npm run deploy:models
 
 **How it works:** copies every `models/*.txt` and `models/*.json` to `gs://club32-models/`. `predict.py` downloads models from the bucket on every run, so the next 10-min run picks them up. No image rebuild needed. Use `npm run deploy:all` only when `cron/` code also changed (it runs `deploy:models` then rebuilds the cron image).
 
-`models/manifest.json` (written by `ml.export.export`) goes up with the models. `predict.py` stamps `model_version` (the manifest's `trained_through`) on every prediction doc and reads `trajectory_target` to turn delta-trained outputs back into levels. It writes a tombstone doc (`degraded: true`) for rides it cannot forecast, so the backend never serves a stale forecast as live.
+`models/manifest.json` (written by `ml.export.export`) goes up with the models. `predict.py` stamps `model_version` (the manifest's `trained_through`) on every prediction doc and reads `trajectory_target` to turn delta-trained outputs back into levels. Since Session 5 the manifest also drives the download list: `predict.py` downloads `manifest.json` first, then the fixed files plus every file under the manifest's `classifiers`, and derives the trend word from those classifiers with the manifest's `trend_thresholds` (`trend_source: classifier` on the doc). A manifest without `classifiers` means the regression-derived word, as before. It writes a tombstone doc (`degraded: true`) for rides it cannot forecast, so the backend never serves a stale forecast as live.
 
 Any new field in a prediction doc must be additive. Tombstones carry the full doc shape so an older backend can still read them.
 
@@ -121,7 +121,7 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
 **Biweekly retrain:**
 1. Pull the latest data in the notebook and run it top to bottom. The scoreboard cell runs automatically (`recipe=RECIPE_A, compare=RECIPE_B`) and writes `reports/eval/<date>_recipeB.md`.
 2. Read the "Recipe comparison" table in that report.
-3. Export and deploy with steps 1–6 below.
+3. Export and deploy with steps 1–6b below.
 4. Record the report and the manifest's `trained_through` in `ml_training_history.md`.
 
 **Deploy checklist.** Do the steps in order. Each step has a check, and you don't go on until it passes.
@@ -142,23 +142,31 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
    ```bash
    gcloud storage cp "gs://club32-models/*" "gs://club32-models/backup-$(date +%F)/"   # not gsutil -m: it crashes Python on this Mac; quote the URLs so zsh leaves * alone
    ```
-   Check: `gcloud storage ls "gs://club32-models/backup-$(date +%F)/"` lists 20 files: the 12 `trajectory_t*.txt`, `day_profile.txt`, the JSONs and `manifest.json`.
-4. **Export.** In the notebook, set `EXPORT_MODELS = True` and run the `EXPORT` cell (body in `ml/README.md`, "Session 4 cells").
+   Check: `gcloud storage ls "gs://club32-models/backup-$(date +%F)/"` lists every file in the bucket. The first Session 5 deploy backs up 20: the 12 `trajectory_t*.txt`, `day_profile.txt`, `reversion_model.txt`, and 6 JSONs (`feature_categories`, `ride_regime_thresholds`, `crowd_level_baselines`, `morning_baselines`, `ride_percentile_buckets`, `manifest`). After that export the bucket holds 24 until step 6b, then 22: the 12 `trajectory_t*.txt`, `day_profile.txt`, the 4 `clf_*.txt`, and 5 JSONs (`feature_categories`, `ride_regime_thresholds`, `crowd_level_baselines`, `morning_baselines`, `manifest`).
+4. **Export.** In the notebook, set `EXPORT_MODELS = True` and run the `EXPORT` cell (body in `ml/README.md`, "Session 5 cells").
    ```bash
    cat models/manifest.json
    ```
-   Check: `trained_through` is the latest data date, and `recipe` / `trajectory_target` are the winning recipe's. Commit `models/`.
+   Check: `trained_through` is the latest data date, and `recipe` / `trajectory_target` are the winning recipe's. For Recipe B the manifest has `classifiers` (4 entries), `trend_thresholds` and `alert`, and `models/` has the 4 `clf_*.txt` files and no `reversion_model.txt` / `ride_percentile_buckets.json` (the export deletes them). Commit `models/`.
 5. **Deploy the models.**
    ```bash
    npm run deploy:models
    gcloud run jobs executions list --job club32-predict-cron --region us-west1 --project llm-wait-times --limit 3
    ```
-   Check within one cycle (10 minutes): the execution is `SUCCEEDED`; the `predictions` docs carry the **new** `model_version`; the endpoint returns 200 (`curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"`); a spot-check ride (Space Mountain) has `t60` within a plausible range of its current wait and a non-empty `full_day`.
+   Check within one cycle (10 minutes): the execution is `SUCCEEDED`; the `predictions` docs carry the **new** `model_version`; the endpoint returns 200 (`curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"`); a spot-check ride (Space Mountain) has `t60` within a plausible range of its current wait and a non-empty `full_day`; a doc shows `trend_source: classifier` and a `p_rise_30` value (with a classifier recipe), and a doc shows both `confidence` and `curve_confidence`, and the job log line says `classifiers: 4`.
 6. **Rollback if anything fails.**
    ```bash
    gcloud storage cp "gs://club32-models/backup-<date>/*" gs://club32-models/
    ```
    The next cycle picks it up. No code rollback is needed, because the new code reads old models.
+
+6b. **Delete the retired reversion files from the bucket (Session 5, once).** Only after step 5 verifies; the step 3 backup still holds them. Until then old cron code (which still downloads them) keeps working.
+   ```bash
+   gcloud storage rm gs://club32-models/reversion_model.txt
+   gcloud storage rm gs://club32-models/ride_percentile_buckets.json
+   gcloud storage ls gs://club32-models/   # no reversion_model.txt / ride_percentile_buckets.json
+   ```
+   Check: the next execution is still `SUCCEEDED` (the new code never asks for them).
 
 ### Frontend (Expo web)
 ```bash

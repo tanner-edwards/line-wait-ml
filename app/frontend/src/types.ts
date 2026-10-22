@@ -21,8 +21,10 @@ export interface Prediction {
   t10: number; t20: number; t30: number; t40: number; t50: number; t60: number;
   t90: number; t120: number; t150: number;
   trend: 'rising' | 'falling' | 'stable' | 'peak' | 'trough';
+  // t30 − current. No longer the source of `trend` (Session 5); delete once no supported app version reads it.
   trendDelta30: number;
   confidence: 'high' | 'medium' | 'low';
+  curveConfidence?: 'high' | 'medium' | 'low';  // gates the backend engine's use of the curve; the app keeps reading `confidence`
   updatedAt: string;
 }
 

@@ -14,6 +14,12 @@ the deployed model are all scored on exactly those rows.
     res = evaluate.run(df_sorted, ..., recipe=RECIPE_A, compare=RECIPE_B, label='recipeB')
     res.recipe_comparison     # per horizon + day_profile: paired test and verdict
 
+A recipe with classifiers (RECIPE_B since Session 5) also trains p_fall_30,
+p_fall_60, p_rise_30, p_rise_60 on the train half and scores them on the same
+test rows (res.classifiers), and derives the probability-based trend word on
+the T+30 rows with recipes.derive_trend (res.trend_clf[30]) next to the
+regression-derived one (res.trend[30]).
+
 The forward split gates deploys; the interleaved split is shown only for
 comparison with the notebook's old numbers.
 """
@@ -64,13 +70,18 @@ class EvalResults:
     interleaved: pd.DataFrame | None = None
     recipe_comparison: pd.DataFrame | None = None
     preds: dict = field(default_factory=dict, repr=False)
+    classifiers: dict = field(default_factory=dict)
+    trend_clf: dict = field(default_factory=dict)
 
     @property
     def trend_summary(self) -> pd.DataFrame:
-        """Recall / precision per trend class, one block per horizon."""
-        if not self.trend:
+        """Recall / precision per trend class, one block per (source, horizon);
+        source 'regression' (pred - wait thresholds) or 'classifier' (derive_trend)."""
+        blocks = {("regression", h): t["per_class"] for h, t in self.trend.items()}
+        blocks.update({("classifier", h): t["per_class"] for h, t in self.trend_clf.items() if isinstance(h, int)})
+        if not blocks:
             return pd.DataFrame()
-        return pd.concat({h: t["per_class"] for h, t in self.trend.items()}, names=["horizon", "class"])
+        return pd.concat(blocks, names=["source", "horizon", "class"])
 
 
 def _lift(base: float, model: float) -> float:
@@ -177,6 +188,89 @@ def _trajectory_block(
         if dep is not None:
             preds["deployed"] = dep
     return rows, preds, y
+
+
+def _classifier_block(
+    df: pd.DataFrame, train: pd.Series, test: pd.Series, ride_cats: list, status_cats: list,
+    recipe: Recipe, prefix: str = "",
+) -> tuple[dict, dict]:
+    """({prefix + name: classifier_scores + horizon/direction/label}, {name: probs on its rows})."""
+    scores, probs = {}, {}
+    thresholds = recipe.trend_thresholds or {}
+    for name in recipe.classifier_names:
+        t0 = time.time()
+        _, direction, h = name.split("_")
+        h = int(h)
+        rows = (df[f"training_valid_t{h}"] & test).astype(bool)
+        spec = recipe.classifier_labels[direction]
+        model = recipes.train_classifier(df, train, h, direction, ride_cats, status_cats, recipe)
+        p = recipes.predict_classifier(model, df[rows], h)
+        del model
+        y = recipes.classifier_label(df, h, direction, spec)[rows]
+        band = df.loc[rows, "wait_minutes"].map(recipes.band_of)
+        taus = ({b: (t.get("call") or {}).get(direction) for b, t in thresholds.items()}
+                if h == 30 and thresholds else None)
+        sc = metrics.classifier_scores(y, p, band, taus)
+        sc["bands"] = sc["bands"].reindex([b for b in recipes.BANDS if b in sc["bands"].index])
+        sc.update({"horizon": h, "direction": direction, "label": tuple(spec), "recipe": recipe.name})
+        scores[prefix + name] = sc
+        probs[name] = p
+        log.info("%s%s: AUC %.3f, done in %.1fs", prefix, name, sc["auc"], time.time() - t0)
+    return scores, probs
+
+
+def _trend_from_classifiers(df: pd.DataFrame, test: pd.Series, probs: dict, thresholds: dict,
+                            reg_pred: pd.Series, recipe: Recipe) -> dict:
+    """The probability-derived word on the T+30 test rows next to the regression's.
+
+    trend_confusion_from_words + confidence shares, the share of rows where each
+    word is called, and the arrow (word not stable and confidence not low)."""
+    rows = (df["training_valid_t30"] & test).astype(bool)
+    sub = df.loc[rows, ["wait_minutes", "wait_lag_1", "target_t30"]]
+    pr, pf = probs["p_rise_30"].reindex(sub.index), probs["p_fall_30"].reindex(sub.index)
+    derived = [recipes.derive_trend(c, lag, r, f, thresholds)
+               for c, lag, r, f in zip(sub["wait_minutes"], sub["wait_lag_1"], pr, pf)]
+    word = pd.Series([d[0] if d else "stable" for d in derived], index=sub.index)
+    conf = pd.Series([d[1] if d else "low" for d in derived], index=sub.index)
+    actual = metrics.trend_class(sub["target_t30"] - sub["wait_minutes"])
+    out = metrics.trend_confusion_from_words(actual, word)
+    direction = word.replace({"trough": "rising", "peak": "falling"})
+    called = direction != "stable"
+    shown = called & (conf != "low")
+    reg_word = metrics.trend_class(reg_pred.reindex(sub.index) - sub["wait_minutes"])
+    reg_called = reg_word != "stable"
+    out.update({
+        "recipe": recipe.name,
+        "n": int(len(sub)),
+        "confidence_share": {c: float((conf == c).mean()) for c in ("high", "medium", "low")},
+        "called_share": float(called.mean()),
+        "called_precision": float((direction == actual)[called].mean()) if called.any() else float("nan"),
+        "arrow_shown": float(shown.mean()),
+        "arrow_precision": float((direction == actual)[shown].mean()) if shown.any() else float("nan"),
+        "regression_called_share": float(reg_called.mean()),
+        "regression_called_precision": float((reg_word == actual)[reg_called].mean()) if reg_called.any() else float("nan"),
+    })
+    return out
+
+
+def _deployed_classifiers(df, test, ride_cats, status_cats, model_dir, git_ref) -> dict:
+    """Scores of the deployed classifier files the deployed manifest lists, with
+    their own labels; {} when the deployed models have none."""
+    manifest = read_manifest(Path(model_dir) / "manifest.json") if git_ref is None else None
+    out = {}
+    for name, spec in ((manifest or {}).get("classifiers") or {}).items():
+        booster = deployed.load_booster(Path(spec["file"]).stem, model_dir, git_ref)
+        if booster is None:
+            continue
+        h, direction = int(spec["horizon"]), spec["direction"]
+        rows = (df[f"training_valid_t{h}"] & test).astype(bool)
+        p = deployed.predict_with_booster(booster, df, rows, ride_cats, status_cats)
+        y = recipes.classifier_label(df, h, direction, tuple(spec["label"]))[rows]
+        sc = metrics.classifier_scores(y, p, df.loc[rows, "wait_minutes"].map(recipes.band_of))
+        sc["bands"] = sc["bands"].reindex([b for b in recipes.BANDS if b in sc["bands"].index])
+        sc.update({"horizon": h, "direction": direction, "label": tuple(spec["label"]), "recipe": "deployed"})
+        out[f"deployed:{name}"] = sc
+    return out
 
 
 def _serving_style(scored: pd.DataFrame, day_rows: pd.DataFrame) -> pd.DataFrame:
@@ -460,12 +554,28 @@ def run(
     if compare is not None:
         recipe_comparison = pd.DataFrame(comparison + [day_profile["comparison"]]).set_index("horizon")
 
+    classifiers, trend_clf = {}, {}
+    with_clf = [r for r in ((recipe, compare) if compare is not None else (recipe,)) if r.has_classifiers]
+    for i, r in enumerate(with_clf):
+        prefix = "" if i == 0 else f"{r.name}:"
+        scores, probs = _classifier_block(df, train, test, ride_cats, status_cats, r, prefix)
+        classifiers.update(scores)
+        if r.trend_thresholds and {"p_rise_30", "p_fall_30"} <= set(probs) and 30 in all_preds:
+            key = 30 if i == 0 else f"{r.name}:30"
+            trend_clf[key] = _trend_from_classifiers(df, test, probs, r.trend_thresholds,
+                                                     all_preds[30][_col(r)].reindex(df.index), r)
+    if with_clf and deployed_cats is not None:
+        dep = _deployed_classifiers(df, test, *deployed_cats, model_dir, deployed_git_ref)
+        if not dep:
+            meta["notes"].append(f"Deployed models in {meta['deployed_source']} have no classifiers; skipped.")
+        classifiers.update(dep)
+
     meta["elapsed_seconds"] = round(time.time() - started, 1)
     results = EvalResults(
         meta=meta, headline=headline_df, big_move=big_move_df, trend=trend,
         by_ride=by_ride, by_hour=by_hour, by_park=by_park, by_band=by_band, paired=paired,
         day_profile=day_profile, staleness=stale, interleaved=inter, preds=all_preds,
-        recipe_comparison=recipe_comparison,
+        recipe_comparison=recipe_comparison, classifiers=classifiers, trend_clf=trend_clf,
     )
     if write_report:
         from . import report

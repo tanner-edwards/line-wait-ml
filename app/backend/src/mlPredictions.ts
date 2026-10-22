@@ -16,15 +16,33 @@ export interface MLPredictionDoc {
   t210: number;
   t240: number;
   trend: string;
+  // t30 − current. No longer the source of `trend` (Session 5); delete once no
+  // supported app version reads it.
   trend_delta_30: number;
-  confidence: string;
+  confidence: string;        // describes the trend word (classifier-derived since Session 5)
+  curve_confidence?: string;  // vote-count agreement of the trajectory curve; gates layer1's use of t10..t240
   full_day: Array<{ time_slot: string; start_minutes: number; wait: number }>;
-  reversion_prob?: number;  // P(wait spikes ≥40% within 30 min)
-  pct_rank?: number;        // empirical percentile within ride's own hour/day-type bucket
+  // Direction classifiers (Session 5): P(wait falls / rises by the model's
+  // label, e.g. ≥5 min, within 30 / 60 min). Absent on docs from older models.
+  p_fall_30?: number;
+  p_fall_60?: number;
+  p_rise_30?: number;
+  p_rise_60?: number;
+  trend_source?: 'classifier' | 'regression';  // what `trend` / `confidence` were derived from
   degraded?: boolean;       // tombstone: predict.py couldn't forecast this ride this run
   degraded_reason?: string;
   model_version?: string;   // trained_through date of the model that wrote the doc
 }
+
+// Far-away downgrade (handler.ts): go/star → neutral when p_rise_30 is at or
+// above this, the current wait is above ALERT_MIN_CURRENT_WAIT, and the user is
+// more than 15 walking minutes away. The number is the Session 5 experiment's
+// alert pick (reports/eval/2026-10-21_session5-classifiers.md, 2026-10-21); the
+// models' manifest.json `alert.threshold` is the source of truth and
+// handler.alert.test.ts pins this constant to a copy of it.
+export const P_RISE_ALERT_THRESHOLD = 0.5;
+// Never fire at current ≤ 10: a 5 → 10 move is noise to a walking guest.
+export const ALERT_MIN_CURRENT_WAIT = 10;
 
 // predict.py runs every 10 min; a doc older than this means the ride was
 // skipped (or the job failed) and its forecast must not be served as live.
