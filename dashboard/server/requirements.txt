@@ -1,0 +1,9 @@
+# Versions match the local .venv the ml/dashboard tests run against.
+flask==3.1.2
+gunicorn==23.0.0
+firebase-admin==7.4.0
+google-cloud-storage==3.10.1
+pandas==3.0.2
+numpy==2.4.4
+scipy==1.17.1
+lightgbm==4.6.0
