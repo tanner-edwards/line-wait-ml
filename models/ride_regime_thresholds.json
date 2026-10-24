@@ -83,7 +83,7 @@
   },
   "Guardians of the Galaxy - Monsters After Dark": {
     "p25": 45.0,
-    "p75": 75.0
+    "p75": 70.0
   },
   "Haunted Mansion": {
     "p25": 5.0,
@@ -199,7 +199,7 @@
   },
   "Radiator Springs Racers": {
     "p25": 55.0,
-    "p75": 90.0
+    "p75": 85.0
   },
   "Redwood Creek Challenge Trail": {
     "p25": 5.0,
@@ -242,7 +242,7 @@
     "p75": 60.0
   },
   "Storybook Land Canal Boats": {
-    "p25": 5.0,
+    "p25": 10.0,
     "p75": 15.0
   },
   "The Little Mermaid - Ariel's Undersea Adventure": {
@@ -299,7 +299,7 @@
   },
   "2108cc58-80df-4fff-9b91-735e89873ffd": {
     "p25": 45.0,
-    "p75": 75.0
+    "p75": 70.0
   },
   "2295351d-ce6b-4c04-92d5-5b416372c5b5": {
     "p25": 30.0,
@@ -451,7 +451,7 @@
   },
   "c60c768b-3461-465c-8f4f-b44b087506fc": {
     "p25": 55.0,
-    "p75": 90.0
+    "p75": 85.0
   },
   "c8a4b7b1-c1b2-4dfe-b73c-4e834b4a73db": {
     "p25": 5.0,
@@ -466,7 +466,7 @@
     "p75": 10.0
   },
   "cb929138-d77a-4dd2-983c-f651bbd1bd92": {
-    "p25": 5.0,
+    "p25": 10.0,
     "p75": 15.0
   },
   "cc718d11-fa15-44ee-87d0-ded989ad61bc": {

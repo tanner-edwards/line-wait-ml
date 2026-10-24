@@ -1,7 +1,7 @@
 {
-  "trained_through": "2026-10-18",
-  "exported_at": "2026-10-18T22:07:43.155683+00:00",
-  "git_sha": "de025cf",
+  "trained_through": "2026-10-21",
+  "exported_at": "2026-10-22T13:34:21.267916+00:00",
+  "git_sha": "b222811",
   "recipe": "B",
   "trajectory_target": "delta",
   "trajectory_features": [
@@ -60,14 +60,116 @@
     210,
     240
   ],
-  "frame_rows": 955685,
+  "frame_rows": 974795,
   "frame_range": [
     "2026-05-02",
-    "2026-10-18"
+    "2026-10-21"
   ],
+  "classifiers": {
+    "p_fall_30": {
+      "file": "clf_fall_30.txt",
+      "horizon": 30,
+      "direction": "fall",
+      "label": [
+        "flat",
+        5
+      ]
+    },
+    "p_fall_60": {
+      "file": "clf_fall_60.txt",
+      "horizon": 60,
+      "direction": "fall",
+      "label": [
+        "flat",
+        5
+      ]
+    },
+    "p_rise_30": {
+      "file": "clf_rise_30.txt",
+      "horizon": 30,
+      "direction": "rise",
+      "label": [
+        "flat",
+        5
+      ]
+    },
+    "p_rise_60": {
+      "file": "clf_rise_60.txt",
+      "horizon": 60,
+      "direction": "rise",
+      "label": [
+        "flat",
+        5
+      ]
+    }
+  },
+  "trend_thresholds": {
+    "<=10": {
+      "call": {
+        "rise": 0.793,
+        "fall": null
+      },
+      "high": {
+        "rise": 0.641,
+        "fall": null
+      }
+    },
+    "15-25": {
+      "call": {
+        "rise": 0.698,
+        "fall": 0.744
+      },
+      "high": {
+        "rise": 0.592,
+        "fall": 0.762
+      }
+    },
+    "30-60": {
+      "call": {
+        "rise": 0.667,
+        "fall": 0.605
+      },
+      "high": {
+        "rise": 0.612,
+        "fall": 0.678
+      }
+    },
+    ">60": {
+      "call": {
+        "rise": null,
+        "fall": 0.594
+      },
+      "high": {
+        "rise": null,
+        "fall": 0.75
+      }
+    }
+  },
+  "trend_bands": {
+    "<=10": [
+      0,
+      10
+    ],
+    "15-25": [
+      15,
+      25
+    ],
+    "30-60": [
+      30,
+      60
+    ],
+    ">60": [
+      61,
+      null
+    ]
+  },
+  "alert": {
+    "field": "p_rise_30",
+    "threshold": 0.5,
+    "min_current_wait": 10
+  },
   "crowd_keyed_by": [
     "day_type",
     "hour"
-  ],
-  "reversion_exported": true
+  ]
 }
