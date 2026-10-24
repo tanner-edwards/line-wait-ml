@@ -18,7 +18,9 @@ from predict import (
     _predict_classifiers,
     _predict_trajectory,
     _read_manifest,
+    _run_history_docs,
     _tombstone_doc,
+    _write_run_history,
     TRAJECTORY_FEATURE_COLS,
 )
 from test_predict_full_day import _FakeBooster
@@ -626,3 +628,86 @@ class TestCurveConfidence:
                                                TREND_THRESHOLDS)
         assert (trend, conf, source) == ("rising", "high", "classifier")
         assert _curve_confidence(20.0, flat) == "low"  # the engine still ignores a flat curve
+
+
+class TestRunHistory:
+    NOW = datetime(2026, 8, 24, 19, 3, 27, tzinfo=timezone.utc)  # 12:03 LA
+
+    def _df(self):
+        ts_old = pd.Timestamp("2026-08-24T18:53:00Z")
+        ts_new = pd.Timestamp("2026-08-24T19:03:00Z")
+        rows = [
+            # (ride_id, park_id, name, status, wait, raw, ts)
+            ("rsr", DCA_PARK_ID, "Radiator Springs Racers", "OPERATING", 60.0, 60.0, ts_old),
+            ("rsr", DCA_PARK_ID, "Radiator Springs Racers", "OPERATING", 65.0, 65.0, ts_new),
+            ("hm", DL_PARK_ID, "Haunted Mansion", "OPERATING", 5.0, 13.0, ts_new),
+            ("indy", DL_PARK_ID, "Indiana Jones Adventure", "DOWN", float("nan"), float("nan"), ts_new),
+        ]
+        return pd.DataFrame(rows, columns=[
+            "ride_id", "park_id", "ride_name", "status", "wait_minutes", "wait_minutes_raw", "timestamp_utc",
+        ]).sort_values(["ride_id", "timestamp_utc"])
+
+    def _preds(self):
+        full = {"ride_id": "rsr", "trend": "rising", "trend_source": "classifier",
+                "p_rise_30": 0.71, "p_fall_30": 0.05, "p_rise_60": 0.6, "p_fall_60": 0.1}
+        full.update({f"t{h}": 65.0 + h / 10 for h in HORIZONS})
+        return [full, _tombstone_doc("hm", self.NOW, "2026-10-21", 13.0)]
+
+    def test_one_doc_per_park_keyed_by_minute(self):
+        docs = _run_history_docs(self._preds(), self._df(), self.NOW, "2026-10-21")
+        assert set(docs) == {f"{DL_PARK_ID}_20260824T1903", f"{DCA_PARK_ID}_20260824T1903"}
+        dl = docs[f"{DL_PARK_ID}_20260824T1903"]
+        assert dl["date_la"] == "2026-08-24"
+        assert dl["model_version"] == "2026-10-21"
+        assert (dl["expireAt"] - dl["run_at"]).days == 30
+
+    def test_forecast_ride_carries_horizons_trend_and_probs(self):
+        docs = _run_history_docs(self._preds(), self._df(), self.NOW, "v")
+        rsr = docs[f"{DCA_PARK_ID}_20260824T1903"]["rides"]["rsr"]
+        assert rsr["wait"] == 65.0  # latest row, not the older one
+        assert [rsr[f"t{h}"] for h in (30, 60, 120, 180, 240)] == [68.0, 71.0, 77.0, 83.0, 89.0]
+        assert "t10" not in rsr
+        assert (rsr["trend"], rsr["trend_source"], rsr["p_rise_30"]) == ("rising", "classifier", 0.71)
+        assert rsr["tombstone"] is False
+
+    def test_tombstoned_and_closed_rides_are_recorded_without_forecasts(self):
+        rides = _run_history_docs(self._preds(), self._df(), self.NOW, "v")[f"{DL_PARK_ID}_20260824T1903"]["rides"]
+        assert rides["hm"]["tombstone"] is True
+        assert (rides["hm"]["wait"], rides["hm"]["wait_raw"]) == (5.0, 13.0)
+        assert rides["indy"]["tombstone"] is True  # no prediction doc at all
+        assert rides["indy"]["status"] == "DOWN"
+        assert rides["indy"]["wait"] is None  # NaN -> None
+        for ride in rides.values():
+            assert not any(k.startswith("t") and k[1:].isdigit() for k in ride)
+            assert "trend" not in ride
+
+    def test_failure_never_raises(self):
+        class _BrokenDb:
+            def batch(self):
+                raise RuntimeError("firestore down")
+        assert _write_run_history(_BrokenDb(), self._preds(), self._df(), self.NOW, "v") == 0
+
+    def test_writes_every_park_doc(self):
+        written = {}
+
+        class _Batch:
+            def set(self, ref, doc):
+                written[ref] = doc
+
+            def commit(self):
+                pass
+
+        class _Coll:
+            def document(self, doc_id):
+                return doc_id
+
+        class _Db:
+            def batch(self):
+                return _Batch()
+
+            def collection(self, name):
+                assert name == "admin_prediction_runs"
+                return _Coll()
+
+        assert _write_run_history(_Db(), self._preds(), self._df(), self.NOW, "v") == 2
+        assert len(written) == 2
