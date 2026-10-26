@@ -20,6 +20,12 @@ test rows (res.classifiers), and derives the probability-based trend word on
 the T+30 rows with recipes.derive_trend (res.trend_clf[30]) next to the
 regression-derived one (res.trend[30]).
 
+Session 6: valid_suffix='_f' trains the `compare` recipe (trajectory and
+classifiers) on the widened rows training_valid_tN_f with the filled lag
+columns (wait_lag_k_f, wait_delta_1_f; ml.features), scores both recipes on
+the usual rows, and adds res.widened[h]: the rows valid only under the
+widened mask, with persistence and the compare recipe's prediction.
+
 The forward split gates deploys; the interleaved split is shown only for
 comparison with the notebook's old numbers.
 """
@@ -45,6 +51,8 @@ log = logging.getLogger("ml.evaluate")
 HORIZONS = [10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 210, 240]
 LA_TZ = "America/Los_Angeles"
 SERVING_MINUTE = 13 * 60  # _build_full_day uses the crowd values current at serve time
+# Per-poll values _build_full_day feeds unchanged to every slot of the day.
+SERVING_CONSTANT_COLS = ["crowd_level_ratio", "morning_crowd_index", "n_operating_rides_park", "n_headliners_down"]
 
 KNOWN_ISSUES = [
     "Midnight close is encoded as 0 in minutes_until_close / total_operating_hours (data bug, Session 2).",
@@ -72,6 +80,7 @@ class EvalResults:
     preds: dict = field(default_factory=dict, repr=False)
     classifiers: dict = field(default_factory=dict)
     trend_clf: dict = field(default_factory=dict)
+    widened: dict = field(default_factory=dict, repr=False)
 
     @property
     def trend_summary(self) -> pd.DataFrame:
@@ -101,6 +110,26 @@ def _same_trajectory(a: Recipe, b: Recipe) -> bool:
 
 def _same_day_profile(a: Recipe, b: Recipe) -> bool:
     return (a.day_profile_params, a.day_profile_features) == (b.day_profile_params, b.day_profile_features)
+
+
+def _same_classifiers(a: Recipe, b: Recipe) -> bool:
+    return (a.classifier_params, a.classifier_labels, a.classifier_horizons, a.classifier_features) == \
+        (b.classifier_params, b.classifier_labels, b.classifier_horizons, b.classifier_features)
+
+
+def suffixed_frame(df: pd.DataFrame, recipe: Recipe, suffix: str) -> pd.DataFrame:
+    """The columns `recipe`'s trajectory and classifiers read, plus targets and
+    validity masks, with every column `c` replaced by `c + suffix` where the
+    frame has one (training_valid_tN -> training_valid_tN_f, wait_lag_1 ->
+    wait_lag_1_f, ...). Same index as df."""
+    feats = set(recipe.trajectory_features) | set(recipe.classifier_features)
+    cols = [recipes.CAT_COLS.get(c, c) for c in feats] + ["wait_minutes", "date_la"]
+    cols += [c for c in df.columns if c.startswith(("target_t", "training_valid_t")) and not c.endswith(suffix)]
+    out = {}
+    for c in dict.fromkeys(cols):
+        src = f"{c}{suffix}" if f"{c}{suffix}" in df.columns else c
+        out[c] = df[src]
+    return pd.DataFrame(out, index=df.index)
 
 
 def verdict(paired: dict) -> str:
@@ -167,8 +196,12 @@ def _trajectory_block(
     df: pd.DataFrame, train: pd.Series, test: pd.Series, horizon: int,
     ride_cats: list, status_cats: list, deployed_cats: tuple[list, list] | None,
     model_dir: str, git_ref: str | None, recipe: Recipe = RECIPE_A, compare: Recipe | None = None,
+    compare_df: pd.DataFrame | None = None, widened: dict | None = None,
 ) -> tuple[pd.Series, dict[str, pd.Series], pd.Series]:
-    """(scoring rows, {name: preds aligned to df.index}, y) for one horizon."""
+    """(scoring rows, {name: preds aligned to df.index}, y) for one horizon.
+
+    compare_df (valid_suffix): the compare recipe is fit and predicted on it;
+    its prediction on the widened-only test rows goes into widened[horizon]."""
     rows = (df[f"training_valid_t{horizon}"] & test).astype(bool)
     y = df[f"target_t{horizon}"]
     preds = {
@@ -180,8 +213,19 @@ def _trajectory_block(
             # Identical fit (LightGBM is deterministic here); skip the retrain.
             preds[_col(r)] = preds[_col(recipe)].copy()
             continue
-        model = recipes.train_trajectory(df, train, horizon, ride_cats, status_cats, recipe=r)
-        preds[_col(r)] = recipes.predict_trajectory(model, df[rows], horizon).reindex(df.index)
+        if r is compare and compare_df is not None:
+            vf = compare_df[f"training_valid_t{horizon}"].astype(bool)
+            extra = (vf & test & ~rows).astype(bool)
+            model = recipes.train_trajectory(compare_df, train, horizon, ride_cats, status_cats, recipe=r)
+            p = recipes.predict_trajectory(model, compare_df[rows | extra], horizon).reindex(df.index)
+            preds[_col(r)] = p.where(rows)
+            if widened is not None:
+                widened[horizon] = pd.DataFrame({
+                    "y": y[extra], "persistence": baselines.persistence(df, horizon)[extra], _col(r): p[extra],
+                })
+        else:
+            model = recipes.train_trajectory(df, train, horizon, ride_cats, status_cats, recipe=r)
+            preds[_col(r)] = recipes.predict_trajectory(model, df[rows], horizon).reindex(df.index)
         del model
     if deployed_cats is not None:
         dep = score_deployed(df, rows, horizon, *deployed_cats, model_dir=model_dir, git_ref=git_ref)
@@ -192,9 +236,12 @@ def _trajectory_block(
 
 def _classifier_block(
     df: pd.DataFrame, train: pd.Series, test: pd.Series, ride_cats: list, status_cats: list,
-    recipe: Recipe, prefix: str = "",
+    recipe: Recipe, prefix: str = "", fit_df: pd.DataFrame | None = None,
 ) -> tuple[dict, dict]:
-    """({prefix + name: classifier_scores + horizon/direction/label}, {name: probs on its rows})."""
+    """({prefix + name: classifier_scores + horizon/direction/label}, {name: probs on its rows}).
+
+    fit_df (valid_suffix): fit and predict on it; labels and rows from df."""
+    fit_df = df if fit_df is None else fit_df
     scores, probs = {}, {}
     thresholds = recipe.trend_thresholds or {}
     for name in recipe.classifier_names:
@@ -203,8 +250,8 @@ def _classifier_block(
         h = int(h)
         rows = (df[f"training_valid_t{h}"] & test).astype(bool)
         spec = recipe.classifier_labels[direction]
-        model = recipes.train_classifier(df, train, h, direction, ride_cats, status_cats, recipe)
-        p = recipes.predict_classifier(model, df[rows], h)
+        model = recipes.train_classifier(fit_df, train, h, direction, ride_cats, status_cats, recipe)
+        p = recipes.predict_classifier(model, fit_df[rows], h)
         del model
         y = recipes.classifier_label(df, h, direction, spec)[rows]
         band = df.loc[rows, "wait_minutes"].map(recipes.band_of)
@@ -278,7 +325,7 @@ def _serving_style(scored: pd.DataFrame, day_rows: pd.DataFrame) -> pd.DataFrame
     date_la (and per park_id when both frames have it), by the value on the poll
     (any row of `day_rows`) closest to 13:00 local — the single value
     _build_full_day feeds to every slot of the day for that ride's park."""
-    cols = [c for c in ("crowd_level_ratio", "morning_crowd_index") if c in day_rows.columns]
+    cols = [c for c in SERVING_CONSTANT_COLS if c in day_rows.columns]
     keys = ["date_la"] + (["park_id"] if "park_id" in day_rows.columns and "park_id" in scored.columns else [])
     local = day_rows["timestamp_utc"].dt.tz_convert(LA_TZ)
     distance = (local.dt.hour * 60 + local.dt.minute - SERVING_MINUTE).abs()
@@ -300,7 +347,7 @@ def _day_profile_block(
     y = df["wait_minutes"]
     scored = df.loc[rows]
     day_cols = ["timestamp_utc", "date_la"] + (["park_id"] if "park_id" in df.columns else [])
-    crowd_cols = [c for c in ("crowd_level_ratio", "morning_crowd_index") if c in df.columns]
+    crowd_cols = [c for c in SERVING_CONSTANT_COLS if c in df.columns]
     serving = _serving_style(scored, df.loc[test, day_cols + crowd_cols])
     preds = {
         "lookup": baselines.lookup_level(df, train),
@@ -441,7 +488,7 @@ def run(
     deployed_git_ref: str | None = None, staleness_horizons=(30, 60, 120), run_staleness: bool = True,
     label: str = "", write_report: bool = True, report_dir: str = "reports/eval",
     model_dir: str = "models", day_profile_feature_cols: list[str] | None = None,
-    recipe: Recipe = RECIPE_A, compare: Recipe | None = None,
+    recipe: Recipe = RECIPE_A, compare: Recipe | None = None, valid_suffix: str = "",
 ) -> EvalResults:
     """Forward-holdout evaluation of `recipe`, both baselines, and the deployed models.
 
@@ -449,13 +496,20 @@ def run(
     and lift_<B>_vs_<A> columns, recipe_<B>_vs_recipe_<A> paired tests, and
     EvalResults.recipe_comparison (one row per horizon plus day_profile).
     day_profile_feature_cols overrides the primary recipe's day-profile feature
-    list (an experiment knob; the deployed model is scored with its own features)."""
+    list (an experiment knob; the deployed model is scored with its own features).
+    valid_suffix: train the compare recipe on training_valid_tN{suffix} rows with
+    {column}{suffix} features where the frame has them (Session 6 F4); scoring
+    rows are unchanged, res.widened holds the extra rows. Default '' = as before."""
     started = time.time()
     horizons = list(horizons)
     if day_profile_feature_cols is not None:
         recipe = recipes.with_(recipe, day_profile_features=tuple(day_profile_feature_cols))
     if compare is not None and compare.name == recipe.name:
         raise ValueError(f"compare recipe needs a different name than the primary ({recipe.name!r})")
+    if valid_suffix and compare is None:
+        raise ValueError("valid_suffix applies to the compare recipe; pass compare=")
+    compare_df = suffixed_frame(df, compare, valid_suffix) if valid_suffix else None
+    widened: dict = {}
     train, test = forward_split(df, weeks=weeks, cutoff=cutoff)
     test_days = sorted(set(df.loc[test, "date_la"]))
     if not test_days:
@@ -507,7 +561,7 @@ def run(
         t0 = time.time()
         rows, preds, y = _trajectory_block(
             df, train, test, h, ride_cats, status_cats, deployed_cats, model_dir, deployed_git_ref,
-            recipe=recipe, compare=compare)
+            recipe=recipe, compare=compare, compare_df=compare_df, widened=widened)
         if "deployed" not in preds:
             _deployed_note(meta, f"trajectory_t{h}", meta["deployed_source"])
         headline[h] = _headline_row(rows, preds, y, h, is_contaminated, recipe=recipe, compare=compare)
@@ -556,9 +610,18 @@ def run(
 
     classifiers, trend_clf = {}, {}
     with_clf = [r for r in ((recipe, compare) if compare is not None else (recipe,)) if r.has_classifiers]
+    first = None  # (recipe, scores, probs) of the first recipe with classifiers
     for i, r in enumerate(with_clf):
         prefix = "" if i == 0 else f"{r.name}:"
-        scores, probs = _classifier_block(df, train, test, ride_cats, status_cats, r, prefix)
+        if first is not None and not valid_suffix and _same_classifiers(first[0], r):
+            # Identical fit (deterministic); reuse instead of retraining.
+            scores = {prefix + name: {**sc, "recipe": r.name} for name, sc in first[1].items()}
+            probs = first[2]
+        else:
+            fit_df = compare_df if (r is compare and compare_df is not None) else None
+            scores, probs = _classifier_block(df, train, test, ride_cats, status_cats, r, prefix, fit_df=fit_df)
+        if first is None:
+            first = (r, scores, probs)
         classifiers.update(scores)
         if r.trend_thresholds and {"p_rise_30", "p_fall_30"} <= set(probs) and 30 in all_preds:
             key = 30 if i == 0 else f"{r.name}:30"
@@ -576,6 +639,7 @@ def run(
         by_ride=by_ride, by_hour=by_hour, by_park=by_park, by_band=by_band, paired=paired,
         day_profile=day_profile, staleness=stale, interleaved=inter, preds=all_preds,
         recipe_comparison=recipe_comparison, classifiers=classifiers, trend_clf=trend_clf,
+        widened=widened,
     )
     if write_report:
         from . import report

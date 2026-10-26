@@ -119,14 +119,14 @@ Any new field in a prediction doc must be additive. Tombstones carry the full do
 Cadence is manual for now (every two weeks); a later session automates it. The forward scoreboard's recipe comparison is the deploy gate. The export refits on every row, so its output cannot be scored.
 
 **Biweekly retrain:**
-1. Pull the latest data in the notebook and run it top to bottom. The scoreboard cell runs automatically (`recipe=RECIPE_A, compare=RECIPE_B`) and writes `reports/eval/<date>_recipeB.md`.
+1. Pull the latest data in the notebook and run it top to bottom. Since Session 6 the scoreboard cell runs `recipe=RECIPE_B, compare=RECIPE_C` and writes `reports/eval/<date>_recipeC.md` (cells in `ml/README.md`, "Session 6 cells"; the session-6 feature cell must run before it).
 2. Read the "Recipe comparison" table in that report.
 3. Export and deploy with steps 1–6b below.
 4. Record the report and the manifest's `trained_through` in `ml_training_history.md`.
 
 **Deploy checklist.** Do the steps in order. Each step has a check, and you don't go on until it passes.
 
-0. **Gate.** The scoreboard report with the recipe comparison exists, and Tanner has read the table and said go. B ships only if it beats A on the paired test at T+30, T+60 and T+120 and the Full Day row is not worse. If B lost, export A (refit on all data) instead.
+0. **Gate.** The scoreboard report with the recipe comparison exists, and Tanner has read the table and said go. B ships only if it beats A on the paired test at T+30, T+60 and T+120 and the Full Day row is not worse. If B lost, export A (refit on all data) instead. Since Session 6 the comparison is B vs C, and C uses the Session 6 gate (`ml/README.md`, "Session 6 cells"). If C lost, export B.
 1. **Nothing unpushed.**
    ```bash
    git status -sb
@@ -138,6 +138,7 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
    gcloud run jobs executions list --job club32-predict-cron --region us-west1 --project llm-wait-times --limit 3
    ```
    Check: the next execution after the deploy is `SUCCEEDED`. In the Firebase console (`predictions` collection), docs have `updated_at` under 15 minutes old and `model_version` is still the **old** date. This is new code with old models, and it has to work.
+   Recipe C (Session 6) makes this order mandatory a second time. Old cron code builds no `ll_offset_min` / `ll_state_cat`, so it would feed a C model a plain NaN column where the model expects a categorical. The new code reads `raw.queue` in the same `wait_times` query (no extra reads), and its job log has an `ll_state_cat over predicted rides: {...}` line even with B models. During park hours that line should show `AVAILABLE` for some rides.
 3. **Back up the bucket (mandatory).**
    ```bash
    gcloud storage cp "gs://club32-models/*" "gs://club32-models/backup-$(date +%F)/"   # not gsutil -m: it crashes Python on this Mac; quote the URLs so zsh leaves * alone
@@ -147,13 +148,17 @@ Cadence is manual for now (every two weeks); a later session automates it. The f
    ```bash
    cat models/manifest.json
    ```
-   Check: `trained_through` is the latest data date, and `recipe` / `trajectory_target` are the winning recipe's. For Recipe B the manifest has `classifiers` (4 entries), `trend_thresholds` and `alert`, and `models/` has the 4 `clf_*.txt` files and no `reversion_model.txt` / `ride_percentile_buckets.json` (the export deletes them). Commit `models/`.
+   Check: `trained_through` is the latest data date, and `recipe` / `trajectory_target` are the winning recipe's. For Recipe B the manifest has `classifiers` (4 entries), `trend_thresholds` and `alert`, and `models/` has the 4 `clf_*.txt` files and no `reversion_model.txt` / `ride_percentile_buckets.json` (the export deletes them). For Recipe C: `"recipe": "C"`, `trajectory_features` ends with `ll_offset_min`, `ll_state_cat`, and the file count is unchanged at 21 (C adds no files and no sidecars; the manifest stays v3). Commit `models/`.
 5. **Deploy the models.**
    ```bash
    npm run deploy:models
    gcloud run jobs executions list --job club32-predict-cron --region us-west1 --project llm-wait-times --limit 3
    ```
-   Check within one cycle (10 minutes): the execution is `SUCCEEDED`; the `predictions` docs carry the **new** `model_version`; the endpoint returns 200 (`curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"`); a spot-check ride (Space Mountain) has `t60` within a plausible range of its current wait and a non-empty `full_day`; a doc shows `trend_source: classifier` and a `p_rise_30` value (with a classifier recipe), and a doc shows both `confidence` and `curve_confidence`, and the job log line says `classifiers: 4`.
+   Check within one cycle (10 minutes): the execution is `SUCCEEDED`; the `predictions` docs carry the **new** `model_version`; the endpoint returns 200 (`curl -s -o /dev/null -w '%{http_code}' -H "x-api-key: $API_KEY" "$API/v0/waits"`); a spot-check ride (Space Mountain) has `t60` within a plausible range of its current wait and a non-empty `full_day`; a doc shows `trend_source: classifier` and a `p_rise_30` value (with a classifier recipe), and a doc shows both `confidence` and `curve_confidence`, and the job log line says `classifiers: 4`. With Recipe C:
+   - The same log line says `recipe: C`.
+   - During park hours, the `ll_state_cat over predicted rides` log line shows `AVAILABLE` (or `FINISHED` late in the day) for some rides, not only `NONE`.
+   - Radiator Springs Racers (a Lightning Lane ride) has a sane forecast: `t60` within a plausible range of its current wait and a non-empty `full_day`. Its latest `wait_times` doc shows `raw.queue.RETURN_TIME` with the state the log counted.
+   - Prediction docs do not carry the LL fields themselves (no API change). The log line is the serving-side evidence.
 6. **Rollback if anything fails.**
    ```bash
    gcloud storage cp "gs://club32-models/backup-<date>/*" gs://club32-models/

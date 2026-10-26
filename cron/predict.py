@@ -39,6 +39,7 @@ from day_type import holiday_features  # noqa: E402
 from closure_features import CLOSURE_FEATURE_COLS, slot_closure_context, empty_closure_context  # noqa: E402
 from crowd_features import crowd_level_ratio_live, regime_for  # noqa: E402
 from park_schedule import get_todays_hours, minutes_until_close, operating_hours  # noqa: E402
+from ride_features import LL_STATES, ll_fields  # noqa: E402
 
 LA_TZ = ZoneInfo("America/Los_Angeles")
 
@@ -84,6 +85,11 @@ TRAJECTORY_FEATURE_COLS = [
     # midnight-close bug was fixed). Recipe A models don't ask for it; main()
     # adds it to the row from today's park close.
     "minutes_until_close",
+    # Recipe C only (Session 6, F3): Lightning Lane return window from the
+    # latest snapshot's raw.queue (ride_features.ll_fields, shared with
+    # training). ll_offset_min is None -> NaN unless the window is AVAILABLE;
+    # ll_state_cat is typed with LL_STATES in _feature_frame.
+    "ll_offset_min", "ll_state_cat",
 ]
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -303,6 +309,15 @@ def _fetch_daily_weather_forecast(lat: float, lon: float, tz: str) -> dict:
         return {"temp_high_f": 75.0, "will_rain": 0.0}
 
 
+def _flatten_queue(d: dict) -> dict:
+    """Doc dict with the nested raw.queue moved to `ll_queue` (None when the
+    doc has no raw, no queue, or a non-dict value) and `raw` dropped."""
+    raw = d.pop("raw", None)
+    queue = raw.get("queue") if isinstance(raw, dict) else None
+    d["ll_queue"] = queue if isinstance(queue, dict) else None
+    return d
+
+
 def _read_recent(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
     log.info("Reading wait_times since %s", cutoff.isoformat())
     rows = []
@@ -314,12 +329,15 @@ def _read_recent(db: firestore.Client, cutoff: datetime) -> pd.DataFrame:
             "hour_of_day", "day_of_week", "month",
             "is_holiday", "is_holiday_weekend",
             "days_until_next_holiday", "days_since_last_holiday",
+            # Nested field path: same documents, no extra reads. Comes back as
+            # {"raw": {"queue": {...}}}; flattened to ll_queue below.
+            "raw.queue",
         ])
     )
     for doc in query.stream():
         d = doc.to_dict()
         if d:
-            rows.append(d)
+            rows.append(_flatten_queue(d))
     if not rows:
         return pd.DataFrame()
     df = pd.DataFrame(rows)
@@ -426,6 +444,10 @@ def _build_trajectory_row(
         (last["timestamp_utc"] - regime_start_ts).total_seconds() / 60,
     )
 
+    # Lightning Lane fields from the latest snapshot's queue (a frame without
+    # ll_queue, or a doc without raw.queue, reads as NONE / NaN).
+    ll_offset, ll_state = ll_fields(last.get("ll_queue"), last["timestamp_utc"])
+
     return {
         "wait_minutes":                    float(last["wait_minutes"]),
         "wait_lag_1":                      float(lag1),
@@ -448,6 +470,8 @@ def _build_trajectory_row(
         # sees the same dtype as during training.
         "ride_id_cat":                     last["ride_id"],
         "status_cat":                      last["status"],
+        "ll_offset_min":                   ll_offset,
+        "ll_state_cat":                    ll_state,
     }
 
 
@@ -467,6 +491,10 @@ def _feature_frame(feat_row: dict, model, ride_id_cats: list[str], status_cats: 
             X["ride_id_cat"] = pd.Categorical(X["ride_id_cat"], categories=ride_id_cats)
         if "status_cat" in X.columns:
             X["status_cat"] = pd.Categorical(X["status_cat"], categories=status_cats)
+        if "ll_state_cat" in X.columns:
+            # Fixed list shared with training (ml.recipes.CATEGORIES); NaN -> missing.
+            X["ll_state_cat"] = pd.Categorical(X["ll_state_cat"].where(X["ll_state_cat"].isin(LL_STATES)),
+                                               categories=LL_STATES)
         frames[cols] = X
     return X
 
@@ -901,6 +929,7 @@ def main() -> int:
 
         prediction_docs = []
         tombstoned = 0
+        ll_states: dict[str, int] = {}
         for ride_id, ride_df in df.groupby("ride_id"):
             feat_row = _build_trajectory_row(ride_df, ride_id_cats, status_cats, regime_thresholds)
             current_raw_wait = (
@@ -915,6 +944,7 @@ def main() -> int:
                 tombstoned += 1
                 continue
             park_id = ride_df["park_id"].iloc[0]
+            ll_states[feat_row["ll_state_cat"]] = ll_states.get(feat_row["ll_state_cat"], 0) + 1
             feat_row["park_crowd_median"] = park_crowd_median
             feat_row["crowd_level_ratio"] = crowd_by_park.get(park_id)
             open_minutes, close_minutes = park_hours.get(park_id, (None, None))
@@ -974,6 +1004,8 @@ def main() -> int:
 
         predicted = len(prediction_docs) - tombstoned
         log.info("Built predictions for %d rides, %d tombstones", predicted, tombstoned)
+        # Recipe C reads these (Session 6); all NONE in daytime means raw.queue never arrived.
+        log.info("ll_state_cat over predicted rides: %s", ll_states)
 
         coll = db.collection("predictions")
         written = 0

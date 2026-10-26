@@ -13,6 +13,7 @@ from .recipes import (
     DAY_PROFILE_FEATURE_COLS,
     RECIPE_A,
     RECIPE_B,
+    RECIPE_C,
     Recipe,
     TRAJECTORY_FEATURE_COLS,
     add_categoricals,

@@ -263,3 +263,67 @@ else:
 ```
 
 The notebook's current copy defaults the guard to `globals().get('EXPORT_MODELS', True)`, which exports under Run All despite its comment; the body above uses `False`, as the Session 4 body here did. `train_all` now also fits the four classifiers on every valid row (300 trees × 63 leaves each), so the export takes a few minutes longer. It writes 21 files: 12 trajectory, `day_profile.txt`, 4 `clf_*.txt`, `feature_categories.json`, `ride_regime_thresholds.json`, `crowd_level_baselines.json`, `manifest.json`.
+
+## Session 6 cells
+
+Recipe C = Recipe B plus two Lightning Lane features on the trajectory models and the classifiers: `ll_offset_min` (minutes from the poll to the return-window start when `raw.queue.RETURN_TIME` / `PAID_RETURN_TIME` is AVAILABLE, clipped to [−60, 600], NaN otherwise) and `ll_state_cat` (NONE / AVAILABLE / FINISHED). The Full Day model is unchanged. It was the only arm of the Session 6 batch that passed the gate (`reports/eval/2026-10-24_session6-features.md`; re-run with `.venv/bin/python -m ml.experiments.session6_features`). Both columns come from `cron/ride_features.ll_fields`, which `cron/predict.py` also calls on the latest snapshot's `raw.queue`, and `ll_state_cat` uses the same fixed category list on both sides (`ml.recipes.CATEGORIES`, `ride_features.LL_STATES`). No new model files: the export still writes 21, and the manifest stays v3 with `recipe: "C"`.
+
+### Feature cell (new; after the existing feature cells, before the scoreboard)
+
+```python
+# ── FEATURES: session-6 (Lightning Lane for recipe C) ──
+# Adds ll_offset_min / ll_state_cat from `raw` (plus the other Session 6
+# candidate columns, which recipe C does not read). A few seconds on the full frame.
+import sys, importlib; sys.path.insert(0, '.')
+import ml.recipes, ml.features
+for _m in (ml.recipes, ml.features): importlib.reload(_m)
+from ml.features import add_session6_features
+df_sorted = add_session6_features(df_sorted)
+df_sorted[['ll_offset_min', 'll_state_cat']].describe(include='all')
+```
+
+`add_session6_features` returns a shallow copy with the new columns, so re-running the cell is harmless. Its `headliners` / `tiers` arguments are optional: without them it fits both on every row, which only matters for the closed F1/F2 columns. If the `DUMP` cell runs after this cell, `df_features_cache.pkl` gains the columns, but the Session 6 experiment derives them itself either way.
+
+### Scoreboard cell
+
+```python
+import sys, importlib; sys.path.insert(0, '.')
+import ml.recipes, ml.evaluate, ml.report
+for _m in (ml.recipes, ml.report, ml.evaluate): importlib.reload(_m)
+from ml import evaluate
+from ml.recipes import RECIPE_B, RECIPE_C
+res = evaluate.run(df_sorted, RIDE_ID_CATEGORIES, STATUS_CATEGORIES, weeks=4,
+                   recipe=RECIPE_B, compare=RECIPE_C, label='recipeC')
+res.recipe_comparison     # 'A' columns = recipe B, 'B' columns = recipe C
+```
+
+C ships when its verdict is 'B wins' (C) at T+60, it is not 'A wins' (B) at T+30, T+120 or T+240, the Full Day row is not 'A wins', and `p_fall_60` / `p_rise_60` keep their AUC and top-decile precision (the "Classifiers" section lists recipe B's rows and `C:`-prefixed rows).
+
+### `EXPORT` cell (`0e095970`)
+
+Same as Session 5 with `RECIPE_C`:
+
+```python
+# ── EXPORT: refit on all rows and write models/ (ml/export.py) ──
+# GUARDED: this cell is a no-op under Run All. To export models, run a cell
+# containing `EXPORT_MODELS = True` first, then run this cell on its own.
+# Deploy with internal-docs/operations.md "Retrain and deploy models (biweekly)":
+# the cron image goes out BEFORE the models.
+if not globals().get('EXPORT_MODELS', False):
+    print('Skipping export. Set EXPORT_MODELS = True and re-run this cell to write models/.')
+else:
+    import sys, importlib; sys.path.insert(0, '.')
+    import ml.recipes, ml.manifest, ml.export
+    for _m in (ml.recipes, ml.manifest, ml.export):
+        importlib.reload(_m)
+    # RECIPE_C needs the session-6 feature cell above (ll_offset_min / ll_state_cat).
+    # If C lost on the scoreboard, use RECIPE_B here.
+    from ml.recipes import RECIPE_C as RECIPE
+    from ml.export import train_all, export
+    assert {'ll_offset_min', 'll_state_cat'} <= set(df_sorted.columns), 'run the session-6 feature cell first'
+    _models = train_all(df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES)
+    manifest = export(_models, df_sorted, RECIPE, RIDE_ID_CATEGORIES, STATUS_CATEGORIES,
+                      crowd_keyed_by=CROWD_KEYED_BY)
+```
+
+The export writes the same 21 files. Check that `manifest.json` says `"recipe": "C"` and that its `trajectory_features` end with `ll_offset_min`, `ll_state_cat`.

@@ -1,3 +1,4 @@
+import pytest
 import json
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
@@ -196,13 +197,15 @@ class _FakeTrajBooster:
 def _feat_row(wait=30.0, **overrides):
     row = {c: 1.0 for c in TRAJECTORY_FEATURE_COLS}
     row.update({"wait_minutes": wait, "ride_id_cat": "r1", "status_cat": "OPERATING",
-                "is_holiday": False, "is_holiday_weekend": False})
+                "is_holiday": False, "is_holiday_weekend": False,
+                "ll_offset_min": None, "ll_state_cat": "NONE"})
     row.update(overrides)
     return row
 
 
-A_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c != "minutes_until_close"]  # Recipe A's 21
-B_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c != "week_of_year"]       # Recipe B's 21 (arm B3: no week_of_year, + minutes_until_close)
+LL_COLS = ["ll_offset_min", "ll_state_cat"]  # Recipe C only (Session 6)
+A_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c not in ["minutes_until_close"] + LL_COLS]  # Recipe A's 21
+B_COLS = [c for c in TRAJECTORY_FEATURE_COLS if c not in ["week_of_year"] + LL_COLS]  # Recipe B's 21 (arm B3: no week_of_year, + minutes_until_close)
 
 
 class TestPredictTrajectory:
@@ -626,3 +629,116 @@ class TestCurveConfidence:
                                                TREND_THRESHOLDS)
         assert (trend, conf, source) == ("rising", "high", "classifier")
         assert _curve_confidence(20.0, flat) == "low"  # the engine still ignores a flat curve
+
+
+# ── Lightning Lane fields (Session 6, recipe C) ─────────────────────────────
+
+from predict import _feature_frame, _flatten_queue  # noqa: E402
+from ride_features import LL_STATES  # noqa: E402
+
+C_COLS = B_COLS + ["ll_offset_min", "ll_state_cat"]
+LL_START = pd.Timestamp(datetime(2026, 8, 24, 13, 0, tzinfo=LA)).tz_convert("UTC")
+
+
+def _ll_history(queue, n=5):
+    """_ride_history with every snapshot carrying `queue` as its ll_queue."""
+    df = _ride_history("Radiator Springs Racers", [40] * n)
+    df["ll_queue"] = [queue] * n
+    return df
+
+
+def _ll_row(queue):
+    return _build_trajectory_row(_ll_history(queue), ["hm"], ["OPERATING"], {})
+
+
+def _available(minutes_ahead, kind="RETURN_TIME"):
+    last_ts = LL_START + pd.Timedelta(minutes=40)  # the 5th snapshot
+    start = (last_ts + pd.Timedelta(minutes=minutes_ahead)).tz_convert("America/Los_Angeles").isoformat()
+    return {"STANDBY": {"waitTime": 40}, kind: {"state": "AVAILABLE", "returnStart": start, "returnEnd": None}}
+
+
+class TestLightningLaneRow:
+    def test_available_gives_positive_offset(self):
+        row = _ll_row(_available(75))
+        assert row["ll_state_cat"] == "AVAILABLE"
+        assert row["ll_offset_min"] == pytest.approx(75.0)
+
+    def test_finished_gives_nan_offset(self):
+        row = _ll_row({"STANDBY": {"waitTime": 40}, "RETURN_TIME": {"state": "FINISHED", "returnStart": None}})
+        assert row["ll_state_cat"] == "FINISHED" and row["ll_offset_min"] is None
+
+    def test_no_queue_or_no_raw_is_none(self):
+        assert (_ll_row(None)["ll_offset_min"], _ll_row(None)["ll_state_cat"]) == (None, "NONE")
+        assert _ll_row({"STANDBY": {"waitTime": 40}})["ll_state_cat"] == "NONE"
+        # A frame read before raw.queue was selected has no ll_queue column at all.
+        row = _build_trajectory_row(_ride_history("Radiator Springs Racers", [40] * 5), ["hm"], ["OPERATING"], {})
+        assert (row["ll_offset_min"], row["ll_state_cat"]) == (None, "NONE")
+
+    def test_paid_return_time_like_return_time(self):
+        row = _ll_row(_available(30, kind="PAID_RETURN_TIME"))
+        assert row["ll_state_cat"] == "AVAILABLE" and row["ll_offset_min"] == pytest.approx(30.0)
+
+    def test_latest_snapshot_wins(self):
+        hist = _ll_history({"RETURN_TIME": {"state": "FINISHED"}})
+        hist.at[hist.index[-1], "ll_queue"] = _available(10)
+        row = _build_trajectory_row(hist, ["hm"], ["OPERATING"], {})
+        assert row["ll_state_cat"] == "AVAILABLE" and row["ll_offset_min"] == pytest.approx(10.0)
+
+
+class TestFlattenQueue:
+    def test_nested_queue_moved(self):
+        q = {"STANDBY": {"waitTime": 5}}
+        d = _flatten_queue({"ride_id": "r", "raw": {"queue": q}})
+        assert d == {"ride_id": "r", "ll_queue": q}
+
+    def test_missing_raw_or_queue(self):
+        assert _flatten_queue({"ride_id": "r"}) == {"ride_id": "r", "ll_queue": None}
+        assert _flatten_queue({"ride_id": "r", "raw": {}})["ll_queue"] is None
+        assert _flatten_queue({"ride_id": "r", "raw": None})["ll_queue"] is None
+        assert _flatten_queue({"ride_id": "r", "raw": {"queue": "bad"}})["ll_queue"] is None
+
+
+class TestLightningLaneFeatureFrame:
+    CATS = (["r1", "r2"], ["CLOSED", "DOWN", "OPERATING"])
+
+    def test_typed_with_fixed_categories_and_none_is_nan(self):
+        booster = _FakeTrajBooster(C_COLS, 0.0)
+        X = _feature_frame(_feat_row(ll_offset_min=None, ll_state_cat="NONE"), booster, *self.CATS, {})
+        assert isinstance(X["ll_state_cat"].dtype, pd.CategoricalDtype)
+        assert list(X["ll_state_cat"].cat.categories) == LL_STATES
+        assert X["ll_state_cat"].iloc[0] == "NONE"
+        assert X["ll_offset_min"].dtype == float and X["ll_offset_min"].isna().all()
+
+    def test_unknown_state_is_missing(self):
+        X = _feature_frame(_feat_row(ll_offset_min=12.0, ll_state_cat="WEIRD"), _FakeTrajBooster(C_COLS, 0.0),
+                           *self.CATS, {})
+        assert X["ll_state_cat"].isna().all() and X["ll_offset_min"].iloc[0] == 12.0
+
+    def test_real_booster_trained_with_ll_state_cat(self, tmp_path):
+        import lightgbm as lgb
+        import numpy as np
+
+        rng = np.random.default_rng(0)
+        n = 400
+        frame = pd.DataFrame({c: rng.random(n) for c in C_COLS if c not in ("ride_id_cat", "status_cat", "ll_state_cat")})
+        frame["ride_id_cat"] = pd.Categorical(rng.choice(self.CATS[0], n), categories=self.CATS[0])
+        frame["status_cat"] = pd.Categorical(["OPERATING"] * n, categories=self.CATS[1])
+        states = rng.choice(LL_STATES, n)
+        frame["ll_state_cat"] = pd.Categorical(states, categories=LL_STATES)
+        frame["ll_offset_min"] = np.where(states == "AVAILABLE", rng.random(n) * 100, np.nan)
+        frame = frame[C_COLS]
+        y = np.where(states == "AVAILABLE", 10.0, 0.0) + rng.random(n)
+        lgb.LGBMRegressor(n_estimators=5, min_child_samples=5, verbose=-1).fit(
+            frame, y, categorical_feature=["ride_id_cat", "status_cat", "ll_state_cat"]).booster_.save_model(
+            str(tmp_path / "c.txt"))
+        booster = lgb.Booster(model_file=str(tmp_path / "c.txt"))
+        assert "ll_state_cat" in booster.feature_name()
+        for state, offset in (("AVAILABLE", 45.0), ("FINISHED", None), ("NONE", None)):
+            preds = _predict_trajectory(_feat_row(ll_state_cat=state, ll_offset_min=offset, crowd_level_ratio=None),
+                                        {60: booster}, *self.CATS, "delta")
+            assert preds[60] >= 0.0
+        avail = _predict_trajectory(_feat_row(ll_state_cat="AVAILABLE", ll_offset_min=45.0), {60: booster},
+                                    *self.CATS, "delta")[60]
+        none = _predict_trajectory(_feat_row(ll_state_cat="NONE", ll_offset_min=None), {60: booster},
+                                   *self.CATS, "delta")[60]
+        assert avail > none  # the category reaches the model with the training codes

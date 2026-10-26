@@ -250,3 +250,78 @@ class TestVerdict:
     def test_noise_and_nan(self):
         assert evaluate.verdict(self._p(-0.1, 0.2, 0.3)) == "noise"
         assert evaluate.verdict(self._p(float("nan"), float("nan"), float("nan"))) == "noise"
+
+
+class TestValidSuffix:
+    """Session 6 F4: the compare recipe trains on the widened _f rows/lags; scoring rows are unchanged."""
+    TINY = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
+    TINY_CLF = dict(n_estimators=5, num_leaves=7, verbose=-1)
+
+    @pytest.fixture(scope="class")
+    def widened_frame(self, frame):
+        import numpy as np
+
+        df = frame.copy()
+        reopen = df["wait_minutes"].notna() & df["wait_lag_1"].isna()  # r3 after its noon closure
+        for c in ("wait_lag_1", "wait_lag_2", "wait_lag_3"):
+            df[f"{c}_f"] = df[c].fillna(df["wait_minutes"])
+        df["wait_delta_1_f"] = df["wait_minutes"] - df["wait_lag_1_f"]
+        df["lags_missing"] = (df[["wait_lag_1", "wait_lag_2", "wait_lag_3"]].isna().any(axis=1)
+                              & df["wait_minutes"].notna()).astype(int)
+        for h in (10, 20, 30, 40, 50, 60, 90, 120, 150, 180, 210, 240):
+            df[f"training_valid_t{h}"] = df[f"training_valid_t{h}"] & df["wait_lag_3"].notna()
+            df[f"training_valid_t{h}_f"] = df[f"training_valid_t{h}"] | (
+                (df["lags_missing"] == 1) & df[f"target_t{h}"].notna())
+        assert reopen.any() and np.isfinite(df["wait_lag_1_f"][reopen]).all()
+        return df
+
+    def _recipes(self):
+        from ml.recipes import RECIPE_B, with_
+
+        b = with_(RECIPE_B, trajectory_params=self.TINY, day_profile_params=self.TINY,
+                  classifier_params=self.TINY_CLF)
+        return b, with_(b, name="F4", trajectory_features=b.trajectory_features + ("lags_missing",))
+
+    def test_suffixed_frame_swaps_columns(self, widened_frame):
+        b, f4 = self._recipes()
+        sub = evaluate.suffixed_frame(widened_frame, f4, "_f")
+        assert sub["wait_lag_1"].equals(widened_frame["wait_lag_1_f"])
+        assert sub["training_valid_t30"].equals(widened_frame["training_valid_t30_f"])
+        assert sub["wait_minutes"].equals(widened_frame["wait_minutes"])
+        assert "lags_missing" in sub.columns and "ride_id" in sub.columns
+
+    def test_rows_unchanged_and_widened_rows_reported(self, widened_frame, cats):
+        b, f4 = self._recipes()
+        res = evaluate.run(widened_frame, *cats, weeks=2, horizons=[30], run_staleness=False, write_report=False,
+                           model_dir="does-not-exist", recipe=b, compare=f4, valid_suffix="_f")
+        plain = evaluate.run(widened_frame, *cats, weeks=2, horizons=[30], run_staleness=False,
+                             write_report=False, model_dir="does-not-exist", recipe=b, compare=f4)
+        assert res.headline.loc[30, "n_rows"] == plain.headline.loc[30, "n_rows"]
+        assert res.preds[30]["recipe_F4"].notna().all()
+        w = res.widened[30]
+        assert len(w) > 0 and list(w.columns) == ["y", "persistence", "recipe_F4"]
+        assert w["recipe_F4"].notna().all()
+        assert not widened_frame.loc[w.index, "training_valid_t30"].any()
+        assert widened_frame.loc[w.index, "training_valid_t30_f"].all()
+        assert plain.widened == {}
+        assert {"F4:p_fall_30", "F4:p_rise_30"} <= set(res.classifiers)
+
+    def test_needs_compare(self, widened_frame, cats):
+        with pytest.raises(ValueError):
+            evaluate.run(widened_frame, *cats, weeks=2, horizons=[30], run_staleness=False, write_report=False,
+                         model_dir="does-not-exist", valid_suffix="_f")
+
+
+class TestClassifierReuse:
+    def test_identical_classifiers_reused_with_compare_name(self, frame, cats):
+        from ml.recipes import RECIPE_B, with_
+
+        tiny = dict(n_estimators=5, learning_rate=0.05, objective="regression_l1", verbose=-1)
+        b = with_(RECIPE_B, trajectory_params=tiny, day_profile_params=tiny,
+                  classifier_params=dict(n_estimators=5, num_leaves=7, verbose=-1))
+        d = with_(b, name="D", day_profile_features=b.day_profile_features[:-1])
+        res = evaluate.run(frame, *cats, weeks=2, horizons=[30, 60], run_staleness=False, write_report=False,
+                           model_dir="does-not-exist", recipe=b, compare=d)
+        for name in ("p_fall_30", "p_rise_60"):
+            assert res.classifiers[f"D:{name}"]["auc"] == res.classifiers[name]["auc"]
+            assert res.classifiers[f"D:{name}"]["recipe"] == "D" and res.classifiers[name]["recipe"] == "B"

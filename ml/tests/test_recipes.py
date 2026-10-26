@@ -26,11 +26,11 @@ class TestFeatureParity:
     buildable from it."""
 
     def test_recipe_a_matches_predict_exactly(self):
-        # predict.py's trajectory row also carries minutes_until_close for Recipe B;
-        # everything else is Recipe A's list, in order.
+        # predict.py's trajectory row also carries minutes_until_close for Recipe B
+        # and the Lightning Lane pair for Recipe C; everything else is Recipe A's list, in order.
         traj, day = predict_feature_cols()
         assert TRAJECTORY_FEATURE_COLS == list(RECIPE_A.trajectory_features)
-        assert traj == TRAJECTORY_FEATURE_COLS + ["minutes_until_close"]
+        assert traj == TRAJECTORY_FEATURE_COLS + ["minutes_until_close", "ll_offset_min", "ll_state_cat"]
         assert DAY_PROFILE_FEATURE_COLS == day == list(RECIPE_A.day_profile_features)
 
     def test_deployed_recipe_is_buildable(self):
@@ -46,6 +46,37 @@ class TestFeatureParity:
         traj, day = predict_feature_cols()
         assert set(RECIPE_B.trajectory_features) <= set(traj)
         assert set(RECIPE_B.day_profile_features) <= set(day)
+
+    def test_recipe_c_manifest_is_buildable(self, tmp_path):
+        """A manifest exported with recipe C (as models/manifest.json will be after
+        the Session 6 export) names lists predict.py can build, and round-trips."""
+        import datetime
+
+        import pandas as pd
+
+        from ml.manifest import manifest_for, read_manifest, recipe_from_manifest, write_manifest
+        from ml.recipes import RECIPE_C
+
+        frame = pd.DataFrame({"date_la": [datetime.date(2026, 10, 1), datetime.date(2026, 10, 25)]})
+        fields = manifest_for(RECIPE_C, frame, [30, 60])
+        path = write_manifest(fields.pop("trained_through"), recipe=fields.pop("recipe"),
+                              path=tmp_path / "manifest.json", **fields)
+        manifest = read_manifest(path)
+        assert manifest["recipe"] == "C" and "sidecars" not in manifest
+        assert manifest["trajectory_features"][-2:] == ["ll_offset_min", "ll_state_cat"]
+        deployed = recipe_from_manifest(manifest)
+        assert deployed == RECIPE_C
+        traj, day = predict_feature_cols()
+        assert set(deployed.trajectory_features) <= set(traj)
+        assert set(deployed.classifier_features) <= set(traj)
+        assert set(deployed.day_profile_features) <= set(day)
+
+    def test_ll_categories_shared_with_predict(self):
+        import predict
+
+        from ml.recipes import CATEGORIES
+
+        assert CATEGORIES["ll_state_cat"] == list(predict.LL_STATES) == ["NONE", "AVAILABLE", "FINISHED"]
 
 
 class TestTrajectory:
@@ -282,6 +313,20 @@ class TestDeriveTrend:
         assert n > 10_000
 
 
+class TestRecipeC:
+    def test_is_b_plus_lightning_lane(self):
+        from ml.recipes import RECIPE_C, RECIPES
+
+        assert RECIPES["C"] is RECIPE_C and RECIPE_C.name == "C"
+        assert RECIPE_C.trajectory_features == RECIPE_B.trajectory_features + ("ll_offset_min", "ll_state_cat")
+        assert RECIPE_C.classifier_features == RECIPE_C.trajectory_features
+        assert RECIPE_C.day_profile_features == RECIPE_B.day_profile_features
+        assert RECIPE_C.sidecars == ()
+        for f in ("trajectory_params", "day_profile_params", "trajectory_target", "classifier_params",
+                  "classifier_labels", "classifier_horizons", "trend_thresholds", "alert"):
+            assert getattr(RECIPE_C, f) == getattr(RECIPE_B, f)
+
+
 class TestRecipeBSession5:
     def test_has_classifiers_and_thresholds_for_every_band(self):
         assert RECIPE_B.has_classifiers and RECIPE_B.classifier_names == CLASSIFIER_NAMES
@@ -298,3 +343,42 @@ class TestRecipeBSession5:
         threshold = float(re.search(r"P_RISE_ALERT_THRESHOLD = ([0-9.]+);", ts).group(1))
         minimum = int(re.search(r"ALERT_MIN_CURRENT_WAIT = (\d+);", ts).group(1))
         assert RECIPE_B.alert == {"field": "p_rise_30", "threshold": threshold, "min_current_wait": minimum}
+
+
+class TestSession6RecipeHooks:
+    def test_classifier_features_default_mirror_trajectory(self):
+        assert RECIPE_B.classifier_features == RECIPE_B.trajectory_features
+        arm = with_(RECIPE_B, name="X", trajectory_features=RECIPE_B.trajectory_features + ("lags_missing",))
+        assert arm.classifier_features == arm.trajectory_features
+
+    def test_classifier_features_override(self):
+        arm = with_(RECIPE_B, name="X", classifier_features=("wait_minutes", "ride_id_cat"))
+        assert arm.classifier_features == ("wait_minutes", "ride_id_cat")
+        assert arm.trajectory_features == RECIPE_B.trajectory_features
+        same = with_(RECIPE_B, name="Y", classifier_features=list(RECIPE_B.trajectory_features))
+        assert same.classifier_feature_list is None and same == with_(RECIPE_B, name="Y")
+
+    def test_sidecars_default_empty_and_tuple(self):
+        assert RECIPE_B.sidecars == ()
+        assert with_(RECIPE_B, sidecars=["headliners.json"]).sidecars == ("headliners.json",)
+
+    def test_new_categoricals_typed_with_fixed_categories(self, frame, cats):
+        from ml.recipes import CATEGORIES, _features, cat_features
+
+        df = frame.assign(ll_state_cat=np.where(frame["ride_id"] == "r1", "AVAILABLE", "NONE"),
+                          posting_tier_cat="hand")
+        rows = df["ride_id"].isin(["r1", "r2"])
+        X = _features(df, rows, ["wait_minutes", "ll_state_cat", "posting_tier_cat", "ride_id_cat"], *cats)
+        assert list(X["ll_state_cat"].cat.categories) == CATEGORIES["ll_state_cat"] == ["NONE", "AVAILABLE", "FINISHED"]
+        assert list(X["posting_tier_cat"].cat.categories) == ["automated", "hand"]
+        assert cat_features(["wait_minutes", "ll_state_cat", "ride_id_cat", "status_cat"]) == \
+            ["ll_state_cat", "ride_id_cat", "status_cat"]
+
+    def test_trains_with_new_categorical(self, frame, cats):
+        df = frame.assign(ll_state_cat=pd.Categorical(np.where(frame["ride_id"] == "r1", "AVAILABLE", "NONE")))
+        train, _ = forward_split(df, weeks=2)
+        r = with_(RECIPE_B, name="X", trajectory_params=TINY,
+                  trajectory_features=RECIPE_B.trajectory_features + ("ll_state_cat",))
+        model = train_trajectory(df.assign(minutes_until_close=1.0), train, 30, *cats, recipe=r)
+        assert "ll_state_cat" in model.booster_.feature_name()
+        assert np.isfinite(predict_trajectory(model, df.assign(minutes_until_close=1.0), 30).dropna()).all()

@@ -15,6 +15,9 @@ p_fall_30 into the trend word (derive_trend; cron/predict.py mirrors it).
 Labels, thresholds and the alert threshold come from
 reports/eval/2026-10-21_session5-classifiers.md.
 
+RECIPE_C (Session 6) is RECIPE_B plus ll_offset_min / ll_state_cat on the
+trajectory models and classifiers (reports/eval/2026-10-24_session6-features.md).
+
     from ml.recipes import RECIPE_B, train_trajectory, predict_trajectory
     model = train_trajectory(df, train_mask, 60, RIDE_ID_CATEGORIES, STATUS_CATEGORIES, recipe=RECIPE_B)
     pred = predict_trajectory(model, df, 60)   # always a level in minutes, delta or not
@@ -35,6 +38,7 @@ CRON_DIR = Path(__file__).resolve().parents[1] / "cron"
 if str(CRON_DIR) not in sys.path:
     sys.path.insert(0, str(CRON_DIR))
 from closure_features import CLOSURE_FEATURE_COLS  # noqa: E402
+from ride_features import LL_STATES, POSTING_TIERS  # noqa: E402
 
 TRAJECTORY_FEATURE_COLS = [
     "wait_minutes", "wait_lag_1", "wait_lag_2", "wait_lag_3", "wait_delta_1",
@@ -72,6 +76,12 @@ class Recipe:
     {band: {"call": {"rise": tau, "fall": tau}, "high": {"rise": tau, "fall": tau}}}
     for derive_trend (a None tau never fires). alert: {"field", "threshold",
     "min_current_wait"} for the backend's far-away downgrade.
+
+    classifier_feature_list: the classifiers' features; None (the default)
+    mirrors trajectory_features. with_(r, classifier_features=...) sets it.
+    sidecars: extra JSON files the recipe's serving needs (Session 6:
+    headliners.json, posting_tiers.json), written by export and listed in the
+    manifest.
     """
 
     name: str
@@ -85,6 +95,8 @@ class Recipe:
     classifier_horizons: tuple = (30, 60)
     trend_thresholds: dict | None = None
     alert: dict | None = None
+    classifier_feature_list: tuple[str, ...] | None = None
+    sidecars: tuple[str, ...] = ()
 
     def __post_init__(self):
         if self.trajectory_target not in ("level", "delta"):
@@ -92,6 +104,10 @@ class Recipe:
         object.__setattr__(self, "trajectory_features", tuple(self.trajectory_features))
         object.__setattr__(self, "day_profile_features", tuple(self.day_profile_features))
         object.__setattr__(self, "classifier_horizons", tuple(int(h) for h in self.classifier_horizons))
+        object.__setattr__(self, "sidecars", tuple(self.sidecars))
+        if self.classifier_feature_list is not None:
+            clf = tuple(self.classifier_feature_list)
+            object.__setattr__(self, "classifier_feature_list", None if clf == self.trajectory_features else clf)
         if self.classifier_labels is not None:
             # Tuples, so a manifest round-trip (JSON lists) compares equal.
             object.__setattr__(self, "classifier_labels",
@@ -99,6 +115,8 @@ class Recipe:
 
     @property
     def classifier_features(self) -> tuple[str, ...]:
+        if self.classifier_feature_list is not None:
+            return self.classifier_feature_list
         return self.trajectory_features
 
     @property
@@ -113,7 +131,12 @@ class Recipe:
 
 
 def with_(recipe: Recipe, **changes) -> Recipe:
-    """Copy of `recipe` with fields replaced (experiment arms)."""
+    """Copy of `recipe` with fields replaced (experiment arms).
+
+    classifier_features=... sets classifier_feature_list (a list equal to the
+    trajectory features is stored as None, i.e. mirroring)."""
+    if "classifier_features" in changes:
+        changes["classifier_feature_list"] = changes.pop("classifier_features")
     return dataclasses.replace(recipe, **changes)
 
 
@@ -149,9 +172,33 @@ RECIPE_B = Recipe(
     alert={"field": "p_rise_30", "threshold": 0.5, "min_current_wait": 10},
 )
 
-RECIPES = {"A": RECIPE_A, "B": RECIPE_B}
+# Session 6 (reports/eval/2026-10-24_session6-features.md): recipe B plus the
+# Lightning Lane pair, F3 — the only arm that passed the gate (T+60 better on
+# 20 of 28 days, better at T+30/60/120 on the LL rides, classifiers unchanged).
+# The owner shipped it although F1 (first in the order) was flat. Classifiers
+# mirror the trajectory features; day-profile is recipe B's; no sidecars
+# (cron/predict.py derives both columns from raw.queue with ride_features.ll_fields).
+RECIPE_C = with_(
+    RECIPE_B, name="C",
+    trajectory_features=RECIPE_B.trajectory_features + ("ll_offset_min", "ll_state_cat"),
+)
+
+RECIPES = {"A": RECIPE_A, "B": RECIPE_B, "C": RECIPE_C}
 
 CAT_COLS = {"ride_id_cat": "ride_id", "status_cat": "status"}
+
+# Fixed category lists for every other *_cat feature (Session 6). The frame
+# column is read as-is and typed with these categories, in training and in
+# cron/predict.py, so codes agree; a value outside the list becomes NaN.
+CATEGORIES = {
+    "posting_tier_cat": list(POSTING_TIERS),
+    "ll_state_cat": list(LL_STATES),
+}
+
+
+def cat_features(cols) -> list[str]:
+    """The categorical columns of a feature list (LightGBM categorical_feature)."""
+    return [c for c in cols if c in CAT_COLS or c in CATEGORIES]
 
 
 def predict_feature_cols() -> tuple[list[str], list[str]]:
@@ -172,6 +219,9 @@ def add_categoricals(df: pd.DataFrame, ride_cats: list, status_cats: list) -> pd
     out["ride_id_cat"] = _categorical(out["ride_id"], ride_cats)
     if "status" in out.columns:
         out["status_cat"] = _categorical(out["status"], status_cats)
+    for col, categories in CATEGORIES.items():
+        if col in out.columns:
+            out[col] = _categorical(out[col].astype(object), categories)
     return out
 
 
@@ -203,9 +253,8 @@ def train_trajectory(
     y = df.loc[rows, f"target_t{horizon}"]
     if recipe.trajectory_target == "delta":
         y = y - df.loc[rows, "wait_minutes"]
-    cat_features = [c for c in ("ride_id_cat", "status_cat") if c in cols]
     model = lgb.LGBMRegressor(**recipe.trajectory_params)
-    model.fit(X, y, categorical_feature=cat_features)
+    model.fit(X, y, categorical_feature=cat_features(cols))
     model.ride_cats_, model.status_cats_ = list(ride_cats), list(status_cats)
     model.recipe_, model.trajectory_cols_ = recipe, cols
     return model
@@ -227,7 +276,7 @@ def train_day_profile(
     rows = train_mask & df["wait_minutes"].notna()
     X = _features(df, rows, cols, ride_cats, [])
     model = lgb.LGBMRegressor(**(params or RECIPE_A.day_profile_params))
-    model.fit(X, df.loc[rows, "wait_minutes"], categorical_feature=["ride_id_cat"])
+    model.fit(X, df.loc[rows, "wait_minutes"], categorical_feature=cat_features(cols))
     model.ride_cats_, model.status_cats_ = list(ride_cats), []
     model.day_profile_cols_ = cols
     return model
@@ -331,9 +380,8 @@ def train_classifier(
     rows = (train_mask & df[f"training_valid_t{horizon}"]).astype(bool)
     X = _features(df, rows, cols, ride_cats, status_cats)
     y = classifier_label(df, horizon, direction, spec)[rows].astype(int)
-    cat_features = [c for c in ("ride_id_cat", "status_cat") if c in cols]
     model = lgb.LGBMClassifier(**(recipe.classifier_params or DEFAULT_CLASSIFIER_PARAMS))
-    model.fit(X, y, categorical_feature=cat_features)
+    model.fit(X, y, categorical_feature=cat_features(cols))
     model.ride_cats_, model.status_cats_ = list(ride_cats), list(status_cats)
     model.recipe_, model.classifier_cols_ = recipe, cols
     model.direction_, model.horizon_ = direction, int(horizon)

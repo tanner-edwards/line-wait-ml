@@ -154,3 +154,52 @@ class TestRecipeFromManifest:
         r = recipe_from_manifest({"recipe": "B"})
         assert r.trajectory_target == "level"
         assert r.trajectory_features == RECIPE_A.trajectory_features
+
+
+class TestExportRecipeC:
+    """Session 6: recipe C (B + Lightning Lane) exports the same 21 files, a v3
+    manifest naming C, and boosters predict.py can feed."""
+
+    @pytest.fixture(scope="class")
+    def exported(self, frame_with_park, tmp_path_factory):
+        import numpy as np
+        import pandas as pd
+
+        from ml.recipes import RECIPE_C
+        from ml.tests.conftest import RIDE_CATS, STATUS_CATS
+
+        df = frame_with_park.copy()
+        ll = df["ride_id"].isin(["r1", "r4"])
+        df["ll_state_cat"] = pd.Categorical(np.where(ll, "AVAILABLE", "NONE"), categories=["NONE", "AVAILABLE", "FINISHED"])
+        df["ll_offset_min"] = np.where(ll, 30.0, np.nan)
+        tiny_c = with_(TINY_B, name="C", trajectory_features=RECIPE_C.trajectory_features)
+        models = train_all(df, tiny_c, RIDE_CATS, STATUS_CATS)
+        out = tmp_path_factory.mktemp("c") / "models"
+        manifest = export(models, df, tiny_c, RIDE_CATS, STATUS_CATS, out_dir=out)
+        return out, manifest
+
+    def test_files_and_manifest(self, exported):
+        from ml.recipes import RECIPE_C
+
+        out, manifest = exported
+        assert len(list(out.iterdir())) == 21
+        assert manifest["recipe"] == "C" and "sidecars" not in manifest
+        assert manifest["trajectory_features"] == list(RECIPE_C.trajectory_features)
+        assert recipe_from_manifest(manifest).trajectory_features == RECIPE_C.trajectory_features
+
+    def test_boosters_run_through_predict(self, exported):
+        import predict
+
+        out, _ = exported
+        traj = lgb.Booster(model_file=str(out / "trajectory_t60.txt"))
+        clf = lgb.Booster(model_file=str(out / "clf_rise_30.txt"))
+        for b in (traj, clf):
+            assert b.feature_name()[-2:] == ["ll_offset_min", "ll_state_cat"]
+        row = {c: 1.0 for c in predict.TRAJECTORY_FEATURE_COLS}
+        row.update({"wait_minutes": 30.0, "ride_id_cat": "r1", "status_cat": "OPERATING", "is_holiday": False,
+                    "is_holiday_weekend": False, "crowd_level_ratio": None})
+        cats = (["r1", "r2", "r3", "r4", "r5", "r6"], ["CLOSED", "DOWN", "OPERATING", "REFURBISHMENT"])
+        for state, offset in (("AVAILABLE", 30.0), ("NONE", None), ("FINISHED", None)):
+            r = {**row, "ll_state_cat": state, "ll_offset_min": offset}
+            assert predict._predict_trajectory(r, {60: traj}, *cats, "delta")[60] >= 0
+            assert 0 <= predict._predict_classifiers(r, {"p_rise_30": clf}, *cats)["p_rise_30"] <= 1
