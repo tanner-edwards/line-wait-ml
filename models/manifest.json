@@ -1,8 +1,8 @@
 {
-  "trained_through": "2026-10-21",
-  "exported_at": "2026-10-22T13:34:21.267916+00:00",
-  "git_sha": "b222811",
-  "recipe": "B",
+  "trained_through": "2026-10-25",
+  "exported_at": "2026-10-26T13:17:30.111052+00:00",
+  "git_sha": "00e1d2d",
+  "recipe": "C",
   "trajectory_target": "delta",
   "trajectory_features": [
     "wait_minutes",
@@ -25,7 +25,9 @@
     "crowd_level_ratio",
     "ride_id_cat",
     "status_cat",
-    "minutes_until_close"
+    "minutes_until_close",
+    "ll_offset_min",
+    "ll_state_cat"
   ],
   "day_profile_features": [
     "ride_id_cat",
@@ -60,10 +62,10 @@
     210,
     240
   ],
-  "frame_rows": 974795,
+  "frame_rows": 997127,
   "frame_range": [
     "2026-05-02",
-    "2026-10-21"
+    "2026-10-25"
   ],
   "classifiers": {
     "p_fall_30": {
