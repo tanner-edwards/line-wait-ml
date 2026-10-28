@@ -1,0 +1,12 @@
+{
+  "name": "Club 32 Monitor",
+  "short_name": "C32 Monitor",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F2EDE0",
+  "theme_color": "#3D7C65",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

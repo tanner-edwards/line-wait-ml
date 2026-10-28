@@ -1,0 +1,42 @@
+{
+  "bellwethers": {
+    "7340550b-c14d-4def-80bb-acdb51d49a66": [
+      "34b1d70f-11c4-42df-935e-d5582c9f1a8e",
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4",
+      "a9076acd-7630-4bad-a8da-e6bd689ddcac",
+      "2aedc657-1ee2-4545-a1ce-14753f28cc66"
+    ],
+    "832fcd51-ea19-4e77-85c7-75d5843b127c": [
+      "c60c768b-3461-465c-8f4f-b44b087506fc",
+      "b7678dab-5544-48d5-8fdc-c1a0127cfbcd",
+      "86ab3069-110d-49c5-a7e7-29ddf28695a6",
+      "2295351d-ce6b-4c04-92d5-5b416372c5b5"
+    ]
+  },
+  "park_names": {
+    "7340550b-c14d-4def-80bb-acdb51d49a66": "Disneyland",
+    "832fcd51-ea19-4e77-85c7-75d5843b127c": "California Adventure"
+  },
+  "horizons": [
+    30,
+    60,
+    120,
+    180,
+    240
+  ],
+  "tolerance_min": {
+    "30": 5,
+    "60": 10,
+    "120": 15,
+    "180": 15,
+    "240": 15
+  },
+  "match_slack_min": 5,
+  "big_miss_min": 15,
+  "big_miss_horizon": 30,
+  "closing_window_min": 60,
+  "post_reopen_window_min": 60,
+  "hour_band_min_samples": 30,
+  "unusual_margin_min": 10,
+  "unusual_min_polls": 2
+}

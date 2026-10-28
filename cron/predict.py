@@ -185,6 +185,86 @@ def _tombstone_doc(
     return doc
 
 
+# ── Run history for the admin dashboard (dashboard/, ml/dashboard/) ─────────
+# `predictions` is overwritten every run, so this is the only place a forecast
+# can be saved for later grading. One doc per park per run, 30-day TTL on
+# expireAt. Best-effort: a failure here logs and never fails the run.
+
+HISTORY_COLLECTION = "admin_prediction_runs"
+HISTORY_HORIZONS = (30, 60, 120, 180, 240)  # t10 is the current wait, not a forecast
+HISTORY_PROB_FIELDS = ("p_rise_30", "p_rise_60", "p_fall_30", "p_fall_60")
+HISTORY_TTL_DAYS = 30
+
+
+def _num(v) -> float | None:
+    if v is None:
+        return None
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(f) else f
+
+
+def _run_history_docs(
+    prediction_docs: list[dict], df: pd.DataFrame, now: datetime, model_version: str
+) -> dict[str, dict]:
+    """{doc_id: doc}, one per park. Every ride in df is included at its latest
+    row — closed and tombstoned rides too, without forecast fields — so the
+    docs double as the actuals record for grading."""
+    preds = {d["ride_id"]: d for d in prediction_docs}
+    latest = df.groupby("ride_id").tail(1)
+    run_at = now.replace(second=0, microsecond=0)
+    stamp = run_at.strftime("%Y%m%dT%H%M")
+    docs: dict[str, dict] = {}
+    for row in latest.itertuples(index=False):
+        park_id = getattr(row, "park_id", None)
+        if not isinstance(park_id, str) or not park_id:
+            continue
+        doc = docs.setdefault(f"{park_id}_{stamp}", {
+            "park_id":       park_id,
+            "run_at":        run_at,
+            "date_la":       run_at.astimezone(LA_TZ).date().isoformat(),
+            "model_version": model_version,
+            "expireAt":      run_at + timedelta(days=HISTORY_TTL_DAYS),
+            "rides":         {},
+        })
+        pred = preds.get(row.ride_id)
+        tombstone = bool(pred is None or pred.get("degraded"))
+        ride = {
+            "name":      getattr(row, "ride_name", None),
+            "status":    row.status,
+            "wait":      _num(row.wait_minutes),
+            "wait_raw":  _num(row.wait_minutes_raw),
+            "seen_at":   row.timestamp_utc.to_pydatetime(),
+            "tombstone": tombstone,
+        }
+        if not tombstone:
+            ride.update({f"t{h}": _num(pred.get(f"t{h}")) for h in HISTORY_HORIZONS})
+            ride["trend"] = pred.get("trend")
+            ride["trend_source"] = pred.get("trend_source")
+            ride.update({k: _num(pred[k]) for k in HISTORY_PROB_FIELDS if k in pred})
+        doc["rides"][row.ride_id] = ride
+    return docs
+
+
+def _write_run_history(
+    db, prediction_docs: list[dict], df: pd.DataFrame, now: datetime, model_version: str
+) -> int:
+    """Writes the run's history docs; returns how many were written (0 on failure)."""
+    try:
+        docs = _run_history_docs(prediction_docs, df, now, model_version)
+        batch = db.batch()
+        coll = db.collection(HISTORY_COLLECTION)
+        for doc_id, doc in docs.items():
+            batch.set(coll.document(doc_id), doc)
+        batch.commit()
+        return len(docs)
+    except Exception as e:
+        log.warning("Run history write failed (%s); predictions unaffected", e)
+        return 0
+
+
 def _load_models(model_dir: Path, manifest: dict | None = None):
     """(traj, day_profile, ride_id_cats, status_cats, classifiers, regime_thresholds,
     crowd_baselines). classifiers is {name: Booster} for every file the manifest
@@ -1016,6 +1096,9 @@ def main() -> int:
                 batch.set(coll.document(doc["ride_id"]), doc)
             batch.commit()
             written += len(chunk)
+
+        history_written = _write_run_history(db, prediction_docs, df, now, model_version)
+        log.info("Wrote %d run history docs", history_written)
 
     log.info(
         "Done in %.1fs — predicted %d, tombstoned %d, model_version=%s",
