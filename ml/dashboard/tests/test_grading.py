@@ -199,3 +199,50 @@ class TestCrowdAndPayload:
     def test_empty_day(self):
         out = grading.grade([], _schedules(), [], [], {}, {}, {}, DAY, CONFIG)["parks"][DL]
         assert out["runs"] == 0 and out["headline"][0]["n"] == 0 and out["bellwethers"][0]["actual"] == []
+
+
+class TestRideTiers:
+    # Ride A climbs every poll (volatile); Ride B is flat at 30 (steady).
+    TIERS = {"Ride A": {"tier": "volatile"}, "Ride B": {"tier": "steady"}}
+
+    def _by_tier(self, docs=None):
+        return _grade(docs or _docs(), baselines={"ride_tiers": self.TIERS})["by_tier"]
+
+    def test_each_tier_grades_only_its_rides(self):
+        by_tier = self._by_tier()
+        t30 = {name: g["headline"][0] for name, g in by_tier.items()}
+        assert t30["volatile"]["mae"] == 0 and by_tier["volatile"]["rides"] == 1
+        assert t30["steady"]["mae"] == 10 and by_tier["steady"]["rides"] == 1
+        assert t30["moving"]["n"] == t30["volatile"]["n"]
+        assert t30["moderate"]["n"] == 0 and by_tier["moderate"]["rides"] == 0
+
+    def test_untiered_ride_counts_as_moving(self):
+        out = _grade(_docs(), baselines={"ride_tiers": {"Ride B": {"tier": "steady"}}})
+        assert out["by_tier"]["moving"]["headline"][0]["mae"] == 0  # only Ride A, which has no tier
+
+    def test_no_tiers_no_split(self):
+        out = _grade(_docs())
+        assert out["by_tier"] == {} and out["ride_averages"][0]["tier"] == "unrated"
+
+    def test_empty_day_with_tiers(self):
+        out = grading.grade([], _schedules(), [], [], {}, {"ride_tiers": self.TIERS}, {}, DAY, CONFIG)["parks"][DL]
+        assert out["by_tier"]["volatile"]["headline"][0]["n"] == 0
+
+
+class TestBuildRideTiers:
+    CFG = {"move_min": 5, "window_min": 30, "steady_below": 0.25, "volatile_from": 0.6, "min_samples": 5}
+
+    def test_move_rate_and_tier(self):
+        from ml.dashboard.build_baselines import ride_tiers
+        rows = []
+        for i in range(20):
+            t = pd.Timestamp(_at(10)) + pd.Timedelta(minutes=10 * i)
+            rows.append({"ride_name": "Flat", "timestamp_utc": t, "status": "OPERATING", "wait_minutes": 5.0})
+            rows.append({"ride_name": "Climb", "timestamp_utc": t, "status": "OPERATING", "wait_minutes": 10.0 + 5 * i})
+            rows.append({"ride_name": "Rare", "timestamp_utc": t, "status": "OPERATING", "wait_minutes": 5.0})
+        df = pd.DataFrame(rows)
+        df = df[(df["ride_name"] != "Rare") | (df.index < 9)]  # too few samples to tier
+        out = ride_tiers(df, self.CFG)
+        assert out["Flat"] == {"move_rate": 0.0, "n": 17, "tier": "steady"}
+        assert out["Climb"]["move_rate"] == 1.0 and out["Climb"]["tier"] == "volatile"
+        assert "Rare" not in out

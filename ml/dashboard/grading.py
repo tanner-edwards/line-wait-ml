@@ -379,15 +379,54 @@ def bellwether_series(df: pd.DataFrame, m: pd.DataFrame, ride_ids, horizons) -> 
     return out
 
 
-def ride_averages(df: pd.DataFrame) -> list[dict]:
+def ride_averages(df: pd.DataFrame, tiers: dict | None = None) -> list[dict]:
     if df.empty:
         return []
     op = df[(df["status"] == "OPERATING") & df["wait_minutes"].notna()]
     if op.empty:
         return []
     g = op.groupby(["ride_id", "ride_name"])["wait_minutes"].agg(["mean", "max", "min", "size"]).reset_index()
+    g["tier"] = tier_of(g["ride_name"], tiers)
     return [{"ride_id": r.ride_id, "ride_name": r.ride_name, "avg": _f(r.mean), "max": _f(r.max),
-             "min": _f(r.min), "polls": int(r.size)} for r in g.sort_values("mean", ascending=False).itertuples()]
+             "min": _f(r.min), "polls": int(r.size), "tier": r.tier}
+            for r in g.sort_values("mean", ascending=False).itertuples()]
+
+
+# ── Ride tiers ────────────────────────────────────────────────────────────────
+
+# The dashboard's ride filter. "moving" = everything but steady; rides with no
+# tier in baselines.json (new rides, too few samples) count as moving.
+TIER_FILTERS = {
+    "moving": lambda t: t != "steady",
+    "volatile": lambda t: t == "volatile",
+    "moderate": lambda t: t == "moderate",
+    "steady": lambda t: t == "steady",
+}
+
+
+def tier_of(ride_names: pd.Series, tiers: dict | None) -> pd.Series:
+    tiers = tiers or {}
+    return ride_names.map(lambda n: (tiers.get(n) or {}).get("tier", "unrated"))
+
+
+def graded_sections(m: pd.DataFrame, closes: dict, reopens: pd.DataFrame, config: dict) -> dict:
+    """Every card that scores forecasts, for one set of matched rows."""
+    horizons = config["horizons"]
+    return {
+        "rides": int(m["ride_id"].nunique()) if not m.empty else 0,
+        "headline": headline(m, horizons, config["tolerance_min"]),
+        "by_model_version": by_model_version(m, config),
+        "slices": slices(m, closes, reopens, config),
+        "trend": trend_scorecard(m),
+        "probability_honesty": probability_honesty(m),
+        "error_by_hour": error_by_hour(m, horizons),
+        "worst_misses": (m.nlargest(5, "abs_err")[["ride_id", "ride_name", "timestamp_utc", "horizon",
+                                                   "forecast", "actual", "err"]]
+                         .assign(timestamp_utc=lambda x: x["timestamp_utc"].map(_iso))
+                         .rename(columns={"timestamp_utc": "at"})
+                         .map(lambda v: _f(v) if isinstance(v, float) else v)
+                         .to_dict("records")) if not m.empty else [],
+    }
 
 
 # ── Entry points ──────────────────────────────────────────────────────────────
@@ -419,10 +458,12 @@ def grade(
     reopens = pd.DataFrame([{"ride_id": c["rideId"], "reopened_at": pd.Timestamp(c["reopenedAt"]).tz_convert("UTC")}
                             for c in closures if c.get("reopenedAt")], columns=["ride_id", "reopened_at"])
 
+    tiers = baselines.get("ride_tiers")
     parks = {}
     for park_id, park_name in config["park_names"].items():
         pdf = df[df["park_id"] == park_id] if not df.empty else df
         pm = m[m["park_id"] == park_id] if not m.empty else m
+        pm_tier = tier_of(pm["ride_name"], tiers) if not pm.empty else pd.Series(dtype=str)
         p_closures = [c for c in closures if c.get("parkId") == park_id]
         p_open = [c for c in open_closures if c.get("parkId") == park_id]
         anomalies = (big_misses(pm, config)
@@ -437,23 +478,15 @@ def grade(
             "last_poll": _iso(pdf["timestamp_utc"].max()) if not pdf.empty else None,
             "model_versions": sorted(pdf["model_version"].dropna().unique().tolist()) if not pdf.empty else [],
             "deploy_markers": deploy_markers(pdf),
-            "headline": headline(pm, horizons, config["tolerance_min"]),
-            "by_model_version": by_model_version(pm, config),
-            "slices": slices(pm, closes, reopens, config),
-            "trend": trend_scorecard(pm),
-            "probability_honesty": probability_honesty(pm),
-            "error_by_hour": error_by_hour(pm, horizons),
-            "worst_misses": (pm.nlargest(5, "abs_err")[["ride_id", "ride_name", "timestamp_utc", "horizon",
-                                                        "forecast", "actual", "err"]]
-                             .assign(timestamp_utc=lambda x: x["timestamp_utc"].map(_iso))
-                             .rename(columns={"timestamp_utc": "at"})
-                             .map(lambda v: _f(v) if isinstance(v, float) else v)
-                             .to_dict("records")) if not pm.empty else [],
+            **graded_sections(pm, closes, reopens, config),
+            # Same cards per ride tier; the top-level fields above are "all".
+            "by_tier": {name: graded_sections(pm[keep(pm_tier)] if not pm.empty else pm, closes, reopens, config)
+                        for name, keep in TIER_FILTERS.items()} if tiers else {},
             "crowd": crowd_series(pdf, baselines, park_id),
             "anomalies": sorted(anomalies, key=lambda a: a["at"] or ""),
             "closures": closures_payload(pdf, p_closures, p_open, config["post_reopen_window_min"]),
             "bellwethers": bellwether_series(pdf, pm, config["bellwethers"].get(park_id, []), horizons),
-            "ride_averages": ride_averages(pdf),
+            "ride_averages": ride_averages(pdf, tiers),
         }
     return {
         "date": date_la.isoformat(),

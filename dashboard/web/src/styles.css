@@ -140,6 +140,7 @@ button, input, select { font: inherit; color: inherit; }
   margin-bottom: 16px;
 }
 .toolbar .label { font-size: 13px; color: var(--text-2); }
+.tool-group { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; min-width: 0; }
 .park-toggle { display: inline-flex; }
 
 /* Both parks side by side on wide screens; one park at a time below. */
@@ -243,4 +244,9 @@ tr:last-child td { border-bottom: 0; }
 @media (min-width: 1200px) {
   .wide-only { display: grid; }
   .narrow-only { display: none; }
+}
+
+/* Phones: keep the five-way ride filter on one row. */
+@media (max-width: 480px) {
+  .toolbar .seg button { padding: 6px 10px; font-size: 13px; }
 }

@@ -38,5 +38,12 @@
   "post_reopen_window_min": 60,
   "hour_band_min_samples": 30,
   "unusual_margin_min": 10,
-  "unusual_min_polls": 2
+  "unusual_min_polls": 2,
+  "ride_tiers": {
+    "move_min": 5,
+    "window_min": 30,
+    "steady_below": 0.25,
+    "volatile_from": 0.6,
+    "min_samples": 300
+  }
 }

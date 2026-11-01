@@ -64,7 +64,7 @@ TTL on history (once, already done): `gcloud firestore fields ttls update expire
 - **Rotate the key:** `printf '%s' 'NEW-KEY' | gcloud secrets versions add
   club32-dashboard-admin-key --data-file=- --project llm-wait-times`, then
   `dashboard/deploy.sh`. Each device will prompt for the new key.
-- **Refresh baselines** (per-park crowd, hourly P10/P90) after refreshing the local
+- **Refresh baselines** (per-park crowd, hourly P10/P90, ride tiers) after refreshing the local
   caches: `.venv/bin/python ml/dashboard/build_baselines.py`, then redeploy.
 
 ## Cost

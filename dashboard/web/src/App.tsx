@@ -2,9 +2,26 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { fetchLive, fetchRecap, getKey, setKey, UnauthorizedError } from './api';
 import { ParkColumn } from './components/ParkColumn';
 import { fmtDate, fmtTime, laDate } from './format';
-import type { DayGrade } from './types';
+import type { DayGrade, Tier } from './types';
 
 const HORIZONS = [30, 60, 120, 180, 240];
+const TIERS: { key: Tier; label: string; title: string }[] = [
+  { key: 'moving', label: 'Moving', title: 'Everything except steady rides' },
+  { key: 'volatile', label: 'Volatile', title: 'Wait usually moves 5+ min within 30 min' },
+  { key: 'moderate', label: 'Moderate', title: 'Moves sometimes' },
+  { key: 'steady', label: 'Steady', title: 'Wait rarely moves (walk-ons, transport)' },
+  { key: 'all', label: 'All', title: 'Every ride' },
+];
+const TIER_STORAGE = 'c32-ride-tier';
+
+function savedTier(): Tier {
+  try {
+    const t = localStorage.getItem(TIER_STORAGE);
+    return TIERS.some((x) => x.key === t) ? (t as Tier) : 'moving';
+  } catch {
+    return 'moving';
+  }
+}
 type Mode = 'today' | 'recap';
 
 export function App() {
@@ -38,6 +55,11 @@ function Dashboard({ adminKey, onUnauthorized }: { adminKey: string; onUnauthori
   const [mode, setMode] = useState<Mode>('today');
   const [date, setDate] = useState(() => laDate(-1));
   const [horizon, setHorizon] = useState(60);
+  const [tier, setTierState] = useState<Tier>(savedTier);
+  const setTier = (t: Tier) => {
+    setTierState(t);
+    try { localStorage.setItem(TIER_STORAGE, t); } catch { /* not persisted; fine */ }
+  };
   const [parkId, setParkId] = useState<string | null>(null);
   const [data, setData] = useState<DayGrade | null>(null);
   const [loading, setLoading] = useState(false);
@@ -92,13 +114,25 @@ function Dashboard({ adminKey, onUnauthorized }: { adminKey: string; onUnauthori
         {error && <div className="error-banner">{error}</div>}
 
         <div className="toolbar">
-          <span className="label">Horizon</span>
-          <div className="seg on-surface" role="group" aria-label="Forecast horizon">
-            {HORIZONS.map((h) => (
-              <button key={h} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>
-                {h < 60 ? `${h}m` : `${h / 60}h`}
-              </button>
-            ))}
+          <div className="tool-group">
+            <span className="label">Horizon</span>
+            <div className="seg on-surface" role="group" aria-label="Forecast horizon">
+              {HORIZONS.map((h) => (
+                <button key={h} aria-pressed={horizon === h} onClick={() => setHorizon(h)}>
+                  {h < 60 ? `${h}m` : `${h / 60}h`}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="tool-group">
+            <span className="label">Rides</span>
+            <div className="seg on-surface" role="group" aria-label="Ride filter">
+              {TIERS.map((t) => (
+                <button key={t.key} aria-pressed={tier === t.key} title={t.title} onClick={() => setTier(t.key)}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
           {parks.length > 1 && (
             <div className="seg on-surface park-toggle" role="group" aria-label="Park">
@@ -117,11 +151,11 @@ function Dashboard({ adminKey, onUnauthorized }: { adminKey: string; onUnauthori
           <>
             {/* Wide screens: both parks side by side. Narrower: the toggled park only. */}
             <div className="parks both wide-only">
-              {parks.map((p) => <ParkColumn key={p.park_id} park={p} horizon={horizon} live={mode === 'today'} />)}
+              {parks.map((p) => <ParkColumn key={p.park_id} park={p} horizon={horizon} live={mode === 'today'} tier={tier} />)}
             </div>
             {selected && (
               <div className="parks narrow-only">
-                <ParkColumn park={selected} horizon={horizon} live={mode === 'today'} />
+                <ParkColumn park={selected} horizon={horizon} live={mode === 'today'} tier={tier} />
               </div>
             )}
           </>
