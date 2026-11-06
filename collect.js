@@ -79,7 +79,7 @@ function scheduleWindowFromData(data, now) {
     const open = Date.parse(entry.openingTime);
     const close = Date.parse(entry.closingTime);
     if (Number.isFinite(open) && Number.isFinite(close) && t >= open && t <= close) {
-      return { type: entry.type };
+      return { type: entry.type, openingMs: entry.type === 'OPERATING' ? open : null };
     }
   }
   return null;
@@ -133,6 +133,61 @@ function stripForecast(entity) {
   // ~3x the doc size for limited extra signal.
   const { forecast, ...rest } = entity;
   return rest;
+}
+
+// Disney's forecast is kept in its own collection instead, twice a day per
+// park: the first run after the park's opening time, and the first run an
+// hour later (a retry if cron skipped the first, and a check for mid-morning
+// revisions). One doc per ride per local date; each write merges under the
+// local hour it was taken, so nothing is read back.
+const FORECAST_WINDOWS_MIN = [0, 60];
+const RUN_SLOT_MIN = 10;
+
+function isForecastWindow(openingMs, now) {
+  if (!Number.isFinite(openingMs)) return false;
+  const sinceOpen = (now.getTime() - openingMs) / 60000;
+  return FORECAST_WINDOWS_MIN.some(start => sinceOpen >= start && sinceOpen < start + RUN_SLOT_MIN);
+}
+
+function localDateHour(date, timezone) {
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', hourCycle: 'h23',
+    }).formatToParts(date).map(p => [p.type, p.value])
+  );
+  return { date: `${parts.year}-${parts.month}-${parts.day}`, hour: parts.hour };
+}
+
+function buildRideForecastDocs(park, liveData, now, timezone) {
+  const { date, hour } = localDateHour(now, timezone);
+  const docs = [];
+  for (const e of liveData || []) {
+    if (e.entityType !== 'ATTRACTION' || !Array.isArray(e.forecast) || e.forecast.length === 0) continue;
+    const waits = {};
+    for (const f of e.forecast) {
+      const at = new Date(f.time);
+      if (Number.isNaN(at.getTime()) || f.waitTime == null) continue;
+      waits[localDateHour(at, timezone).hour] = f.waitTime;
+    }
+    if (Object.keys(waits).length === 0) continue;
+    docs.push({
+      id: `${e.id}_${date}`,
+      data: { rideId: e.id, rideName: e.name, parkId: park.id, parkName: park.name, date, byHour: { [hour]: waits } },
+    });
+  }
+  return docs;
+}
+
+async function writeRideForecasts(db, live, now, timezone) {
+  const docs = live
+    .filter(({ park }) => isForecastWindow(park.openingMs, now))
+    .flatMap(({ park, data }) => buildRideForecastDocs(park, data.liveData, now, timezone));
+  if (docs.length === 0) return 0;
+  const collection = db.collection('ride_forecasts');
+  const batch = db.batch();
+  for (const { id, data } of docs) batch.set(collection.doc(id), data, { merge: true });
+  await batch.commit();
+  return docs.length;
 }
 
 async function fetchWeatherSnapshot(now, weatherUrl) {
@@ -211,7 +266,7 @@ async function collectResort(resort, now) {
   for (const park of resort.parks) {
     const data = await fetchScheduleData(park);
     const window = scheduleWindowFromData(data, now);
-    if (window) openParks.push({ ...park, scheduleType: window.type });
+    if (window) openParks.push({ ...park, scheduleType: window.type, openingMs: window.openingMs ?? null });
     if (data) scheduleFetches.push({ park, data });
   }
 
@@ -266,6 +321,15 @@ async function collectResort(resort, now) {
     parks: openParks.map(p => p.name),
     weather: weather ? 'ok' : 'skipped',
   });
+
+  // 5. Disney's own hourly forecast, into its own collection. Best-effort:
+  // a failure here never affects the wait-time write above.
+  try {
+    const written = await writeRideForecasts(db, live, now, resort.timezone);
+    if (written > 0) log('wrote_ride_forecasts', { resort: resort.id, docs: written });
+  } catch (err) {
+    console.warn(JSON.stringify({ event: 'ride_forecast_write_failed', resort: resort.id, error: String(err) }));
+  }
 }
 
 async function run() {

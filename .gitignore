@@ -17,3 +17,5 @@ __pycache__/
 closure_events.csv
 *.p8
 df_features_cache.pkl
+served_history_cache.pkl
+history_raw/
