@@ -2,6 +2,7 @@ import { fmtTime, ms } from '../format';
 import type { Graded, ParkGrade, Tier } from '../types';
 import { Bellwethers } from './Bellwethers';
 import { Crowd } from './Crowd';
+import { DisneyVsOurs } from './DisneyVsOurs';
 import { ErrorByHour } from './ErrorByHour';
 import { Anomalies, Closures } from './Feeds';
 import { Headline } from './Headline';
@@ -32,6 +33,7 @@ export function ParkColumn({ park, horizon, live, tier }: {
       <div className="cards">
         <Headline scores={g.headline} horizon={horizon} />
         <Bellwethers rides={park.bellwethers} horizon={horizon} domain={domain} />
+        {!live && park.disney_vs_ours && <DisneyVsOurs data={park.disney_vs_ours} />}
         <ErrorByHour rows={g.error_by_hour} horizon={horizon} deploys={park.deploy_markers} />
         <Crowd crowd={park.crowd} domain={domain} />
         <TrendScorecard trend={g.trend} />

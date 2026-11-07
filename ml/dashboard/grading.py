@@ -38,6 +38,7 @@ from day_type import holiday_features  # noqa: E402
 from ml.clean import clean_frame, public_hours  # noqa: E402
 from ml.metrics import mae, reliability, trend_class, trend_confusion_from_words  # noqa: E402
 from ml.recipes import band_of  # noqa: E402
+from ml.dashboard import day_forecast  # noqa: E402
 
 log = logging.getLogger(__name__)
 
@@ -434,8 +435,13 @@ def graded_sections(m: pd.DataFrame, closes: dict, reopens: pd.DataFrame, config
 def grade(
     run_docs: list[dict], schedules_df: pd.DataFrame, closures: list[dict], open_closures: list[dict],
     manifest: dict, baselines: dict, ride_metadata: dict, date_la: date, config: dict | None = None,
+    day_forecasts: dict | None = None,
 ) -> dict:
-    """Pure: everything the dashboard shows for one LA date, per park."""
+    """Pure: everything the dashboard shows for one LA date, per park.
+
+    day_forecasts (past days only, from grade_day): {"disney", "disney_snapshot",
+    "ours", "model_version", "temp_high_f", "weather_fallback"}; adds each park's
+    disney_vs_ours card. Absent -> no card."""
     config = config or load_config()
     horizons = config["horizons"]
     raw = runs_frame(run_docs)
@@ -459,6 +465,7 @@ def grade(
                             for c in closures if c.get("reopenedAt")], columns=["ride_id", "reopened_at"])
 
     tiers = baselines.get("ride_tiers")
+    actual_by_hour = day_forecast.actual_hourly(df) if day_forecasts else {}
     parks = {}
     for park_id, park_name in config["park_names"].items():
         pdf = df[df["park_id"] == park_id] if not df.empty else df
@@ -487,6 +494,7 @@ def grade(
             "closures": closures_payload(pdf, p_closures, p_open, config["post_reopen_window_min"]),
             "bellwethers": bellwether_series(pdf, pm, config["bellwethers"].get(park_id, []), horizons),
             "ride_averages": ride_averages(pdf, tiers),
+            "disney_vs_ours": _disney_vs_ours(day_forecasts, actual_by_hour, pdf, park_id, config),
         }
     return {
         "date": date_la.isoformat(),
@@ -495,6 +503,51 @@ def grade(
         "baselines_range": (baselines.get("_meta") or {}).get("range"),
         "parks": parks,
     }
+
+
+def _disney_vs_ours(day_forecasts: dict | None, actual_by_hour: dict, pdf: pd.DataFrame,
+                    park_id: str, config: dict) -> dict | None:
+    if not day_forecasts:
+        return None
+    park_rides = set(pdf["ride_id"].unique()) if not pdf.empty else set()
+    disney = {r: v for r, v in day_forecasts["disney"].items() if r in park_rides}
+    if not disney:
+        return None
+    names = (pdf.dropna(subset=["ride_name"]).groupby("ride_id")["ride_name"].last().to_dict()
+             if not pdf.empty else {})
+    out = day_forecast.compare(disney, day_forecasts["ours"], actual_by_hour,
+                               config["bellwethers"].get(park_id, []), names)
+    snaps = {day_forecasts["disney_snapshot"].get(r) for r in disney} - {None}
+    return {**out, "model_version": day_forecasts["model_version"],
+            "temp_high_f": day_forecasts["temp_high_f"], "weather_fallback": day_forecasts["weather_fallback"],
+            "disney_snapshot_hours": sorted(snaps)}
+
+
+def _day_forecasts(db, date_la: date, schedules_df: pd.DataFrame, config: dict) -> dict | None:
+    """Disney's forecast for the day plus ours rebuilt as of park open, for
+    the Disneyland Resort parks. None when Disney's forecast wasn't collected."""
+    from google.cloud.firestore_v1.base_query import FieldFilter
+
+    park_ids = set(config["park_names"])
+    docs = [d for d in (s.to_dict() for s in db.collection("ride_forecasts")
+                        .where(filter=FieldFilter("date", "==", date_la.isoformat())).stream())
+            if d.get("parkId") in park_ids]
+    if not docs:
+        return None
+    disney, snap = day_forecast.disney_hourly(docs)
+    hours = public_hours(schedules_df)
+    hours = hours[hours["date_la"] == date_la].set_index("park_id")
+    model = day_forecast.load_day_profile()
+    temp_high, fell_back = day_forecast.fetch_temp_high(date_la)
+    ours = {}
+    for pid in park_ids:
+        rides = {d["rideId"] for d in docs if d.get("parkId") == pid} | set(config["bellwethers"].get(pid, []))
+        if pid in hours.index:
+            h = hours.loc[pid]
+            ours.update(day_forecast.ours_hourly(rides, date_la, h["open_minutes"], h["close_minutes"],
+                                                 model, temp_high))
+    return {"disney": disney, "disney_snapshot": snap, "ours": ours, "model_version": model[2],
+            "temp_high_f": temp_high, "weather_fallback": fell_back}
 
 
 def _schedules_frame(db, date_la: date, park_ids) -> pd.DataFrame:
@@ -537,9 +590,17 @@ def grade_day(db, date_la: date, manifest: dict | None = None) -> dict:
     today = datetime.now(LA).date()
     open_closures = [s.to_dict() for s in db.collection("current_closures").stream()] if date_la == today else []
     ride_metadata = json.loads((ROOT / "ride_metadata.json").read_text())
+    schedules = _schedules_frame(db, date_la, config["park_names"])
+    day_forecasts = None
+    if date_la < today:  # day after only: Disney's plan vs ours vs what happened
+        try:
+            day_forecasts = _day_forecasts(db, date_la, schedules, config)
+        except Exception as e:
+            log.warning("Disney vs ours skipped for %s: %s", date_la, e)
     return grade(
-        run_docs, _schedules_frame(db, date_la, config["park_names"]), closures, open_closures,
+        run_docs, schedules, closures, open_closures,
         manifest if manifest is not None else _load_manifest(), load_baselines(), ride_metadata, date_la, config,
+        day_forecasts,
     )
 
 

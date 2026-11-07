@@ -45,6 +45,24 @@ export interface Bellwether {
   mae?: Record<string, number | null>;
 }
 
+export interface DvoScore {
+  rides: number; n: number;
+  mae_disney: number | null; mae_ours: number | null;
+  bias_disney: number | null; bias_ours: number | null;
+  ours_closer_pct: number | null;
+}
+
+/** Past days only: Disney's day forecast vs ours (rebuilt as of park open) vs actual. */
+export interface DisneyVsOurs {
+  scorecard: { all: DvoScore; blocks: (DvoScore & { block: string })[] };
+  rides: { ride_id: string; ride_name: string | null; has_disney: boolean;
+           hours: { hour: number; disney: number | null; ours: number | null; actual: number | null }[] }[];
+  model_version: string;
+  temp_high_f: number;
+  weather_fallback: boolean;
+  disney_snapshot_hours: string[];
+}
+
 export interface Miss { ride_id: string; ride_name: string; at: string; horizon: number; forecast: number; actual: number; err: number }
 
 /** Ride filter. Tiers come from baselines.json (historical 30-min move rate). */
@@ -76,6 +94,7 @@ export interface ParkGrade extends Graded {
   closures: Closure[];
   bellwethers: Bellwether[];
   ride_averages: { ride_id: string; ride_name: string; avg: number; max: number; min: number; polls: number; tier: string }[];
+  disney_vs_ours?: DisneyVsOurs | null;
 }
 
 export interface DayGrade {
