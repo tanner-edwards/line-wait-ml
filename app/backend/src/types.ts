@@ -143,6 +143,9 @@ export interface VerdictReasons {
   betterWindowWait:  number | null;  // wait at the best reachable window later today (null if none)
   betterWindowInMin: number | null;  // minutes-from-now of that window
   star:         boolean;
+  // Copy only: the wait just jumped up and the model expects it to ease within
+  // the hour (scoring/jumpEase.ts). Premium; optional so old clients ignore it.
+  jumpEase?:    boolean;
 }
 
 export interface VerdictInfo {

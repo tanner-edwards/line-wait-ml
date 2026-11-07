@@ -38,6 +38,7 @@ import { loadClosureProfiles } from './closureProfiles';
 import { loadDeviceNotifications } from './notificationLog';
 import { fetchRecentHistory } from './recentHistory';
 import { scoreVerdict } from './scoring/layer2';
+import { jumpEase } from './scoring/jumpEase';
 import type { Verdict, VerdictInfo } from './types';
 import { walkingMinutes } from './recommendations/walkingDistance';
 import { buildRecommendations } from './recommendations/handler';
@@ -413,6 +414,12 @@ export async function fetchPark(
         reasons = { ...reasons, primary: 'none', star: false };
       }
     }
+
+    // "Just jumped" copy: on the final verdict, after the downgrade above.
+    reasons = {
+      ...reasons,
+      jumpEase: jumpEase({ verdict, mlPred, p50: ride.rideStats?.p50, currentWait }),
+    };
 
     const verdictInfo: VerdictInfo = { verdict, reasons };
     ride.verdict = verdictInfo;

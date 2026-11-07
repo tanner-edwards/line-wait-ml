@@ -102,6 +102,12 @@ describe('stripPremiumFromRide', () => {
     expect(stripped.lat).toBe(1);
   });
 
+  it('turns off the "just jumped" copy flag', () => {
+    const r = fullRide();
+    r.verdict = { ...r.verdict!, verdict: 'skip', reasons: { ...r.verdict!.reasons, jumpEase: true } };
+    expect(stripPremiumFromRide(r).verdict?.reasons.jumpEase).toBe(false);
+  });
+
   it('leaves non-star verdicts unchanged', () => {
     const r = fullRide();
     r.verdict = { ...r.verdict!, verdict: 'skip' };

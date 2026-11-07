@@ -32,7 +32,16 @@ function savingsMin(reasons: VerdictReasons): number | null {
   return s >= 10 ? Math.round(s / 5) * 5 : null;
 }
 
+// Right after an up-jump the model expects to ease (backend scoring/jumpEase.ts).
+// Copy only — the badge is unchanged — and it replaces the primary line for
+// the ~10 min until the next poll.
+const JUMP_EASE = [
+  'Just jumped. Jumps like this usually ease within the hour',
+  'Just spiked. These usually settle back within the hour',
+];
+
 export function whyLine(reasons: VerdictReasons, rideId: string): string | null {
+  if (reasons.jumpEase) return pick(JUMP_EASE, rideId);
   const when = whenClause(reasons.betterWindowInMin);
   const save = savingsMin(reasons);
   const V: Partial<Record<VerdictReason, string[]>> = {

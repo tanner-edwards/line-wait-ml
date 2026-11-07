@@ -632,6 +632,15 @@ STABLE_MEDIUM = 0.30
 PEAK_TROUGH_LAG = 5
 
 
+def _jump_fields(feat_row: dict) -> dict:
+    """The poll this forecast was made from and the poll before it (both
+    walk-on normalized, 8-13 min apart, both OPERATING: _build_trajectory_row
+    only returns a row when they are). The backend's "just jumped" copy
+    compares them (specs/line-wait-ml/upjump-wording.md); it can't see the
+    previous poll itself, since recentHistory skips the newest 8 minutes."""
+    return {"wait_now": float(feat_row["wait_minutes"]), "wait_prev": float(feat_row["wait_lag_1"])}
+
+
 def _band_of(current: float) -> str:
     c = float(current)
     if c <= 10:
@@ -1079,6 +1088,7 @@ def main() -> int:
                 "trend_source":   trend_source,
                 "full_day":       full_day,
                 "model_version":  model_version,
+                **_jump_fields(feat_row),
                 **probs,
             })
 

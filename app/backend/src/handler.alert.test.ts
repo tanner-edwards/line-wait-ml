@@ -205,3 +205,34 @@ describe('far-away downgrade gate (p_rise_30)', () => {
     expect(ALERT_MIN_CURRENT_WAIT).toBe(MANIFEST_ALERT.min_current_wait);
   });
 });
+
+// "Just jumped" copy flag (scoring/jumpEase.ts), set on the final verdict.
+describe('jumpEase on the served reasons', () => {
+  async function jumpFor(verdict: Verdict, extra: Record<string, unknown>) {
+    _resetCacheForTests();
+    mockedClient.fetchLiveData.mockResolvedValue(live(50));
+    mockedLoadPredictions.mockResolvedValue(new Map([[SPACE_MTN_ID, doc(50, extra)]]));
+    mockedScore.mockReturnValue(verdictResult(verdict, 50));
+    mockedWalk.mockReturnValue(5);
+    const event = {
+      path: '/v0/waits/disneyland',
+      headers: { 'x-api-key': 'test-api-key' },
+      queryStringParameters: null,
+    } as unknown as APIGatewayProxyEvent;
+    const result = await handler(event);
+    return (JSON.parse(result.body) as ParkData).rides[0].verdict!.reasons.jumpEase;
+  }
+  const JUMP = { wait_now: 50, wait_prev: 30, p_fall_60: 0.8 };
+
+  it('is true on a skip right after a jump the model expects to ease', async () => {
+    expect(await jumpFor('skip', JUMP)).toBe(true);
+  });
+
+  it('is false on go', async () => {
+    expect(await jumpFor('go', JUMP)).toBe(false);
+  });
+
+  it('is false on a doc without the poll pair (older cron image)', async () => {
+    expect(await jumpFor('skip', { p_fall_60: 0.8 })).toBe(false);
+  });
+});

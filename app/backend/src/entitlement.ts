@@ -155,6 +155,7 @@ export function stripPremiumFromRide(ride: Ride): Ride {
           ...ride.verdict.reasons,
           primary: ride.verdict.reasons.primary === 'rare-low' ? ('todays-low' as const) : ride.verdict.reasons.primary,
           star: false,
+          jumpEase: false,
           typical: null, todayP30: null, todayP80: null, p10: null, p90: null,
           betterWindowWait: null, betterWindowInMin: null,
         },

@@ -12,6 +12,22 @@ function reasons(primary: VerdictReason, betterWindowInMin: number | null = 120,
 }
 
 describe('whyLine', () => {
+  it('jumpEase replaces the primary line, stable per ride', () => {
+    const line = whyLine(reasons('high-vs-usual', 60, { jumpEase: true }), 'ride-1');
+    expect(line).toMatch(/^Just (jumped|spiked)\. .* within the hour$/);
+    expect(whyLine(reasons('high-vs-usual', 60, { jumpEase: true }), 'ride-1')).toBe(line);
+  });
+
+  it('jumpEase shows even where the primary is silent (plain neutral)', () => {
+    expect(whyLine(reasons('none', null, { jumpEase: true }), 'ride-1')).toMatch(/^Just /);
+  });
+
+  it('jumpEase false or absent leaves the line unchanged', () => {
+    const base = whyLine(reasons('high-vs-usual'), 'ride-1');
+    expect(whyLine(reasons('high-vs-usual', 120, { jumpEase: false }), 'ride-1')).toBe(base);
+    expect(base).not.toMatch(/^Just /);
+  });
+
   it('returns a line for each surfaced reason', () => {
     const surfaced: VerdictReason[] = [
       'rare-low', 'todays-low', 'below-usual', 'at-ceiling', 'high-vs-usual', 'dropping-soon', 'busy-no-relief',

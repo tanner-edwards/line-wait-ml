@@ -63,6 +63,9 @@ export interface VerdictReasons {
   betterWindowWait:  number | null;
   betterWindowInMin: number | null;
   star:         boolean;
+  // Copy only: the wait just jumped up and the model expects it to ease within
+  // the hour. Premium; absent from older backends.
+  jumpEase?:    boolean;
 }
 
 export interface VerdictInfo {

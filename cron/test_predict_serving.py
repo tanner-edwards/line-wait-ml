@@ -14,6 +14,7 @@ from predict import (
     _curve_confidence,
     _derive_trend,
     _derive_trend_from_probs,
+    _jump_fields,
     _load_models,
     _model_files,
     _predict_classifiers,
@@ -149,6 +150,15 @@ class TestTombstone:
     def test_unknown_wait_is_zero(self):
         doc = _tombstone_doc("ride-1", self.NOW, "v", None)
         assert [doc[f"t{h}"] for h in HORIZONS] == [0.0] * len(HORIZONS)
+
+
+class TestJumpFields:
+    def test_current_and_previous_poll(self):
+        assert _jump_fields({"wait_minutes": 50, "wait_lag_1": 30.0}) == {"wait_now": 50.0, "wait_prev": 30.0}
+
+    def test_values_are_floats(self):
+        out = _jump_fields({"wait_minutes": 5, "wait_lag_1": 5})
+        assert all(isinstance(v, float) for v in out.values())
 
 
 class TestReadManifest:

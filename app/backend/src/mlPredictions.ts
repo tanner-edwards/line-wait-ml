@@ -28,6 +28,11 @@ export interface MLPredictionDoc {
   p_fall_60?: number;
   p_rise_30?: number;
   p_rise_60?: number;
+  // The poll this forecast was made from and the poll before it (walk-on
+  // normalized, 8-13 min apart, both OPERATING). Drive the "just jumped" copy
+  // (scoring/jumpEase.ts). Absent on docs from older cron images.
+  wait_now?: number;
+  wait_prev?: number;
   trend_source?: 'classifier' | 'regression';  // what `trend` / `confidence` were derived from
   degraded?: boolean;       // tombstone: predict.py couldn't forecast this ride this run
   degraded_reason?: string;
