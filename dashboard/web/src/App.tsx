@@ -52,7 +52,7 @@ function KeyGate({ onKey }: { onKey: (k: string) => void }) {
 }
 
 function Dashboard({ adminKey, onUnauthorized }: { adminKey: string; onUnauthorized: () => void }) {
-  const [mode, setMode] = useState<Mode>('today');
+  const [mode, setMode] = useState<Mode>('recap');
   const [date, setDate] = useState(() => laDate(-1));
   const [horizon, setHorizon] = useState(60);
   const [tier, setTierState] = useState<Tier>(savedTier);
