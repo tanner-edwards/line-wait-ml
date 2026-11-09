@@ -66,6 +66,16 @@ describe('isFlagEnabled', () => {
     expect(await isFlagEnabled('freeTrip', '1.1.0')).toBe(false);
   });
 
+  it('accepts a bare boolean as shorthand for { enabled }', async () => {
+    docWith({ freeTrip: true });
+    expect(await isFlagEnabled('freeTrip', null)).toBe(true);
+    expect(await isFlagEnabled('freeTrip', '1.1.0')).toBe(true);
+
+    _resetForTests();
+    docWith({ freeTrip: false });
+    expect(await isFlagEnabled('freeTrip', null)).toBe(false);
+  });
+
   it('is on when enabled with no minAppVersion', async () => {
     docWith({ freeTrip: { enabled: true } });
     expect(await isFlagEnabled('freeTrip', '1.0.0')).toBe(true);
