@@ -212,7 +212,6 @@ export type RideCategory =
   | 'classics'
   | 'immersive'
   | 'kid-favorites'
-  | 'shows-characters'
   | 'first-time';
 
 export type AccessibilityNeed =

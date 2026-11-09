@@ -4,7 +4,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useOnboardingDraft } from '../OnboardingDraftContext';
 import { OnboardingScreenShell } from './OnboardingScreenShell';
-import { RowButton } from '../../components/RowButton';
+import { ROW_BUTTON_GAP, ROW_BUTTON_MIN_HEIGHT, RowButton } from '../../components/RowButton';
 import { SearchField } from '../../components/SearchField';
 import { useRides } from '../../context/RideContext';
 import { Ride } from '../../types';
@@ -99,23 +99,25 @@ export function MustDoRidesScreen(): React.ReactElement {
         />
       }
     >
-      {pickedRides.length > 0 && (
-        <>
-          <Text style={styles.sectionHeader} testID="must-do-picks-header">
-            Your picks ({pickedRides.length})
-          </Text>
-          {pickedRides.map(ride => (
-            <RowButton
-              key={ride.id}
-              title={ride.name}
-              selected
-              onPress={() => toggle(ride.id)}
-              testID={`must-do-${ride.id}`}
-            />
-          ))}
-          <View style={styles.divider} />
-        </>
+      {/* Always rendered, with a one-row spacer before the first pick, so the
+          first selection fills a slot instead of pushing the whole list down. */}
+      <Text style={styles.sectionHeader} testID="must-do-picks-header">
+        Your picks ({pickedRides.length})
+      </Text>
+      {pickedRides.length === 0 ? (
+        <View style={styles.emptySlot} testID="must-do-picks-placeholder" />
+      ) : (
+        pickedRides.map(ride => (
+          <RowButton
+            key={ride.id}
+            title={ride.name}
+            selected
+            onPress={() => toggle(ride.id)}
+            testID={`must-do-${ride.id}`}
+          />
+        ))
       )}
+      <View style={styles.divider} />
 
       <Text style={styles.sectionHeader}>
         {isSearching ? 'Matches' : pickedRides.length > 0 ? 'More to add' : 'Suggested'}
@@ -157,6 +159,10 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: '#eee', // TODO: tokenize
     marginVertical: 12,
+  },
+  emptySlot: {
+    minHeight: ROW_BUTTON_MIN_HEIGHT,
+    marginBottom: ROW_BUTTON_GAP,
   },
   emptyText: {
     fontSize: 14,

@@ -67,7 +67,6 @@ const RIDE_CATEGORY_LABELS: Record<RideCategory, string> = {
   classics: 'Classics',
   immersive: 'Immersive',
   'kid-favorites': 'Kid favorites',
-  'shows-characters': 'Shows & characters',
   'first-time': 'First time',
 };
 
@@ -311,7 +310,7 @@ export function Profile(): React.ReactElement {
             onPress={() => {
               Alert.alert(
                 'Delete account',
-                "This removes your account, trip history, and device records, and revokes Club 32's access to your Apple ID. We keep only an anonymous marker recording that a free trip was already claimed. This cannot be undone.",
+                "This removes your account, trip history, and device records, and revokes Club 32's access to your Apple ID. We keep only an anonymous marker recording that free access was already claimed. This cannot be undone.",
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {

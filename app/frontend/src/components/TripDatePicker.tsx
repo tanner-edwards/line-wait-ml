@@ -1,12 +1,18 @@
-// Reusable date range picker for trip claiming (free trip + IAP).
+// Reusable date range picker for trip access (free + IAP).
 // Collapsed by default — each row shows the selected date; tapping expands
 // a native iOS spinner wheel inline. Only one field open at a time.
+//
+// The initial length comes from the persona's tripDuration. The end date
+// follows the start date at that length until the user edits the end
+// themselves — after that, moving the start only clamps it.
 
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { colors, radius, spacing, typography } from '../theme/tokens';
+import { TripDuration } from '../types';
+import { addDays, defaultTripDays, stripTime, toYMD } from '../utils/tripDefaults';
 
 export interface TripDateRange {
   tripStart: string; // YYYY-MM-DD
@@ -15,32 +21,15 @@ export interface TripDateRange {
 
 interface Props {
   onChange: (range: TripDateRange) => void;
+  /** From persona; sets the initial trip length. Omitted → 3 days. */
+  tripDuration?: TripDuration | null;
 }
 
 const MAX_DAYS = 10;
 const MAX_START_DAYS_OUT = 90;
 
-function toYMD(date: Date): string {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
-}
-
-function addDays(date: Date, n: number): Date {
-  const d = new Date(date);
-  d.setDate(d.getDate() + n);
-  return d;
-}
-
-function stripTime(date: Date): Date {
-  const d = new Date(date);
-  d.setHours(0, 0, 0, 0);
-  return d;
 }
 
 function formatDate(date: Date): string {
@@ -49,12 +38,14 @@ function formatDate(date: Date): string {
 
 type ActiveField = 'start' | 'end' | null;
 
-export function TripDatePicker({ onChange }: Props): React.ReactElement {
+export function TripDatePicker({ onChange, tripDuration = null }: Props): React.ReactElement {
   const today = stripTime(new Date());
   const maxStart = addDays(today, MAX_START_DAYS_OUT);
+  const lengthDays = defaultTripDays(tripDuration);
 
   const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(addDays(today, 2));
+  const [endDate, setEndDate] = useState(addDays(today, lengthDays - 1));
+  const [endTouched, setEndTouched] = useState(false);
   const [active, setActive] = useState<ActiveField>(null);
 
   const toggle = (field: 'start' | 'end') =>
@@ -63,7 +54,7 @@ export function TripDatePicker({ onChange }: Props): React.ReactElement {
   const handleStartChange = (_: unknown, selected?: Date) => {
     if (!selected) return;
     const next = stripTime(selected);
-    let nextEnd = endDate;
+    let nextEnd = endTouched ? endDate : addDays(next, lengthDays - 1);
     if (nextEnd < next) nextEnd = next;
     if (daysBetween(next, nextEnd) > MAX_DAYS - 1) nextEnd = addDays(next, MAX_DAYS - 1);
     setStartDate(next);
@@ -76,6 +67,7 @@ export function TripDatePicker({ onChange }: Props): React.ReactElement {
     let next = stripTime(selected);
     if (next < startDate) next = startDate;
     if (daysBetween(startDate, next) > MAX_DAYS - 1) next = addDays(startDate, MAX_DAYS - 1);
+    setEndTouched(true);
     setEndDate(next);
     onChange({ tripStart: toYMD(startDate), tripEnd: toYMD(next) });
   };

@@ -255,7 +255,6 @@ export function resolveCategories(meta: RideMetadata | null): RideCategory[] {
   const thrill = meta.thrillLevel ?? null;
   if (thrill != null && thrill >= 4) cats.add('thrills');
   if (thrill != null && thrill <= 2 && meta.heightMinIn == null) cats.add('kid-favorites');
-  if (meta.hasShowtime) cats.add('shows-characters');
   for (const tag of meta.categories ?? []) {
     if (tag === 'classic') cats.add('classics');
     else if (tag === 'immersive') cats.add('immersive');
@@ -824,7 +823,7 @@ async function handleRecommendations(
 
 const TRIP_DURATIONS: readonly TripDuration[] = ['1-day', '2-days', '3-4-days', '5-plus-days'];
 const RIDE_CATEGORIES: readonly RideCategory[] = [
-  'thrills', 'classics', 'immersive', 'kid-favorites', 'shows-characters', 'first-time',
+  'thrills', 'classics', 'immersive', 'kid-favorites', 'first-time',
 ];
 const ACCESSIBILITY_NEEDS: readonly AccessibilityNeed[] = [
   'stroller', 'wheelchair', 'pregnant', 'sensory', 'none',
@@ -1297,7 +1296,7 @@ async function handleClaimFreeTrip(
   if (!(await isFlagEnabled('freeTrip', getAppVersion(event)))) {
     return jsonResponse(
       403,
-      errorBody('FEATURE_DISABLED', "Free trips aren't available right now. Tap Skip to continue.")
+      errorBody('FEATURE_DISABLED', "Free access isn't available right now. Tap Skip to continue.")
     );
   }
 

@@ -33,8 +33,6 @@ const RIDE_CATEGORY_TEXT: Record<Exclude<RideCategory, 'first-time'>, string> = 
     'newer immersive / story-driven attractions (Rise of the Resistance, Web Slingers, Smugglers Run, Radiator Springs Racers, etc.)',
   'kid-favorites':
     'gentle rides for young kids (carousels, Dumbo, Casey Jr., Little Mermaid, etc.)',
-  'shows-characters':
-    'shows, parades, and character meet-and-greets',
 };
 
 const ACCESSIBILITY_TEXT: Record<Exclude<AccessibilityNeed, 'none'>, string> = {

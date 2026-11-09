@@ -7,11 +7,11 @@ import { OnboardingScreenShell } from './OnboardingScreenShell';
 import { RowButton } from '../../components/RowButton';
 import { OnboardingStackParamList } from '../OnboardingNavigator';
 
-const OPTIONS: { value: TripDuration; title: string; subtitle?: string }[] = [
-  { value: '1-day',       title: '1 day',     subtitle: 'Make every minute count' },
-  { value: '2-days',      title: '2 days',    subtitle: 'Spread out the must-dos' },
-  { value: '3-4-days',    title: '3–4 days',  subtitle: 'Relaxed pace, plenty of time' },
-  { value: '5-plus-days', title: '5+ days',   subtitle: 'A full Disney week' },
+const OPTIONS: { value: TripDuration; title: string }[] = [
+  { value: '1-day',       title: '1 day' },
+  { value: '2-days',      title: '2 days' },
+  { value: '3-4-days',    title: '3–4 days' },
+  { value: '5-plus-days', title: '5+ days' },
 ];
 
 export function TripDurationScreen(): React.ReactElement {
@@ -34,7 +34,7 @@ export function TripDurationScreen(): React.ReactElement {
     <OnboardingScreenShell
       step={0}
       total={5}
-      title="How long is your visit?"
+      title="How long is your Disneyland visit?"
       subtitle="Helps us calibrate the pace of our recommendations."
       bottomLabel="Skip"
       onBottomPress={skip}
@@ -43,7 +43,6 @@ export function TripDurationScreen(): React.ReactElement {
         <RowButton
           key={opt.value}
           title={opt.title}
-          subtitle={opt.subtitle}
           selected={draft.persona.tripDuration === opt.value}
           onPress={() => pick(opt.value)}
           testID={`trip-duration-${opt.value}`}

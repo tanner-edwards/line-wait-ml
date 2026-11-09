@@ -45,18 +45,23 @@ export function RowButton({ title, subtitle, icon: Icon, selected, onPress, test
   );
 }
 
+// Exported so list screens can reserve exactly one row's footprint before
+// the first item exists (MustDoRides "Your picks" placeholder).
+export const ROW_BUTTON_MIN_HEIGHT = 56;
+export const ROW_BUTTON_GAP = 10;
+
 const styles = StyleSheet.create({
   row: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 16,
     paddingVertical: 16,
-    marginBottom: 10,
+    marginBottom: ROW_BUTTON_GAP,
     borderRadius: 12,
     borderWidth: 1.5,
     borderColor: colors.border,
     backgroundColor: colors.surface,
-    minHeight: 56,
+    minHeight: ROW_BUTTON_MIN_HEIGHT,
   },
   rowSelected: {
     borderColor: colors.brand,

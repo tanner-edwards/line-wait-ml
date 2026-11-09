@@ -1,6 +1,6 @@
 // Shown once, right after onboarding, for users who haven't claimed their
 // free trip yet. Uses the same TripDatePicker as the paid flow — the only
-// difference is the CTA ("Claim free trip" vs "$10 · Activate").
+// difference is the CTA ("Unlock free access" vs the StoreKit price).
 //
 // On success: refetchUser() flips freeTripClaimed → true, which removes this
 // gate in RootNavigator, and refetchTrip() sets hasActiveTrip → true so paid
@@ -21,6 +21,8 @@ import { claimFreeTrip } from '../api';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
+import { usePersona } from '../context/PersonaContext';
+import { defaultTripRange, withDerivedTripDuration } from '../utils/tripDefaults';
 import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 
 interface ClaimFreeTripScreenProps {
@@ -30,19 +32,11 @@ interface ClaimFreeTripScreenProps {
 export function ClaimFreeTripScreen({ onSkip }: ClaimFreeTripScreenProps): React.ReactElement {
   const { getIdToken, refetchUser } = useAuth();
   const { refetchTrip } = useTrip();
+  const { persona, setPersona } = usePersona();
 
-  // Default to today + 3 days so the button is always enabled on first render.
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const defaultEnd = new Date(today);
-  defaultEnd.setDate(today.getDate() + 2);
-
-  const rangeRef = useRef<TripDateRange>({
-    tripStart: toYMD(today),
-    tripEnd: toYMD(defaultEnd),
-  });
+  // Seeded from the persona's trip length so the button is enabled on first
+  // render and the dates already match what the user told us in onboarding.
+  const rangeRef = useRef<TripDateRange>(defaultTripRange(persona?.tripDuration));
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -54,6 +48,8 @@ export function ClaimFreeTripScreen({ onSkip }: ClaimFreeTripScreenProps): React
       const token = await getIdToken();
       if (!token) throw new Error('Not signed in');
       await claimFreeTrip(token, rangeRef.current);
+      const filled = withDerivedTripDuration(persona, rangeRef.current);
+      if (filled) void setPersona(filled);
       await Promise.all([refetchUser(), refetchTrip()]);
       // RootNavigator re-evaluates once refetchUser resolves — no navigation needed.
     } catch (err) {
@@ -71,14 +67,14 @@ export function ClaimFreeTripScreen({ onSkip }: ClaimFreeTripScreenProps): React
             <Gift size={36} color={colors.brand} />
           </View>
           <Text style={styles.eyebrow}>Welcome to Club 32</Text>
-          <Text style={styles.headline}>Your first trip's on us</Text>
+          <Text style={styles.headline}>Club 32 is free for your first trip</Text>
           <Text style={styles.sub}>
-            Pick your visit dates and we'll unlock full access — forecasts, recommendations, and ride alerts — for your entire trip.
+            Pick your visit dates and we'll unlock forecasts, recommendations, and ride alerts for the whole visit — no charge.
           </Text>
         </View>
 
         <View style={styles.pickerCard}>
-          <TripDatePicker onChange={range => { rangeRef.current = range; }} />
+          <TripDatePicker tripDuration={persona?.tripDuration} onChange={range => { rangeRef.current = range; }} />
         </View>
 
         {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -93,9 +89,9 @@ export function ClaimFreeTripScreen({ onSkip }: ClaimFreeTripScreenProps): React
         >
           {loading
             ? <ActivityIndicator color={colors.textInverse} />
-            : <Text style={styles.claimBtnText}>Claim free trip</Text>}
+            : <Text style={styles.claimBtnText}>Unlock free access</Text>}
         </TouchableOpacity>
-        <Text style={styles.legal}>One free trip per account. No payment required.</Text>
+        <Text style={styles.legal}>Free access for one trip per account. No payment required.</Text>
         <TouchableOpacity onPress={onSkip} hitSlop={12}>
           <Text style={styles.skipLink}>Maybe later</Text>
         </TouchableOpacity>
