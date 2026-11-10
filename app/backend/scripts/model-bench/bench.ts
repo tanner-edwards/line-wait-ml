@@ -12,6 +12,10 @@
 //       [--runs 5] [--judge us.anthropic.claude-sonnet-4-5-20250929-v1:0] \
 //       [--temperature 0] [--max-tokens 2000] [--out results/run.json]
 //   npx tsx scripts/model-bench/bench.ts --dry-run     # no AWS calls; validates fixtures + checks
+//   OPENAI_API_KEY=... npx tsx scripts/model-bench/bench.ts --list-models openai   # also: gemini (GEMINI_API_KEY)
+//
+// Model ids: Bedrock ids as-is; "openai:<model>" and "gemini:<model>" call those APIs directly
+// (see models.json). Extra flags: --reasoning-effort <v> (OpenAI), --gemini-thinking-budget <n>.
 //
 // Latency is wall-clock around the SDK call (what a Lambda would wait), which
 // is the number that matters since the endpoint is non-streaming. The
@@ -90,7 +94,7 @@ interface CallResult {
   outputTokens: number | null;
 }
 
-async function converse(modelId: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
+async function converseBedrock(modelId: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
   const cmd = new ConverseCommand({
     modelId,
     system: [{ text: system }],
@@ -116,6 +120,99 @@ async function converse(modelId: string, system: string, user: string, opts: { m
       if (name === 'ThrottlingException' && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
       throw err;
     }
+  }
+}
+
+
+// ---------------------------------------------------- non-Bedrock providers
+//
+// Model ids are routed by prefix: "openai:<model>" -> OpenAI API,
+// "gemini:<model>" -> Google Gemini API, anything else -> Bedrock.
+// These go over the public internet (not your AWS region), so their latency
+// includes a network path Bedrock doesn't have; compare with that in mind.
+// Keys come from OPENAI_API_KEY / GEMINI_API_KEY.
+
+const REASONING_EFFORT = arg('reasoning-effort');            // OpenAI reasoning models, e.g. minimal | low | none
+const GEMINI_THINKING_BUDGET = arg('gemini-thinking-budget'); // Gemini: 0 disables thinking where supported
+
+function needKey(name: string): string {
+  const v = process.env[name];
+  if (!v) throw new Error(`${name} is not set`);
+  return v;
+}
+
+async function httpJson(url: string, headers: Record<string, string>, body: unknown): Promise<{ json: any; wallMs: number }> {
+  for (let attempt = 0; ; attempt++) {
+    const t0 = performance.now();
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    const wallMs = performance.now() - t0;
+    if ((res.status === 429 || res.status === 503) && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
+    const text = await res.text();
+    if (!res.ok) { const e = new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`); e.name = `Http${res.status}`; throw e; }
+    return { json: JSON.parse(text), wallMs };
+  }
+}
+
+async function converseOpenAI(model: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
+  const { json, wallMs } = await httpJson('https://api.openai.com/v1/chat/completions',
+    { authorization: `Bearer ${needKey('OPENAI_API_KEY')}` },
+    {
+      model,
+      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
+      // Newer models reject max_tokens; max_completion_tokens covers hidden reasoning tokens too.
+      max_completion_tokens: opts.maxTokens,
+      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+      ...(REASONING_EFFORT ? { reasoning_effort: REASONING_EFFORT } : {}),
+    });
+  return {
+    text: json.choices?.[0]?.message?.content ?? '',
+    wallMs,
+    serverMs: null,
+    inputTokens: json.usage?.prompt_tokens ?? null,
+    outputTokens: json.usage?.completion_tokens ?? null, // includes reasoning tokens
+  };
+}
+
+async function converseGemini(model: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
+  const { json, wallMs } = await httpJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+    { 'x-goog-api-key': needKey('GEMINI_API_KEY') },
+    {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: 'user', parts: [{ text: user }] }],
+      generationConfig: {
+        maxOutputTokens: opts.maxTokens,
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        ...(GEMINI_THINKING_BUDGET !== undefined ? { thinkingConfig: { thinkingBudget: Number(GEMINI_THINKING_BUDGET) } } : {}),
+      },
+    });
+  const parts: { text?: string; thought?: boolean }[] = json.candidates?.[0]?.content?.parts ?? [];
+  const u = json.usageMetadata ?? {};
+  return {
+    text: parts.filter(p => !p.thought).map(p => p.text ?? '').join(''),
+    wallMs,
+    serverMs: null,
+    inputTokens: u.promptTokenCount ?? null,
+    outputTokens: u.candidatesTokenCount != null ? u.candidatesTokenCount + (u.thoughtsTokenCount ?? 0) : null,
+  };
+}
+
+function converse(modelId: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
+  if (modelId.startsWith('openai:')) return converseOpenAI(modelId.slice(7), system, user, opts);
+  if (modelId.startsWith('gemini:')) return converseGemini(modelId.slice(7), system, user, opts);
+  return converseBedrock(modelId, system, user, opts);
+}
+
+async function listModels(provider: string) {
+  if (provider === 'openai') {
+    const r = await fetch('https://api.openai.com/v1/models', { headers: { authorization: `Bearer ${needKey('OPENAI_API_KEY')}` } });
+    const j = await r.json() as { data?: { id: string }[] };
+    console.log((j.data ?? []).map(m => `openai:${m.id}`).sort().join('\n'));
+  } else if (provider === 'gemini') {
+    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': needKey('GEMINI_API_KEY') } });
+    const j = await r.json() as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
+    console.log((j.models ?? []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => `gemini:${m.name.replace('models/', '')}`).sort().join('\n'));
+  } else {
+    throw new Error('--list-models takes "openai" or "gemini" (for Bedrock: aws bedrock list-inference-profiles)');
   }
 }
 
@@ -291,6 +388,7 @@ async function dryRun() {
 
 async function main() {
   if (DRY) return dryRun();
+  if (arg('list-models')) return listModels(arg('list-models')!);
 
   const models = loadModels();
   const wanted = arg('scenarios')?.split(',');

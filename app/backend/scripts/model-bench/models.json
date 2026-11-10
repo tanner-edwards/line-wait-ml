@@ -1,11 +1,47 @@
 {
-  "_comment": "Bedrock model / inference-profile IDs to compare. First entry is what production uses today (deploy.sh). Edit freely; each must be enabled for your account in the target region. Verify exact IDs with: aws bedrock list-inference-profiles --region us-west-2",
+  "_comment": "Models to compare. Bedrock ids are used as-is. 'openai:<model>' and 'gemini:<model>' call those APIs directly (need OPENAI_API_KEY / GEMINI_API_KEY). The OpenAI/Gemini names are best guesses for current small/fast models: confirm with --list-models openai|gemini. Bedrock ids: aws bedrock list-inference-profiles --region us-west-2. Delete any you don't want.",
   "models": [
-    { "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0" },
-    { "id": "us.amazon.nova-micro-v1:0" },
-    { "id": "us.amazon.nova-lite-v1:0" },
-    { "id": "us.amazon.nova-pro-v1:0" },
-    { "id": "us.meta.llama3-3-70b-instruct-v1:0" },
-    { "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0" }
+    {
+      "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
+    },
+    {
+      "id": "us.amazon.nova-micro-v1:0"
+    },
+    {
+      "id": "us.amazon.nova-lite-v1:0"
+    },
+    {
+      "id": "us.amazon.nova-pro-v1:0"
+    },
+    {
+      "id": "us.meta.llama3-3-70b-instruct-v1:0"
+    },
+    {
+      "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    },
+    {
+      "id": "openai.gpt-oss-120b-1:0"
+    },
+    {
+      "id": "openai.gpt-oss-20b-1:0"
+    },
+    {
+      "id": "openai:gpt-5.4-mini"
+    },
+    {
+      "id": "openai:gpt-5.4-nano"
+    },
+    {
+      "id": "openai:gpt-4.1-mini"
+    },
+    {
+      "id": "gemini:gemini-3.1-flash-lite"
+    },
+    {
+      "id": "gemini:gemini-2.5-flash"
+    },
+    {
+      "id": "gemini:gemini-2.5-flash-lite"
+    }
   ]
 }

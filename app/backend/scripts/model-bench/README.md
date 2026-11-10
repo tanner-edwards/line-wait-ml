@@ -46,4 +46,24 @@ model's number), then confirm on a larger `--runs`.
 Add an entry to `SCENARIOS` in `scenarios.ts` with a persona, clock, ride board, and checks.
 `--dry-run` fails if a check can never fail, which catches vacuous tests.
 
-Note: model IDs in `models.json` are starting points; confirm they are enabled in your account/region.
+## Non-Bedrock providers (OpenAI, Gemini)
+
+Bedrock only hosts OpenAI's open-weight `gpt-oss` models, not GPT-5.x/4.x or Gemini, so those are
+called directly. Prefix the id in `models.json`: `openai:<model>` or `gemini:<model>`.
+
+```bash
+export OPENAI_API_KEY=...   GEMINI_API_KEY=...
+npx tsx scripts/model-bench/bench.ts --list-models openai    # confirm real, current model ids
+npx tsx scripts/model-bench/bench.ts --list-models gemini
+```
+
+Caveats when comparing:
+- These calls go over the public internet, not your AWS region, so latency includes a network path
+  Bedrock doesn't. Run from the same place your Lambda would to keep it fair.
+- Reasoning/"thinking" models can spend seconds on hidden tokens. Try `--reasoning-effort minimal`
+  (OpenAI) and `--gemini-thinking-budget 0` (Gemini) for the fast configuration, and compare to defaults.
+- `docs/legal/privacy-policy.html` says recommendations are processed through Amazon Bedrock. Switching
+  providers means updating that policy and the Lambda (the app currently only has a Bedrock client).
+
+Note: model IDs in `models.json` are starting points; confirm they exist for your account/region.
+The OpenAI/Gemini names were best guesses from web results, not verified against the APIs.
