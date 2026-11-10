@@ -46,7 +46,7 @@ model's number), then confirm on a larger `--runs`.
 Add an entry to `SCENARIOS` in `scenarios.ts` with a persona, clock, ride board, and checks.
 `--dry-run` fails if a check can never fail, which catches vacuous tests.
 
-## Non-Bedrock providers (OpenAI, Gemini)
+## Non-Bedrock providers (OpenAI, Gemini) — optional, not in the default run
 
 Bedrock only hosts OpenAI's open-weight `gpt-oss` models, not GPT-5.x/4.x or Gemini, so those are
 called directly. Prefix the id in `models.json`: `openai:<model>` or `gemini:<model>`.
