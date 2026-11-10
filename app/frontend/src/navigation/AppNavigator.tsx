@@ -1,83 +1,69 @@
 // Bottom-tab nav. Three tabs:
-//   Home          (live wait list, filtered by daily park)
-//   Recommendations (LLM picks; respects persona + daily park)
-//   Profile       (edit persona, debug reset)
+//   Recommendations (LLM picks; respects persona + daily park) — default
+//   Discover        (live wait list, filtered by daily park)
+//   Profile         (edit persona, debug reset)
 
 import React from 'react';
-import { Platform } from 'react-native';
+import { Platform, View } from 'react-native';
+import { StatusBar } from 'expo-status-bar';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Home as HomeIcon, Sparkles, User } from 'lucide-react-native';
-import Svg, { Path } from 'react-native-svg';
+import { Compass, Sparkles, User } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Home } from '../screens/Home';
 import { Recommendations } from '../screens/Recommendations';
 import { Profile } from '../screens/Profile';
 
-// Lucide's Home icon has two separate paths: house body + door. Filling the
-// whole icon covers the door, so we render them individually — house filled,
-// door painted white — to keep the door visually cut out.
-function HomeTabIcon({ size, color, focused }: { size: number; color: string; focused: boolean }) {
-  if (!focused) return <HomeIcon size={size} color={color} />;
-  return (
-    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-      <Path
-        d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"
-        fill={color}
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-      <Path
-        d="M9 22V12H15V22Z"
-        fill="white"
-        stroke={color}
-        strokeWidth={2}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </Svg>
-  );
-}
-
 const Tab = createBottomTabNavigator();
 
 export function AppNavigator(): React.ReactElement {
+  const insets = useSafeAreaInsets();
   return (
-    <Tab.Navigator
-      initialRouteName="Home"
-      screenOptions={{
-        headerShown: false,
-        tabBarStyle: styles.tabBar,
-        tabBarItemStyle: styles.tabBarItem,
-        tabBarActiveTintColor: colors.brand,
-        tabBarInactiveTintColor: colors.textTertiary,
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        component={Home}
-        options={{
-          tabBarIcon: ({ color, focused }) => <HomeTabIcon size={22} color={color} focused={focused} />,
+    <View style={styles.root}>
+      <Tab.Navigator
+        initialRouteName="Recommendations"
+        screenOptions={{
+          headerShown: false,
+          tabBarStyle: styles.tabBar,
+          tabBarItemStyle: styles.tabBarItem,
+          tabBarActiveTintColor: colors.brand,
+          tabBarInactiveTintColor: colors.textTertiary,
         }}
-      />
-      <Tab.Screen
-        name="Recommendations"
-        component={Recommendations}
-        options={{
-          tabBarIcon: ({ color, focused }) => (
-            <Sparkles size={22} color={color} fill={focused ? color : 'none'} />
-          ),
-        }}
-      />
-      <Tab.Screen
-        name="Profile"
-        component={Profile}
-        options={{
-          tabBarIcon: ({ color, focused }) => <User size={22} color={color} fill={focused ? color : 'none'} />,
-        }}
-      />
-    </Tab.Navigator>
+      >
+        <Tab.Screen
+          name="Recommendations"
+          component={Recommendations}
+          options={{
+            tabBarIcon: ({ color, focused }) => (
+              <Sparkles size={22} color={color} fill={focused ? color : 'none'} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Discover"
+          component={Home}
+          options={{
+            // Compass needle is a separate path — filling would cover it, so
+            // the focused state thickens the stroke instead.
+            tabBarIcon: ({ color, focused }) => (
+              <Compass size={22} color={color} strokeWidth={focused ? 2.5 : 2} />
+            ),
+          }}
+        />
+        <Tab.Screen
+          name="Profile"
+          component={Profile}
+          options={{
+            tabBarIcon: ({ color, focused }) => <User size={22} color={color} fill={focused ? color : 'none'} />,
+          }}
+        />
+      </Tab.Navigator>
+      {/* Paints the status-bar strip (clock/battery) header green on every
+          tab, flush with GradientHeader below it. Owns the status-bar style
+          for the tab screens, so they don't render their own. */}
+      <View pointerEvents="none" style={[styles.statusStrip, { height: insets.top }]} />
+      <StatusBar style="light" />
+    </View>
   );
 }
 
@@ -87,6 +73,14 @@ export function AppNavigator(): React.ReactElement {
 // bottom there. Applying it to native as well double-counts the home
 // indicator inset and pushes the bar too far up.
 const styles = {
+  root: { flex: 1 },
+  statusStrip: {
+    position: 'absolute' as const,
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: colors.gradientFrom,
+  },
   tabBar: {
     height: Platform.OS === 'web' ? 87 : Platform.OS === 'ios' ? 92 : 72,
     paddingTop: 10,

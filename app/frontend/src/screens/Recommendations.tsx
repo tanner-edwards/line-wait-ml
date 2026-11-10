@@ -10,7 +10,6 @@
 
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
   FlatList,
   Linking,
   Pressable,
@@ -20,7 +19,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { StatusBar } from 'expo-status-bar';
 import { useFocusEffect } from '@react-navigation/native';
 import { ApiError, fetchRecommendations } from '../api';
 import { DailyContext, ParkSlug, Persona, RecommendationsResponse, Ride } from '../types';
@@ -34,11 +32,12 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
+import { RecommendationTile } from '../components/RecommendationTile';
 import { UndoToast } from '../components/UndoToast';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader } from '../components/GradientHeader';
 import { StateBlock } from '../components/StateBlock';
-import { CircleAlert, Info, LocateFixed, LocateOff, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
+import { ChevronRight, CircleAlert, Info, LocateFixed, LocateOff, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
 import { formatHHMM } from '../timestamp';
 import { haversineMeters } from '../grouping';
 import { colors, spacing, typography } from '../theme/tokens';
@@ -63,6 +62,10 @@ const DCA_CENTER = { lat: 33.8058, lng: -117.9218 };
 const GPS_CHANGE_THRESHOLD_M = 100;
 const STALE_MS = 5 * 60 * 1000;
 const FETCH_DEBOUNCE_MS = 1000;
+// Full cards up top, the next few as "More to Consider" tiles. The backend
+// batch is 5, so the tile row usually holds 2 until See All lands.
+const TOP_PICK_COUNT = 3;
+const TILE_COUNT = 3;
 
 function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] | undefined): ParkSlug {
   if (dailyParks === 'disneyland') return 'disneyland';
@@ -73,7 +76,7 @@ function derivePark(lat: number, lng: number, dailyParks: DailyContext['parks'] 
 }
 
 export function Recommendations(): React.ReactElement {
-  const { data, error: waitsError, loading: waitsLoading, ridesById } = useRides();
+  const { data, error: waitsError, loading: waitsLoading, ridesById, timeTravelAt } = useRides();
   const { getIdToken } = useAuth();
   const { retiredRideIds, retireRide, unretireRide } = useDevice();
   const { persona } = usePersona();
@@ -101,6 +104,7 @@ export function Recommendations(): React.ReactElement {
   const lastFetchAtRef = useRef<number | null>(null);
   const lastFetchPersonaRef = useRef<Persona | null>(null);
   const lastFetchParkScopeRef = useRef<DailyContext['parks'] | undefined>(undefined);
+  const lastFetchTimeTravelRef = useRef<string | null>(null);
 
   const loadingLine = useMemo(
     () => LOADING_LINES[Math.floor(Math.random() * LOADING_LINES.length)],
@@ -144,6 +148,7 @@ export function Recommendations(): React.ReactElement {
     lastFetchAtRef.current = Date.now();
     lastFetchPersonaRef.current = persona;
     lastFetchParkScopeRef.current = dailyContext?.parks;
+    lastFetchTimeTravelRef.current = timeTravelAt;
 
     setRecsLoading(true);
     setRecsError(null);
@@ -159,6 +164,7 @@ export function Recommendations(): React.ReactElement {
         excludeRideIds: retiredRideIds,
         signal: controller.signal,
         idToken,
+        at: timeTravelAt ?? undefined,
       });
       if (controller.signal.aborted) return;
       setRecs(res);
@@ -176,7 +182,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen, persona, dailyContext?.parks, getIdToken, retiredRideIds]);
+  }, [isParkOpen, persona, dailyContext?.parks, getIdToken, retiredRideIds, timeTravelAt]);
 
   const loadMore = useCallback(async () => {
     if (!recs || !coords) return;
@@ -197,6 +203,7 @@ export function Recommendations(): React.ReactElement {
         excludeRideIds: [...recs.recommendations.map(r => r.rideId), ...retiredRideIds],
         signal: controller.signal,
         idToken,
+        at: timeTravelAt ?? undefined,
       });
       if (controller.signal.aborted) return;
       setRecs(prev => prev
@@ -217,7 +224,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setLoadingMore(false);
     }
-  }, [recs, coords, dailyContext, persona, getIdToken, retiredRideIds]);
+  }, [recs, coords, dailyContext, persona, getIdToken, retiredRideIds, timeTravelAt]);
 
   const onRefresh = useCallback(() => {
     if (!coords) return;
@@ -231,8 +238,9 @@ export function Recommendations(): React.ReactElement {
 
   // Re-check on every focus of this tab (and whenever these deps change while
   // it stays focused): fetch only if GPS moved 100m+, 5+ min elapsed, persona
-  // changed, or park scope changed since the last fetch. Loading shows
-  // immediately so the tab doesn't feel unresponsive; the actual (costly) API
+  // changed, park scope changed, or debug time travel changed since the last
+  // fetch. Loading shows immediately so the tab doesn't feel unresponsive; the
+  // actual (costly) API
   // call is debounced 1s so a quick accidental tap doesn't spend a request.
   //
   // TODO: needs test coverage (focus/re-focus, each of the four trigger
@@ -259,8 +267,9 @@ export function Recommendations(): React.ReactElement {
       const timeStale = lastFetchAtRef.current === null || (now - lastFetchAtRef.current) >= STALE_MS;
       const personaChanged = persona !== lastFetchPersonaRef.current;
       const parkScopeChanged = dailyContext?.parks !== lastFetchParkScopeRef.current;
+      const timeTravelChanged = timeTravelAt !== lastFetchTimeTravelRef.current;
 
-      if (!gpsChanged && !timeStale && !personaChanged && !parkScopeChanged) return;
+      if (!gpsChanged && !timeStale && !personaChanged && !parkScopeChanged && !timeTravelChanged) return;
 
       setRecsLoading(true);
       let fired = false;
@@ -274,7 +283,7 @@ export function Recommendations(): React.ReactElement {
         if (!fired) setRecsLoading(false);
       };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [coordsKey, status, persona, dailyContext?.parks, isParkOpen, runFetch])
+    }, [coordsKey, status, persona, dailyContext?.parks, isParkOpen, runFetch, timeTravelAt])
   );
 
   const handleRetire = useCallback((rideId: string) => {
@@ -308,7 +317,6 @@ export function Recommendations(): React.ReactElement {
     return (
       <SafeAreaView style={styles.container} testID="recs-loading-waits">
         <StateBlock loading title="Club 32" body="Loading ride data…" />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -321,7 +329,6 @@ export function Recommendations(): React.ReactElement {
           title="Couldn't load ride data"
           body="We can't recommend rides until live data loads. Pull-to-refresh on the Browse tab to retry."
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -339,7 +346,6 @@ export function Recommendations(): React.ReactElement {
           body="Club 32 uses your location to sort rides by how far you are and estimate walk times."
           action={{ label: 'Continue', onPress: requestPermission, testID: 'recs-enable-location' }}
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -354,7 +360,6 @@ export function Recommendations(): React.ReactElement {
           body="Club 32 uses your location to sort rides by how far you are. Turn it on in Settings, then come back."
           action={{ label: 'Open Settings', onPress: () => void Linking.openSettings(), testID: 'recs-open-settings' }}
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -369,7 +374,6 @@ export function Recommendations(): React.ReactElement {
           body="We couldn't get a GPS fix. Check that Location Services is on, then try again."
           action={{ label: 'Try again', onPress: retry, testID: 'recs-retry-location' }}
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -383,7 +387,6 @@ export function Recommendations(): React.ReactElement {
           body="Recommendations are based on where you are in the park. Head in and we'll pick up from there."
           action={{ label: 'Check again', onPress: retry, testID: 'recs-recheck-location' }}
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
@@ -449,9 +452,8 @@ export function Recommendations(): React.ReactElement {
           recs={recs}
           ridesById={ridesById}
           retiredRideIds={retiredRideIds}
-          loadingMore={loadingMore}
-          loadMoreError={loadMoreError}
-          onShowMore={() => void loadMore()}
+          // loadMore / loadingMore / loadMoreError move to the "See All" list
+          // in the next redesign phase — not reachable from this screen now.
           refreshing={recsLoading}
           onRefresh={onRefresh}
           debugMode={debugMode}
@@ -494,7 +496,6 @@ export function Recommendations(): React.ReactElement {
         />
       )}
 
-      <StatusBar style="auto" />
     </SafeAreaView>
   );
 }
@@ -503,9 +504,6 @@ function RecsList({
   recs,
   ridesById,
   retiredRideIds,
-  loadingMore,
-  loadMoreError,
-  onShowMore,
   refreshing,
   onRefresh,
   debugMode,
@@ -515,9 +513,6 @@ function RecsList({
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
   retiredRideIds: string[];
-  loadingMore: boolean;
-  loadMoreError: string | null;
-  onShowMore: () => void;
   refreshing: boolean;
   onRefresh: () => void;
   debugMode: boolean;
@@ -528,6 +523,10 @@ function RecsList({
   // retired rides out of fresh fetches, but this also drops one instantly
   // from a cached response without waiting on the next fetch.
   const visibleRecs = recs.recommendations.filter(r => !retiredRideIds.includes(r.rideId));
+
+  // Top picks get full cards; the rest become "More to Consider" tiles.
+  const cardRecs = visibleRecs.slice(0, TOP_PICK_COUNT);
+  const tileRecs = visibleRecs.slice(TOP_PICK_COUNT, TOP_PICK_COUNT + TILE_COUNT);
 
   if (visibleRecs.length === 0) {
     return (
@@ -542,7 +541,7 @@ function RecsList({
 
   return (
     <FlatList
-      data={visibleRecs}
+      data={cardRecs}
       keyExtractor={r => r.rideId}
       contentContainerStyle={styles.listContent}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
@@ -565,22 +564,27 @@ function RecsList({
         ) : null
       }
       ListFooterComponent={
-        loadingMore ? (
-          <View style={styles.moreLoadingRow} testID="recs-loading-more">
-            <ActivityIndicator size="small" />
-            <Text style={styles.moreLoadingText}>Finding more picks…</Text>
+        tileRecs.length > 0 ? (
+          <View style={styles.moreSection} testID="recs-more-to-consider">
+            <View style={styles.moreHeader}>
+              <Text style={styles.moreTitle}>More to Consider</Text>
+              {/* See All opens the full list in the next redesign phase. */}
+              <Pressable style={styles.seeAll} onPress={() => {}} hitSlop={8} testID="recs-see-all">
+                <Text style={styles.seeAllText}>See All</Text>
+                <ChevronRight size={16} color={colors.brand} />
+              </Pressable>
+            </View>
+            <View style={styles.tileRow}>
+              {tileRecs.map(rec => (
+                <RecommendationTile
+                  key={rec.rideId}
+                  rec={rec}
+                  ride={ridesById.get(rec.rideId)}
+                  onPress={() => onCardPress(rec)}
+                />
+              ))}
+            </View>
           </View>
-        ) : loadMoreError ? (
-          <View style={styles.moreErrorRow}>
-            <Text style={styles.moreErrorBody}>{loadMoreError}</Text>
-            <Pressable style={styles.moreButton} onPress={onShowMore} testID="recs-show-more-retry">
-              <Text style={styles.moreButtonText}>Try again</Text>
-            </Pressable>
-          </View>
-        ) : recs.hasMore ? (
-          <Pressable style={styles.moreButton} onPress={onShowMore} testID="recs-show-more">
-            <Text style={styles.moreButtonText}>Show more</Text>
-          </Pressable>
         ) : null
       }
     />
@@ -610,23 +614,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   degradedText: { ...typography.caption, color: colors.textSecondary },
-  moreButton: {
-    margin: 16,
-    paddingVertical: 14,
-    borderRadius: 10,
-    backgroundColor: colors.brand,
-    alignItems: 'center',
+  moreSection: {
+    marginTop: spacing.md,
+    marginHorizontal: spacing.base,
+    marginBottom: spacing.base,
   },
-  moreButtonText: { color: colors.textInverse, fontSize: 14, fontWeight: '700' },
-  moreLoadingRow: {
+  moreHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    margin: 16,
-    paddingVertical: 14,
-    gap: 8,
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
   },
-  moreLoadingText: { ...typography.caption, color: colors.textSecondary },
-  moreErrorRow: { margin: 16, alignItems: 'center' },
-  moreErrorBody: { ...typography.caption, color: colors.skip, marginBottom: 8, textAlign: 'center' },
+  moreTitle: { ...typography.cardTitle, fontSize: 20, color: colors.brand },
+  seeAll: { flexDirection: 'row', alignItems: 'center', gap: 2 },
+  seeAllText: { ...typography.label, fontSize: 14, fontWeight: '600', color: colors.brand },
+  tileRow: { flexDirection: 'row', gap: spacing.sm },
 });

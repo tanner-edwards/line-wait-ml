@@ -10,8 +10,8 @@ export const colors = {
   brand:             '#0A6B5A',
   brandPressed:      '#085647',
   // Header gradient — flat solid (both stops same value)
-  gradientFrom:      '#3D7C65',
-  gradientTo:        '#3D7C65',
+  gradientFrom:      '#064B36',
+  gradientTo:        '#064B36',
 
   // Surfaces
   bg:                '#F2EDE0',  // cream, behind white cards
@@ -25,14 +25,14 @@ export const colors = {
   textInverseMuted:  'rgba(255,255,255,0.55)',
 
   // Status — verdict colors (badges, alerts, range bar fills)
-  go:                '#3D7C65',  // unified with header — single green
-  goBg:              'rgba(61,124,101,0.10)',
-  goBorder:          'rgba(61,124,101,0.25)',
+  go:                '#064B36',  // unified with header — single green
+  goBg:              'rgba(6,75,54,0.10)',
+  goBorder:          'rgba(6,75,54,0.25)',
 
   // Opportunity card (State 7 hero sub-card) — same RGB family as go,
   // but distinct opacity steps so it reads as "quieter than a badge".
-  opportunityCardBg:     'rgba(61,124,101,0.07)',
-  opportunityCardBorder: 'rgba(61,124,101,0.22)',
+  opportunityCardBg:     'rgba(6,75,54,0.07)',
+  opportunityCardBorder: 'rgba(6,75,54,0.22)',
   opportunityCardText:   '#2D6B54',
 
   skip:              '#B83A2A',  // brick red, complements green + gold
@@ -58,8 +58,8 @@ export const colors = {
   barNeutralPast:    '#BDC0CE',
   barPeak:           '#B83A2A',
   barPeakPast:       'rgba(184,58,42,0.28)',
-  barTrough:         '#3D7C65',
-  barTroughPast:     'rgba(61,124,101,0.32)',
+  barTrough:         '#064B36',
+  barTroughPast:     'rgba(6,75,54,0.32)',
 
   // Borders — teal-tinted at low opacity
   border:            'rgba(10,107,90,0.09)',

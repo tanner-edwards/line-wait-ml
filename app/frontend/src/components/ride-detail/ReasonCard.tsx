@@ -22,7 +22,7 @@ interface Props {
 // hex = the badge color composited onto WHITE at ~10% — not a transparent tint,
 // so the cream canvas behind the card can't show through and darken it.
 const ACCENT: Record<'go' | 'star' | 'skip', { bar: string; bg: string }> = {
-  go:   { bar: colors.go,   bg: '#ECF2F0' },   // go (61,124,101) on white @10%
+  go:   { bar: colors.go,   bg: '#E6EDEB' },   // go (6,75,54) on white @10%
   // Star runs richer (~22%) than go/skip: gold shares the cream canvas's warmth,
   // so a 10% tint blends in — it needs a clearer gold to separate from the sheet.
   star: { bar: colors.star, bg: '#F3E8CD' },   // star (201,148,29) on white @~22%

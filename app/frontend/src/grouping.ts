@@ -93,7 +93,9 @@ export function successfulParks(response: CombinedResponse): ParkData[] {
 
 // --- Sort support ---
 
-export type SortBy = 'opportunity' | 'badge' | 'wait' | 'demand' | 'distance';
+// 'nearby' is the Discover chip, not a SortMenu option: walk time first,
+// opportunity within the same walk minute.
+export type SortBy = 'opportunity' | 'badge' | 'wait' | 'demand' | 'distance' | 'nearby';
 
 const BADGE_RANK: Record<string, number> = { star: 0, go: 1, skip: 3 };
 function badgeRank(badge: string | null | undefined): number {
@@ -110,6 +112,49 @@ export function haversineMeters(lat1: number, lng1: number, lat2: number, lng2: 
     Math.cos((lat2 * Math.PI) / 180) *
     Math.sin(dLng / 2) ** 2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+const WALK_SPEED_MPM = 83;
+function walkPathMultiplier(m: number) {
+  return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3;
+}
+/** Estimated walk minutes (path-adjusted), or null when the ride has no coords. */
+export function walkMinsTo(
+  origin: { lat: number; lng: number },
+  ride: { lat: number | null; lng: number | null }
+): number | null {
+  if (ride.lat == null || ride.lng == null) return null;
+  const raw = haversineMeters(origin.lat, origin.lng, ride.lat, ride.lng);
+  return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
+}
+
+function compareOpportunity(
+  a: Ride,
+  b: Ride,
+  origin: { lat: number; lng: number } | null,
+  persona: Persona | null
+): number {
+  // Operating before closed.
+  const aOpen = a.status === 'OPERATING';
+  const bOpen = b.status === 'OPERATING';
+  if (aOpen !== bOpen) return aOpen ? -1 : 1;
+  // Primary: badge rank.
+  const diff = badgeRank(a.verdict?.verdict) - badgeRank(b.verdict?.verdict);
+  if (diff !== 0) return diff;
+  // Persona: personalize within the opportunity tier (higher score first).
+  // No-op for a null/empty persona, preserving the non-personalized order.
+  const ps = personaScore(b, persona) - personaScore(a, persona);
+  if (ps !== 0) return ps;
+  // Secondary: distance (if we have a fix) or land name.
+  if (origin) {
+    const aDist = a.lat != null && a.lng != null ? haversineMeters(origin.lat, origin.lng, a.lat, a.lng) : Infinity;
+    const bDist = b.lat != null && b.lng != null ? haversineMeters(origin.lat, origin.lng, b.lat, b.lng) : Infinity;
+    if (aDist !== bDist) return aDist - bDist;
+  } else {
+    const landDiff = a.land.localeCompare(b.land);
+    if (landDiff !== 0) return landDiff;
+  }
+  return a.name.localeCompare(b.name);
 }
 
 /**
@@ -136,28 +181,14 @@ export function flattenSorted(
     if (isParkError(entry)) continue;
 
     const sorted = [...entry.rides].sort((a, b) => {
-      if (sortBy === 'opportunity') {
-        // Operating before closed.
-        const aOpen = a.status === 'OPERATING';
-        const bOpen = b.status === 'OPERATING';
-        if (aOpen !== bOpen) return aOpen ? -1 : 1;
-        // Primary: badge rank.
-        const diff = badgeRank(a.verdict?.verdict) - badgeRank(b.verdict?.verdict);
-        if (diff !== 0) return diff;
-        // Persona: personalize within the opportunity tier (higher score first).
-        // No-op for a null/empty persona, preserving the non-personalized order.
-        const ps = personaScore(b, persona) - personaScore(a, persona);
-        if (ps !== 0) return ps;
-        // Secondary: distance (if we have a fix) or land name.
-        if (origin) {
-          const aDist = a.lat != null && a.lng != null ? haversineMeters(origin.lat, origin.lng, a.lat, a.lng) : Infinity;
-          const bDist = b.lat != null && b.lng != null ? haversineMeters(origin.lat, origin.lng, b.lat, b.lng) : Infinity;
-          if (aDist !== bDist) return aDist - bDist;
-        } else {
-          const landDiff = a.land.localeCompare(b.land);
-          if (landDiff !== 0) return landDiff;
-        }
-        return a.name.localeCompare(b.name);
+      if (sortBy === 'opportunity') return compareOpportunity(a, b, origin, persona);
+      if (sortBy === 'nearby' && origin) {
+        // Bucket by the walk minutes the row displays — raw meters almost
+        // never tie, so opportunity would otherwise never get a say.
+        const aWalk = walkMinsTo(origin, a) ?? Infinity;
+        const bWalk = walkMinsTo(origin, b) ?? Infinity;
+        if (aWalk !== bWalk) return aWalk - bWalk;
+        return compareOpportunity(a, b, origin, persona);
       }
       if (sortBy === 'badge') {
         const diff = badgeRank(a.verdict?.verdict) - badgeRank(b.verdict?.verdict);
@@ -193,6 +224,25 @@ export function flattenSorted(
   }
 
   return items;
+}
+
+/** Discover's Nearby chip: rides within this walk... */
+export const NEARBY_MAX_WALK_MINS = 5;
+/** ...but never fewer than this many (edge of park, outside the park). */
+export const NEARBY_MIN_RIDES = 5;
+
+/**
+ * Ride ids Nearby keeps: everything within NEARBY_MAX_WALK_MINS, topped up to
+ * the NEARBY_MIN_RIDES closest when too few qualify. Uses the same walk-minute
+ * value the rows display. Rides without coords sort last.
+ */
+export function nearbyRideIds(rides: Ride[], origin: { lat: number; lng: number }): Set<string> {
+  const byWalk = rides
+    .map(r => ({ id: r.id, walk: walkMinsTo(origin, r) ?? Infinity }))
+    .sort((a, b) => a.walk - b.walk);
+  const within = byWalk.filter(r => r.walk <= NEARBY_MAX_WALK_MINS);
+  const kept = within.length >= NEARBY_MIN_RIDES ? within : byWalk.slice(0, NEARBY_MIN_RIDES);
+  return new Set(kept.map(r => r.id));
 }
 
 /**

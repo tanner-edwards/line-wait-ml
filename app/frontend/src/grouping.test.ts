@@ -1,4 +1,4 @@
-import { filterItemsByQuery, flattenForList, flattenSorted, rideWaitLabel } from './grouping';
+import { filterItemsByQuery, flattenForList, flattenSorted, nearbyRideIds, rideWaitLabel } from './grouping';
 import { CombinedResponse, Persona, Ride } from './types';
 import { personaScore, typicalHeightInches } from './personaSort';
 
@@ -285,5 +285,43 @@ describe('flattenSorted — persona level', () => {
       makeRide({ id: 'b', name: 'Alpha', verdict: GO }),
     ];
     expect(opportunityOrder(rides, makePersona())).toEqual(opportunityOrder(rides, null));
+  });
+});
+
+describe('Nearby', () => {
+  const origin = { lat: 33.8121, lng: -117.919 };
+  // Ride `meters` due north of origin. 100 m ≈ 2 min walk, 600 m ≈ 12 min.
+  const at = (meters: number) => ({ lat: origin.lat + meters / 111_000, lng: origin.lng });
+
+  it('sorts by walk minute, then opportunity within the same minute', () => {
+    const rides = [
+      makeRide({ id: 'far', name: 'Far Star', verdict: STAR, ...at(600) }),
+      makeRide({ id: 'plain', name: 'Near Plain', ...at(100) }),
+      makeRide({ id: 'star', name: 'Near Star', verdict: STAR, ...at(105) }),
+    ];
+    const order = flattenSorted(
+      { parks: [{ park: 'Disneyland', lastUpdated: '2026-05-15T20:00:00Z', rides }] },
+      'nearby', origin, null
+    ).flatMap(i => (i.kind === 'ride' ? [i.ride.name] : []));
+    expect(order).toEqual(['Near Star', 'Near Plain', 'Far Star']);
+  });
+
+  it('keeps only rides within the walk cutoff when enough qualify', () => {
+    const rides = [
+      ...[50, 100, 150, 200, 250, 300].map((m, i) => makeRide({ id: `near${i}`, ...at(m) })),
+      makeRide({ id: 'far', ...at(600) }),
+    ];
+    const ids = nearbyRideIds(rides, origin);
+    expect(ids.size).toBe(6);
+    expect(ids.has('far')).toBe(false);
+  });
+
+  it('tops up to the closest five when too few are within the cutoff', () => {
+    const rides = [
+      makeRide({ id: 'near', ...at(100) }),
+      ...[600, 700, 800, 900, 1000].map((m, i) => makeRide({ id: `far${i}`, ...at(m) })),
+    ];
+    const ids = nearbyRideIds(rides, origin);
+    expect([...ids]).toEqual(['near', 'far0', 'far1', 'far2', 'far3']);
   });
 });

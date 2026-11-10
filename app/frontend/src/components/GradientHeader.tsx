@@ -55,7 +55,10 @@ const styles = StyleSheet.create({
   header: {
     backgroundColor: colors.gradientFrom,
     paddingHorizontal: spacing.base,
-    paddingVertical: spacing.base,
+    // Tighter on top — the green status strip above already reads as
+    // breathing room, so a full 16 looked like a gap.
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.base,
   },
   inner: {
     flexDirection: 'row',

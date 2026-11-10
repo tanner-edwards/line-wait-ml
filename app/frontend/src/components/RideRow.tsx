@@ -18,7 +18,7 @@ import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
 import { TrendArrow, trajectoryDirection, predictionTrajectory } from './TrendArrow';
 import { isWalkOnRide } from '../utils/walkOn';
-import { haversineMeters, rideWaitLabel } from '../grouping';
+import { rideWaitLabel, walkMinsTo } from '../grouping';
 import { formatHHMM, formatTimeAgo } from '../timestamp';
 import { useTrip } from '../context/TripContext';
 
@@ -27,19 +27,6 @@ interface RideRowProps {
   walkOrigin: { lat: number; lng: number } | null;
   isWatching: boolean;
   onPress: () => void;
-}
-
-const WALK_SPEED_MPM = 83;
-function walkPathMultiplier(m: number) {
-  return m >= 640 ? 2.0 : m >= 366 ? 1.6 : 1.3;
-}
-function walkMinsTo(
-  origin: { lat: number; lng: number },
-  ride: { lat: number | null; lng: number | null }
-): number | null {
-  if (ride.lat == null || ride.lng == null) return null;
-  const raw = haversineMeters(origin.lat, origin.lng, ride.lat, ride.lng);
-  return Math.max(1, Math.round((raw * walkPathMultiplier(raw)) / WALK_SPEED_MPM));
 }
 
 const TREND_LABEL = { down: 'Dropping', up: 'Rising' } as const;

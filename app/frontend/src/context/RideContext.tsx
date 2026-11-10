@@ -36,6 +36,10 @@ interface RideContextValue {
    *  floor) — set for explicit user actions (pull-to-refresh, opening a ride
    *  detail), never for the automatic interval/foreground refresh. */
   refresh: (mode: 'user' | 'auto' | 'initial', at?: string, forceFresh?: boolean) => Promise<void>;
+  /** Debug time travel (ISO). While set, every refresh — including the
+   *  automatic ones — fetches at this time, and Recommendations sends it too. */
+  timeTravelAt: string | null;
+  setTimeTravelAt: (at: string | null) => void;
   /** rideId → Ride lookup; used by the Recommendations screen to render rec cards
    *  from a slim rec payload that only carries rideIds. Empty until first fetch
    *  completes. */
@@ -52,6 +56,14 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
   const [backgroundRefreshing, setBackgroundRefreshing] = useState(false);
   const [lastRefreshedAt, setLastRefreshedAt] = useState<string | null>(null);
   const lastFetchedAtMs = useRef<number>(0);
+  // Ref mirrors state so `refresh` stays stable and a set-then-refresh in the
+  // same handler sees the new value immediately.
+  const [timeTravelAt, setTimeTravelAtState] = useState<string | null>(null);
+  const timeTravelAtRef = useRef<string | null>(null);
+  const setTimeTravelAt = useCallback((at: string | null) => {
+    timeTravelAtRef.current = at;
+    setTimeTravelAtState(at);
+  }, []);
 
   // Firebase token identifies the user so the backend includes premium fields
   // for entitled users. Held in a ref so `refresh` stays stable (its identity
@@ -71,7 +83,7 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
       const fetchedAt = new Date().toISOString();
       try {
         const token = await getIdTokenRef.current();
-        const fresh = await fetchWaits(at, token, coords?.lat ?? null, coords?.lng ?? null, forceFresh);
+        const fresh = await fetchWaits(at ?? timeTravelAtRef.current ?? undefined, token, coords?.lat ?? null, coords?.lng ?? null, forceFresh);
         setData(fresh);
         lastFetchedAtMs.current = Date.now();
         if (mode !== 'initial') setLastRefreshedAt(fetchedAt);
@@ -150,6 +162,8 @@ export function RideProvider({ children }: { children: React.ReactNode }) {
     lastRefreshedAt,
     refresh,
     ridesById,
+    timeTravelAt,
+    setTimeTravelAt,
   };
 
   return <RideContext.Provider value={value}>{children}</RideContext.Provider>;

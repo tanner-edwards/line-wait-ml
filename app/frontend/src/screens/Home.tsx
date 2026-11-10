@@ -1,8 +1,7 @@
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   FlatList,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
+  Linking,
   Pressable,
   RefreshControl,
   SafeAreaView,
@@ -10,16 +9,17 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Clock, SearchX } from 'lucide-react-native';
+import { Bookmark, Clock, LocateFixed, LocateOff, MapPin, MapPinOff, SearchX } from 'lucide-react-native';
 import { StateBlock } from '../components/StateBlock';
-import { colors } from '../theme/tokens';
-import { StatusBar } from 'expo-status-bar';
+import { colors, radius } from '../theme/tokens';
 import {
   ListItem,
   SortBy,
   filterItemsByQuery,
   flattenForList,
   flattenSorted,
+  nearbyRideIds,
+  successfulParks,
 } from '../grouping';
 import { formatHHMM, olderLastUpdated } from '../timestamp';
 import { TimeTravelModal } from '../components/TimeTravelModal';
@@ -27,7 +27,9 @@ import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
 import { RideRow } from '../components/RideRow';
-import { FloatingSearchBar } from '../components/FloatingSearchBar';
+import { SearchField } from '../components/SearchField';
+import { DiscoverChip, DiscoverChips } from '../components/DiscoverChips';
+import { LandOption, LandPickerSheet } from '../components/LandPickerSheet';
 import { ArrowUpDown } from 'lucide-react-native';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
@@ -36,18 +38,23 @@ import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { usePersona } from '../context/PersonaContext';
 import { filterByDailyParks } from '../utils/parkFilter';
+import { CombinedResponse, Persona, Ride } from '../types';
 
-// Scroll delta (px) past which a direction counts as a deliberate scroll,
-// not a diagonal wobble — avoids the search bar flickering on tiny movements.
-const SCROLL_HIDE_THRESHOLD = 8;
-
+// Keeps rides matching `keep`; drops park headers left with no rides. Errored
+// park headers always stay — they carry the "data unavailable" notice.
+function filterRides(items: ListItem[], keep: (ride: Ride) => boolean): ListItem[] {
+  const kept = items.filter(item => item.kind !== 'ride' || keep(item.ride));
+  return kept.filter((item, i) =>
+    item.kind !== 'park-header' || item.errored || kept[i + 1]?.kind === 'ride'
+  );
+}
 
 export function Home() {
   // Shared ride state lives in RideProvider; the Browse screen owns only
   // its own UI state (expanded debug rows + time-travel modal). The auto-
   // refresh and foreground-refresh effects moved to the provider too.
-  const { data, error, loading, refreshing, lastRefreshedAt, refresh } = useRides();
-  const { coords: locationCoords, status: locationStatus } = useLocation();
+  const { data, error, loading, refreshing, lastRefreshedAt, refresh, timeTravelAt, setTimeTravelAt } = useRides();
+  const { coords: locationCoords, status: locationStatus, requestPermission, retry } = useLocation();
   const { context: dailyContext } = useDailyContext();
   const { openDetail } = useNotificationDetail();
   const { persona } = usePersona();
@@ -59,28 +66,20 @@ export function Home() {
     [persona]
   );
 
-  const [timeTravelAt, setTimeTravelAt] = useState<string | null>(null);
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
   const [sortBy, setSortBy] = useState<SortBy | null>('opportunity');
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  // A chip and a sort-menu choice are mutually exclusive: while a chip is
+  // active, `sortBy` is ignored and the sort menu shows nothing checked.
+  const [chip, setChip] = useState<DiscoverChip | null>('nearby');
+  const [selectedLand, setSelectedLand] = useState<string | null>(null);
+  const [showLandPicker, setShowLandPicker] = useState(false);
 
-  // Floating search bar visibility — hides on scroll-down, reappears on
-  // scroll-up or at the top of the list.
-  const [searchBarVisible, setSearchBarVisible] = useState(true);
-  const lastScrollY = useRef(0);
-  const handleScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const y = e.nativeEvent.contentOffset.y;
-    const diff = y - lastScrollY.current;
-    if (y <= 4) {
-      setSearchBarVisible(true);
-    } else if (diff > SCROLL_HIDE_THRESHOLD) {
-      setSearchBarVisible(false);
-    } else if (diff < -SCROLL_HIDE_THRESHOLD) {
-      setSearchBarVisible(true);
-    }
-    lastScrollY.current = y;
+  const handleSortSelect = useCallback((next: SortBy | null) => {
+    setSortBy(next);
+    setChip(null);
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -92,14 +91,14 @@ export function Home() {
     setTimeTravelLabel(label);
     setShowTimeTravelModal(false);
     void refresh('auto', at);
-  }, [refresh]);
+  }, [refresh, setTimeTravelAt]);
 
   const handleResume = useCallback(() => {
     setTimeTravelAt(null);
     setTimeTravelLabel(null);
     setShowTimeTravelModal(false);
     void refresh('user', undefined, true);
-  }, [refresh]);
+  }, [refresh, setTimeTravelAt]);
 
   if (loading && !data) {
     return (
@@ -109,12 +108,11 @@ export function Home() {
           title="Club 32"
           body="Loading ride data…"
         />
-        <StatusBar style="auto" />
       </SafeAreaView>
     );
   }
 
-  const walkOrigin = (sortBy === 'distance' || sortBy === 'opportunity') ? locationCoords : null;
+  const walkOrigin = (chip || sortBy === 'distance' || sortBy === 'opportunity') ? locationCoords : null;
 
   // Apply daily-park filter before flattening so the list (and any sort)
   // only sees rides in the selected park scope.
@@ -122,14 +120,29 @@ export function Home() {
     ? filterByDailyParks(data, dailyContext.parks)
     : data;
 
-  const items: ListItem[] = filterItemsByQuery(
-    scopedData
-      ? sortBy
-        ? flattenSorted(scopedData, sortBy, locationCoords, persona)
-        : flattenForList(scopedData)
-      : [],
-    searchQuery
-  );
+  const landOptions: LandOption[] = scopedData
+    ? successfulParks(scopedData).flatMap(p =>
+        [...new Set(p.rides.map(r => r.land))]
+          .sort((a, b) => a.localeCompare(b))
+          .map(land => ({ land, park: p.park }))
+      )
+    : [];
+
+  // Nearby without a fix shows the location prompt in place of the list.
+  const nearbyNeedsLocation = chip === 'nearby' && !locationCoords;
+
+  const baseItems: ListItem[] = !scopedData
+    ? []
+    : chip === 'nearby'
+    ? (locationCoords ? nearbyItems(scopedData, locationCoords, persona) : [])
+    : chip === 'land'
+    ? filterRides(flattenSorted(scopedData, 'opportunity', locationCoords, persona), r => r.land === selectedLand)
+    : chip === 'list'
+    ? filterRides(flattenSorted(scopedData, 'opportunity', locationCoords, persona), r => mustDoSet.has(r.id))
+    : sortBy
+    ? flattenSorted(scopedData, sortBy, locationCoords, persona)
+    : flattenForList(scopedData);
+  const items = filterItemsByQuery(baseItems, searchQuery);
   const lastUpdate = lastRefreshedAt
     ? formatHHMM(lastRefreshedAt)
     : data
@@ -145,7 +158,7 @@ export function Home() {
         </View>
       )}
       <GradientHeader
-        title="Live Waits"
+        title="Discover"
         subtitle={
           debugMode ? (
             <Pressable onPress={() => setShowTimeTravelModal(true)} testID="time-travel-trigger">
@@ -170,12 +183,33 @@ export function Home() {
               testID="sort-button"
               style={styles.sortButton}
             >
-              <ArrowUpDown size={20} color={sortBy ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
+              <ArrowUpDown size={20} color={sortBy && !chip ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
             </Pressable>
             <NotificationBellButton />
           </>
         }
       />
+      <SearchField
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        placeholder="Search attractions"
+        containerStyle={styles.search}
+        testID="home-search"
+      />
+      <DiscoverChips
+        active={chip}
+        landLabel={selectedLand}
+        onNearby={() => setChip('nearby')}
+        onLand={() => setShowLandPicker(true)}
+        onList={() => setChip('list')}
+      />
+      {nearbyNeedsLocation ? (
+        <NearbyLocationState
+          status={locationStatus}
+          onRequestPermission={requestPermission}
+          onRetry={retry}
+        />
+      ) : (
       <FlatList
         data={items}
         keyExtractor={item => item.key}
@@ -187,8 +221,6 @@ export function Home() {
             onRidePress={(rideId) => openDetail({ rideId, type: null, source: 'browse' })}
           />
         )}
-        onScroll={handleScroll}
-        scrollEventThrottle={16}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
@@ -207,6 +239,13 @@ export function Home() {
               body={`Nothing found for "${searchQuery.trim()}".`}
               testID="search-empty-state"
             />
+          ) : chip === 'list' ? (
+            <StateBlock
+              icon={<Bookmark size={48} color={colors.textTertiary} />}
+              title="Your list is empty"
+              body="Tap Watch on a ride to add it here."
+              testID="list-empty-state"
+            />
           ) : null
         }
         contentContainerStyle={[
@@ -214,26 +253,96 @@ export function Home() {
           styles.listContent,
         ]}
       />
-      <FloatingSearchBar
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        visible={searchBarVisible}
-        testID="home-search"
-      />
+      )}
       <SortMenu
         visible={showSortMenu}
-        current={sortBy}
+        current={chip ? undefined : sortBy}
         distanceAvailable={locationCoords !== null && locationStatus === 'ready'}
-        onSelect={setSortBy}
+        onSelect={handleSortSelect}
         onClose={() => setShowSortMenu(false)}
+      />
+      <LandPickerSheet
+        visible={showLandPicker}
+        lands={landOptions}
+        selected={chip === 'land' ? selectedLand : null}
+        showPark={dailyContext?.parks === 'both'}
+        onSelect={(land) => {
+          setSelectedLand(land);
+          setChip('land');
+          setShowLandPicker(false);
+        }}
+        onClose={() => setShowLandPicker(false)}
       />
       <TimeTravelModal
         visible={showTimeTravelModal}
         onSet={handleTimeTravelSet}
         onResume={handleResume}
       />
-      <StatusBar style="auto" />
     </SafeAreaView>
+  );
+}
+
+// Walk-time-limited list for the Nearby chip, across every park in scope.
+function nearbyItems(
+  data: CombinedResponse,
+  origin: { lat: number; lng: number },
+  persona: Persona | null
+): ListItem[] {
+  const keep = nearbyRideIds(successfulParks(data).flatMap(p => p.rides), origin);
+  return filterRides(flattenSorted(data, 'nearby', origin, persona), r => keep.has(r.id));
+}
+
+// Mirrors the Recommendations location states. The needs-permission button
+// must stay "Continue" and fire the OS dialog (App Store 5.1.1(iv)).
+function NearbyLocationState({
+  status,
+  onRequestPermission,
+  onRetry,
+}: {
+  status: ReturnType<typeof useLocation>['status'];
+  onRequestPermission: () => void;
+  onRetry: () => void;
+}) {
+  if (status === 'needs-permission') {
+    return (
+      <StateBlock
+        icon={<MapPin size={48} color={colors.brand} />}
+        title="Find rides near you"
+        body="Club 32 uses your location to sort rides by how far you are and estimate walk times."
+        action={{ label: 'Continue', onPress: onRequestPermission, testID: 'nearby-enable-location' }}
+        testID="nearby-location-permission"
+      />
+    );
+  }
+  if (status === 'denied') {
+    return (
+      <StateBlock
+        icon={<MapPinOff size={48} color={colors.textTertiary} />}
+        title="Location access needed"
+        body="Club 32 uses your location to sort rides by how far you are. Turn it on in Settings, then come back."
+        action={{ label: 'Open Settings', onPress: () => void Linking.openSettings(), testID: 'nearby-open-settings' }}
+        testID="nearby-location-denied"
+      />
+    );
+  }
+  if (status === 'gps-error') {
+    return (
+      <StateBlock
+        icon={<LocateOff size={48} color={colors.textTertiary} />}
+        title="Can't find your location"
+        body="We couldn't get a GPS fix. Check that Location Services is on, then try again."
+        action={{ label: 'Try again', onPress: onRetry, testID: 'nearby-retry-location' }}
+        testID="nearby-location-error"
+      />
+    );
+  }
+  return (
+    <StateBlock
+      icon={<LocateFixed size={48} color={colors.brand} />}
+      title="Finding your location"
+      body="Hang on just a moment."
+      testID="nearby-locating"
+    />
   );
 }
 
@@ -281,9 +390,15 @@ function ListRow({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   emptyListContent: { flexGrow: 1 },
-  // Bottom padding so the last row(s) aren't hidden behind the floating
-  // search bar docked over the list.
-  listContent: { paddingBottom: 72 },
+  listContent: { paddingBottom: 16 },
+  // Pill shape carried over from the old floating search bar.
+  search: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    marginBottom: 12,
+    borderRadius: radius.pill,
+    borderColor: colors.borderStrong,
+  },
   center: {
     flex: 1,
     alignItems: 'center',

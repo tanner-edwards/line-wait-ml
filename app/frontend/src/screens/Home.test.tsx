@@ -28,6 +28,27 @@ jest.mock('../api', () => {
 
 const mockFetchWaits = api.fetchWaits as jest.MockedFunction<typeof api.fetchWaits>;
 
+// Discover defaults to the Nearby chip, which needs a fix. Fixture rides have
+// no coords, so every walk time ties and Nearby falls through to opportunity
+// order — the same order these tests were written against.
+const mockLocation: { coords: { lat: number; lng: number } | null; status: string } = {
+  coords: { lat: 33.8121, lng: -117.919 },
+  status: 'ready',
+};
+jest.mock('../context/LocationContext', () => ({
+  LocationProvider: ({ children }: { children: React.ReactNode }) => children,
+  useLocation: () => ({
+    ...mockLocation,
+    requestPermission: jest.fn(),
+    retry: jest.fn(),
+    setDebugCoords: jest.fn(),
+    clearDebugCoords: jest.fn(),
+  }),
+}));
+
+// gorhom's BottomSheetModal needs a provider the test tree doesn't mount.
+jest.mock('../components/LandPickerSheet', () => ({ LandPickerSheet: () => null }));
+
 // As of Slice D1, Home reads from RideContext instead of fetching directly.
 // Wrap every render in <RideProvider> so the provider's effect fires the
 // (mocked) fetchWaits call and pushes data down to Home.
@@ -170,6 +191,8 @@ function singleRideResponse(partial: Partial<Ride> & Pick<Ride, 'id' | 'name' | 
 
 beforeEach(() => {
   mockFetchWaits.mockReset();
+  mockLocation.coords = { lat: 33.8121, lng: -117.919 };
+  mockLocation.status = 'ready';
 });
 
 describe('Home — initial successful load', () => {
@@ -481,5 +504,55 @@ describe('Home — walk-on indicator', () => {
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
     expect(screen.queryByTestId('badge-walk-on')).toBeNull();
+  });
+});
+
+describe('Discover — chips', () => {
+  it('Nearby without a fix shows the pre-permission prompt with a Continue button', async () => {
+    mockLocation.coords = null;
+    mockLocation.status = 'needs-permission';
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    renderHome();
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.getByTestId('nearby-location-permission')).toBeTruthy();
+    expect(screen.getByText('Continue')).toBeTruthy();
+    expect(screen.queryByText('Hyperspace Mountain')).toBeNull();
+  });
+
+  it('Nearby with location denied points to Settings', async () => {
+    mockLocation.coords = null;
+    mockLocation.status = 'denied';
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    renderHome();
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    expect(screen.getByTestId('nearby-location-denied')).toBeTruthy();
+    expect(screen.getByText('Open Settings')).toBeTruthy();
+  });
+
+  it('Your List with no watched rides shows its empty state', async () => {
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    renderHome();
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    fireEvent.press(screen.getByTestId('chip-list'));
+
+    expect(screen.getByTestId('list-empty-state')).toBeTruthy();
+    expect(screen.queryByText('Hyperspace Mountain')).toBeNull();
+  });
+
+  it('picking a sort clears the Nearby chip and restores the list', async () => {
+    mockLocation.coords = null;
+    mockLocation.status = 'denied';
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    renderHome();
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    fireEvent.press(screen.getByTestId('sort-button'));
+    fireEvent.press(screen.getByText('Opportunity'));
+
+    expect(screen.queryByTestId('nearby-location-denied')).toBeNull();
+    expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();
   });
 });

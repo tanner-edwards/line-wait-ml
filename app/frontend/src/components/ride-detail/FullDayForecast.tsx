@@ -35,14 +35,14 @@ const BAR_TROUGH_PAST   = colors.barTroughPast;
 const BAR_PEAK_PAST     = colors.barPeakPast;
 const BAR_NEUTRAL_PAST  = colors.barNeutralPast;
 
-const DETAIL_TROUGH_BG      = 'rgba(61,124,101,0.06)';
-const DETAIL_TROUGH_BORDER  = 'rgba(61,124,101,0.22)';
+const DETAIL_TROUGH_BG      = 'rgba(6,75,54,0.06)';
+const DETAIL_TROUGH_BORDER  = 'rgba(6,75,54,0.22)';
 const DETAIL_PEAK_BG        = 'rgba(184,58,42,0.05)';
 const DETAIL_PEAK_BORDER    = 'rgba(184,58,42,0.18)';
 const DETAIL_NEUTRAL_BG     = 'rgba(10,107,90,0.05)';
 const DETAIL_NEUTRAL_BORDER = 'rgba(10,107,90,0.14)';
 
-const BADGE_TROUGH_BG  = 'rgba(61,124,101,0.10)';
+const BADGE_TROUGH_BG  = 'rgba(6,75,54,0.10)';
 const BADGE_PEAK_BG    = 'rgba(184,58,42,0.08)';
 const BADGE_NEUTRAL_BG = 'rgba(10,107,90,0.08)';
 

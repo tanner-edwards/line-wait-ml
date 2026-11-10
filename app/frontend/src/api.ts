@@ -97,6 +97,9 @@ interface FetchRecommendationsInput {
   /** Firebase ID token. Recommendations is a premium, entitlement-gated
    *  endpoint — the backend returns 402 without a valid entitled token. */
   idToken?: string | null;
+  /** Debug time travel (ISO) — sent as ?at=, same as /v0/waits. The backend
+   *  skips its recs cache when set. */
+  at?: string;
 }
 
 export async function fetchRecommendations({
@@ -107,6 +110,7 @@ export async function fetchRecommendations({
   excludeRideIds,
   signal,
   idToken,
+  at,
 }: FetchRecommendationsInput): Promise<RecommendationsResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
@@ -124,7 +128,8 @@ export async function fetchRecommendations({
 
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/v2/recommendations`, {
+    const qs = at ? `?at=${encodeURIComponent(at)}` : '';
+    res = await fetch(`${BASE_URL}/v2/recommendations${qs}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

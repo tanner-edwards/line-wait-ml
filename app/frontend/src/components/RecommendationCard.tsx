@@ -34,6 +34,22 @@ interface RecommendationCardProps {
   isFirst?: boolean;
 }
 
+/**
+ * The wait a rec shows: "Walk On", the arrival wait, or the current wait.
+ * Shared with RecommendationTile so a ride reads the same in both places.
+ */
+export function recWaitDisplay(rec: Recommendation, ride: Ride): { walkOn: boolean; wait: string | null } {
+  const isOperating = ride.status === 'OPERATING';
+  const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait)
+    && (rec.arrivalWait === null || rec.arrivalWait <= 15);
+  const wait = rec.arrivalWait !== null
+    ? `${roundWait(rec.arrivalWait)}`
+    : ride.currentWait !== null
+    ? `${ride.currentWait}`
+    : null;
+  return { walkOn, wait };
+}
+
 export function RecommendationCard({
   rec,
   ride,
@@ -54,21 +70,13 @@ export function RecommendationCard({
   // Badge = the authoritative two-layer verdict (neutral → no chip).
   const rawVerdict = ride.verdict?.verdict ?? null;
   const badge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
-  const walkOnRaw = isOperating && isWalkOnRide(ride.id, ride.currentWait)
-    && (rec.arrivalWait === null || rec.arrivalWait <= 15);
   // "Walk On" is just the wait-value relabel; the badge is the verdict. They're
   // independent — a walk-on ride shows both its badge (if any) and "Walk On".
-  const showWalkOn = walkOnRaw;
+  const { walkOn: showWalkOn, wait: waitDisplay } = recWaitDisplay(rec, ride);
   const showBadge = badge !== null;
   // Trend — single source of truth is the server verdict's trajectory. No local
   // recompute; Steady / absent renders nothing.
   const trend = isOperating ? trajectoryDirection(predictionTrajectory(ride.prediction)) : null;
-
-  const waitDisplay = rec.arrivalWait !== null
-    ? `${roundWait(rec.arrivalWait)}`
-    : ride.currentWait !== null
-    ? `${ride.currentWait}`
-    : null;
 
   const cardVariant = 'default' as const;
   const cardAccent = badge === 'go' ? colors.go : badge === 'star' ? colors.star : undefined;
