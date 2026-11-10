@@ -1,0 +1,11 @@
+{
+  "_comment": "Bedrock model / inference-profile IDs to compare. First entry is what production uses today (deploy.sh). Edit freely; each must be enabled for your account in the target region. Verify exact IDs with: aws bedrock list-inference-profiles --region us-west-2",
+  "models": [
+    { "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0" },
+    { "id": "us.amazon.nova-micro-v1:0" },
+    { "id": "us.amazon.nova-lite-v1:0" },
+    { "id": "us.amazon.nova-pro-v1:0" },
+    { "id": "us.meta.llama3-3-70b-instruct-v1:0" },
+    { "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0" }
+  ]
+}
