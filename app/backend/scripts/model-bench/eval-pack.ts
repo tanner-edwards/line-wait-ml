@@ -184,7 +184,10 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
     for (const m of allModels) {
       const cands = records.filter(r => r.model === m && r.scenario === sc.id).sort((a, c) => a.run - c.run);
       for (const r of cands) {
-        const recs = parseRecs(r.rawText ?? r.text ?? '');
+        // Use the LONGEST saved copy: older result files kept a truncated rawText (500-800 chars)
+        // for runs that failed a check, and parsing that would wrongly discard the answer.
+        const full = [r.text, r.rawText].filter((t): t is string => !!t).sort((a, b) => b.length - a.length)[0];
+        const recs = parseRecs(full);
         if (recs) { answers.push({ model: m, recs }); break; } // first parseable run
       }
     }
@@ -225,6 +228,12 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
       md.push('');
     });
   }
+
+  // Coverage check: every model should appear in every scenario unless it truly produced no valid answer.
+  const included = new Map<string, number>(allModels.map(m => [m, 0]));
+  for (const sc of Object.values(key.entries)) for (const m of Object.values(sc)) included.set(m, (included.get(m) ?? 0) + 1);
+  console.log('\nCoverage (scenarios in which each model has an answer in the pack):');
+  for (const [m, n] of included) console.log(`  ${n}/${nScenarios}  ${m}${n < nScenarios ? '   <-- missing answers: check that these runs really returned valid JSON (see json ok % in the benchmark summary)' : ''}`);
 
   md.push(`\n---\n\nEnd of pack (${nScenarios} scenarios). Reply with the JSON object described at the top.`);
   mkdirSync(outDir, { recursive: true });
