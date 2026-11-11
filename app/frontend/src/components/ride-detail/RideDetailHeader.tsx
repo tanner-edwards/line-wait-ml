@@ -1,29 +1,60 @@
-// Hero card — "Stacked-Center" layout.
+// Hero card at the top of the ride detail sheet (phase-4 redesign).
 //
-// Seven rows, whitespace-only separation except one hairline above Row 7:
-//   Row 1  Ride name (left)
-//   Row 2  Location (left)                Walk pill (right)
-//   Row 3  [Badge — centered, omitted if none]
-//   Row 4  Wait number — centered, dominant  (or "Walk On" / "Down")
-//   Row 5  Direction label — centered, quiet  (omitted if trendDir null)
-//   Row 6  Today's Range bar — full width  (gated: paid + operating only)
+//   [Ride icon] │ Ride name
+//               │ Land · Park                      [walk pill]
+//   ┌ Verdict banner: icon + RARE FIND / GOOD TIME TO RIDE / SKIP FOR NOW ┐
+//   └ deterministic why-line                                             ┘
+//   [Post-reopen opportunity card — dormant until ML ships]
+//   ┌─ white card (everything above sits on the sheet's cream) ─────────
+//   (clock) Current Wait   │  (arrow) Predicted Trend
+//           75 min         │          Rising
+//   Today's Range bar — full width   (gated: paid + operating only)
 //   ─────────────────────────────────────────────────────────────────
-//   Row 7  Watch button — right-aligned, alone
+//                                                   [Watch]
+//
+// The verdict banner is the ONLY colored signal; the trend icon stays gray so
+// it can't contradict it (a green wait next to a red "Rising").
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Bell, CheckCircle, Footprints, Star, Zap } from 'lucide-react-native';
-import { colors } from '../../theme/tokens';
+import {
+  ArrowRight,
+  Bell,
+  CheckCircle,
+  Clock,
+  Footprints,
+  OctagonX,
+  Star,
+  TrendingDown,
+  TrendingUp,
+  Zap,
+} from 'lucide-react-native';
+import { colors, spacing, typography } from '../../theme/tokens';
 import { WalkPill } from '../WalkPill';
+import { RideIcon } from '../icons/RideIcon';
 import { TodaysRange } from './TodaysRange';
+import { Tile } from './Tile';
 import { Badge } from '../../types';
 
 type TrendDir = 'up' | 'down' | 'stable' | null;
 
-const DIRECTION_LABEL: Record<'up' | 'down' | 'stable', string> = {
-  up: '↗ Rising',
-  down: '↘ Dropping',
-  stable: '→ Steady',
+// Vertical dividers + the rule above Watch — darker than colors.border so
+// they read on both cream and white.
+const DIVIDER = 'rgba(10,107,90,0.28)';
+
+const DIRECTION: Record<'up' | 'down' | 'stable', { label: string; Icon: typeof TrendingUp }> = {
+  up: { label: 'Rising', Icon: TrendingUp },
+  down: { label: 'Dropping', Icon: TrendingDown },
+  stable: { label: 'Steady', Icon: ArrowRight },
+};
+
+// Banner per verdict. Titles blend the mockup's call-to-action tone with the
+// earlier pill copy. Backgrounds are solid hexes (badge color on white) so
+// the sheet's cream can't show through — same values ReasonCard used.
+const VERDICT_BANNER: Record<'star' | 'go' | 'skip', { title: string; color: string; bg: string; border: string; Icon: typeof Star }> = {
+  star: { title: 'RARE FIND', color: colors.star, bg: '#F3E8CD', border: colors.starBorder, Icon: Star },
+  go: { title: 'GOOD TIME TO RIDE', color: colors.go, bg: '#E6EDEB', border: colors.goBorder, Icon: CheckCircle },
+  skip: { title: 'SKIP FOR NOW', color: colors.skip, bg: '#F8EBEA', border: colors.skipBorder, Icon: OctagonX },
 };
 
 interface Props {
@@ -35,6 +66,8 @@ interface Props {
   anchorWait: number | null;
   showWalkOn: boolean;
   badge: Badge;
+  /** Deterministic verdict "why" — the banner's sentence. */
+  whyText: string | null;
   walkMins: number | null;
   isWatching: boolean;
   rideId: string;
@@ -48,9 +81,9 @@ interface Props {
   downDurationMs: number | null;
   waitAtClose: number | null;
   onToggleWatch: () => void;
+  /** Extra content at the bottom of the white card (e.g. restriction note). */
+  children?: React.ReactNode;
 }
-
-const BRAND = colors.brand;
 
 export function RideDetailHeader({
   rideName,
@@ -61,6 +94,7 @@ export function RideDetailHeader({
   anchorWait,
   showWalkOn,
   badge,
+  whyText,
   walkMins,
   isWatching,
   rideId,
@@ -72,31 +106,52 @@ export function RideDetailHeader({
   downDurationMs,
   waitAtClose,
   onToggleWatch,
+  children,
 }: Props): React.ReactElement {
   const subtitle = [land, parkName].filter(Boolean).join(' · ');
   const showRangeBar = hasActiveTrip && !isDown && rideStats != null;
+  const banner = badge && badge !== 'caution' ? VERDICT_BANNER[badge] : null;
+  const direction = trendDir && !isDown ? DIRECTION[trendDir] : null;
+
+  const waitValue = showWalkOn
+    ? 'Walk On'
+    : isDown
+    ? 'Down'
+    : anchorWait !== null
+    ? `${anchorWait} min`
+    : '—';
 
   return (
-    <View style={styles.card}>
-      {/* Row 1 — Ride name */}
-      <Text style={styles.rideName}>{rideName}</Text>
-
-      {/* Row 2 — Location + walk pill */}
-      <View style={styles.row2}>
-        <Text style={styles.location}>{subtitle}</Text>
-        {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
+    <View>
+      {/* Identity — icon │ name + location */}
+      <View style={styles.identity}>
+        <RideIcon rideId={rideId} size={56} />
+        <View style={styles.identityDivider} />
+        <View style={styles.identityText}>
+          <Text style={styles.rideName}>{rideName}</Text>
+          <View style={styles.locationRow}>
+            <Text style={styles.location}>{subtitle}</Text>
+            {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
+          </View>
+        </View>
       </View>
 
-      {/* Row 3 — Badge, centered (omitted when no badge). The "why" reasoning
-          lives in the ReasonCard below the header, not here. */}
-      {badge ? (
-        <View style={styles.row3}>
-          {badgePill(badge)}
+      {/* Verdict banner — omitted for neutral / caution */}
+      {banner ? (
+        <View style={[styles.banner, { backgroundColor: banner.bg, borderColor: banner.border }]} testID={`detail-verdict-${badge}`}>
+          <banner.Icon
+            size={36}
+            color={banner.color}
+            fill={badge === 'star' ? banner.color : 'none'}
+            strokeWidth={2}
+          />
+          <View style={styles.bannerText}>
+            <Text style={[styles.bannerTitle, { color: banner.color }]}>{banner.title}</Text>
+            {whyText ? <Text style={styles.bannerBody}>{whyText}</Text> : null}
+          </View>
         </View>
       ) : null}
 
-      {/* State 7 — Post-reopen opportunity card: short line after a break closure.
-          Dormant (never renders) until ML populates postReopenWaitDrop. */}
       {!isDown && postReopenWaitDrop ? (
         <OpportunityCard
           anchorWait={anchorWait}
@@ -105,94 +160,70 @@ export function RideDetailHeader({
         />
       ) : null}
 
-      {/* Row 4 — Wait number (centered, dominant) */}
-      <View style={styles.row4}>
-        {showWalkOn ? (
-          <View style={styles.walkOnBlock}>
-            <Footprints size={24} color={colors.textPrimary} />
-            <Text style={styles.walkOnText}>Walk On</Text>
+      <Tile style={styles.card}>
+        {/* Stats — Current Wait │ Predicted Trend (trend column omitted when null) */}
+        <View style={styles.stats}>
+          <View style={styles.stat}>
+            {showWalkOn ? (
+              <Footprints size={26} color={colors.textPrimary} />
+            ) : (
+              <Clock size={26} color={colors.textPrimary} />
+            )}
+            <View>
+              <Text style={styles.statLabel}>Current Wait</Text>
+              <Text style={[styles.statValue, isDown && styles.statValueDown]}>{waitValue}</Text>
+            </View>
           </View>
-        ) : isDown ? (
-          <Text style={styles.downText}>Down</Text>
-        ) : anchorWait !== null ? (
-          <View style={styles.waitNumberRow}>
-            <Text style={styles.waitUnitSpacer}>min</Text>
-            <Text style={styles.waitNumber}>{anchorWait}</Text>
-            <Text style={styles.waitUnit}>min</Text>
+          {direction ? (
+            <>
+              <View style={styles.statDivider} />
+              <View style={styles.stat}>
+                <direction.Icon size={26} color={colors.textTertiary} />
+                <View>
+                  <Text style={styles.statLabel}>Predicted Trend</Text>
+                  <Text style={styles.statValue}>{direction.label}</Text>
+                </View>
+              </View>
+            </>
+          ) : null}
+        </View>
+
+        {/* Today's Range bar (paid + operating only) */}
+        {showRangeBar ? (
+          <View style={styles.rangeBarContainer}>
+            <TodaysRange
+              p10={rideStats!.p10}
+              p90={rideStats!.p90}
+              current={anchorWait}
+              typicalWait={bucket0Wait}
+              badge={badge}
+            />
           </View>
         ) : null}
-      </View>
 
-      {/* Row 5 — Direction label (centered, quiet; omitted when trendDir null or down) */}
-      {trendDir && !isDown ? (
-        <Text style={[styles.directionLabel, showRangeBar ? styles.directionLabelWithBar : styles.directionLabelNoBar]}>
-          {DIRECTION_LABEL[trendDir]}
-        </Text>
-      ) : null}
-
-      {/* Row 6 — Today's Range bar (paid + operating only, no label) */}
-      {showRangeBar ? (
-        <View style={styles.rangeBarContainer}>
-          <TodaysRange
-            p10={rideStats!.p10}
-            p90={rideStats!.p90}
-            current={anchorWait}
-            typicalWait={bucket0Wait}
-            badge={badge}
-          />
+        {/* Watch button, right-aligned. The mockup's bottom Watch / Set
+            Reminder bar is a later phase. */}
+        <View style={styles.watchRow}>
+          <Pressable
+            onPress={onToggleWatch}
+            style={[styles.watchBtn, isWatching && styles.watchBtnWatching]}
+            hitSlop={8}
+            testID={`detail-bell-${rideId}`}
+            accessibilityRole="button"
+            accessibilityLabel={isWatching ? 'Remove from watchlist' : 'Add to watchlist'}
+          >
+            {hasActiveTrip && (
+              <Bell size={14} color={isWatching ? colors.star : colors.textInverse} fill={isWatching ? colors.star : 'none'} />
+            )}
+            <Text style={[styles.watchBtnText, isWatching && styles.watchBtnWatchingText]}>
+              {isWatching ? 'Watching' : 'Watch'}
+            </Text>
+          </Pressable>
         </View>
-      ) : null}
-
-      {/* Row 7 — Watch button, right-aligned, alone */}
-      <View style={styles.row7}>
-        <Pressable
-          onPress={onToggleWatch}
-          style={[styles.watchBtn, isWatching && styles.watchBtnWatching]}
-          hitSlop={8}
-          testID={`detail-bell-${rideId}`}
-          accessibilityRole="button"
-          accessibilityLabel={isWatching ? 'Remove from watchlist' : 'Add to watchlist'}
-        >
-          {hasActiveTrip && (
-            <Bell size={14} color={isWatching ? colors.star : colors.textInverse} fill={isWatching ? colors.star : 'none'} />
-          )}
-          <Text style={[styles.watchBtnText, isWatching && styles.watchBtnWatchingText]}>
-            {isWatching ? 'Watching' : 'Watch'}
-          </Text>
-        </Pressable>
-      </View>
+        {children}
+      </Tile>
     </View>
   );
-}
-
-// ── Badge pill ─────────────────────────────────────────────────────────────────
-
-function badgePill(badge: Badge): React.ReactElement | null {
-  if (!badge) return null;
-  if (badge === 'star') {
-    return (
-      <View style={[styles.badgePill, { backgroundColor: colors.starBg }]}>
-        <Star size={12} color={colors.star} fill={colors.star} />
-        <Text style={[styles.badgePillText, { color: colors.star }]}>Rare find</Text>
-      </View>
-    );
-  }
-  if (badge === 'go') {
-    return (
-      <View style={[styles.badgePill, { backgroundColor: colors.goBg }]}>
-        <CheckCircle size={11} color={colors.go} />
-        <Text style={[styles.badgePillText, { color: colors.go }]}>Good time to ride</Text>
-      </View>
-    );
-  }
-  if (badge === 'skip') {
-    return (
-      <View style={[styles.badgePill, { backgroundColor: colors.skipBg }]}>
-        <Text style={[styles.badgePillText, { color: colors.skip }]}>Busier than usual</Text>
-      </View>
-    );
-  }
-  return null;
 }
 
 // ── Opportunity card (State 7) ────────────────────────────────────────────────
@@ -240,120 +271,108 @@ function OpportunityCard({
 // ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  card: {},
-
-  // Row 1
+  // Identity
+  identity: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    marginBottom: spacing.base,
+  },
+  identityDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: DIVIDER,
+  },
+  identityText: { flex: 1 },
   rideName: {
     fontFamily: 'Lora_600SemiBold',
     fontSize: 24,
     fontWeight: '600',
     color: colors.textPrimary,
     lineHeight: 30,
-    marginBottom: 6,
   },
-
-  // Row 2
-  row2: {
+  locationRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 24,
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: 2,
   },
   location: {
-    fontSize: 11,
-    color: colors.textTertiary,
+    ...typography.label,
+    fontSize: 13,
+    color: colors.go,
     flexShrink: 1,
-    marginRight: 8,
   },
 
-  // Row 3
-  row3: {
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  badgePill: {
+  // Verdict banner
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 100,
+    gap: spacing.md,
+    padding: spacing.base,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: spacing.base,
   },
-  badgePillText: { fontSize: 12, fontWeight: '600' },
-
-  // Row 4
-  row4: {
-    alignItems: 'center',
-    justifyContent: 'center',
+  bannerText: { flex: 1 },
+  bannerTitle: {
+    fontFamily: 'Outfit_700Bold',
+    fontSize: 20,
+    fontWeight: '700',
+    letterSpacing: 0.4,
   },
-  waitNumberRow: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  waitNumber: {
-    fontSize: 80,
-    fontWeight: '500',
+  bannerBody: {
+    ...typography.body,
     color: colors.textPrimary,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: -6,
-    lineHeight: 88,
-    paddingRight: 6,
+    marginTop: 2,
   },
-  waitUnit: {
-    fontSize: 15,
-    letterSpacing: 0,
-    color: colors.textTertiary,
-    marginLeft: 8,
-  },
-  waitUnitSpacer: {
-    fontSize: 15,
-    marginRight: 8,
-    paddingLeft: 6,
-    opacity: 0,
-  },
-  walkOnBlock: {
+
+  // White card starts at the stats row; identity + banner sit on cream.
+  card: { marginTop: 0 },
+
+  // Stats
+  stats: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    paddingVertical: spacing.sm,
   },
-  walkOnText: {
-    fontSize: 38,
+  stat: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  statDivider: {
+    width: 1,
+    alignSelf: 'stretch',
+    backgroundColor: DIVIDER,
+    marginHorizontal: spacing.md,
+  },
+  statLabel: {
+    ...typography.label,
+    color: colors.textSecondary,
+  },
+  statValue: {
+    fontFamily: 'Lora_700Bold',
+    fontSize: 24,
     fontWeight: '700',
     color: colors.textPrimary,
   },
-  downText: {
-    fontSize: 48,
-    fontWeight: '500',
-    color: colors.textTertiary,
-    fontVariant: ['tabular-nums'],
-    letterSpacing: 0,
-    lineHeight: 80,
-    includeFontPadding: false,
-  },
+  statValueDown: { color: colors.textTertiary },
 
-  // Row 5
-  directionLabel: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.textTertiary,
-    textAlign: 'center',
-  },
-  // When range bar follows, add generous gap so the two read as distinct.
-  directionLabelWithBar: { marginTop: 8, marginBottom: 28 },
-  // When no range bar, smaller gap before the divider.
-  directionLabelNoBar: { marginTop: 8, marginBottom: 0 },
-
-  // Row 6
+  // Range bar
   rangeBarContainer: {
+    marginTop: spacing.base,
     marginBottom: 4,
   },
 
-  // Row 7
-  row7: {
+  // Watch
+  watchRow: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: 'rgba(10,107,90,0.07)',
+    borderTopColor: DIVIDER,
     paddingTop: 12,
     marginTop: 14,
   },
@@ -364,7 +383,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 7,
     borderRadius: 100,
-    backgroundColor: BRAND,
+    backgroundColor: colors.brand,
   },
   watchBtnWatching: {
     backgroundColor: colors.surface,

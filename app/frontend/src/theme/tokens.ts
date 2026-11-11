@@ -14,7 +14,7 @@ export const colors = {
   gradientTo:        '#064B36',
 
   // Surfaces
-  bg:                '#F2EDE0',  // cream, behind white cards
+  bg:                '#FCF7F1',  // cream, behind white cards (lightened to match the redesign mockups)
   surface:           '#FFFFFF',
 
   // Text — forest-toned grays
@@ -70,7 +70,7 @@ export const colors = {
 // comparison (none of the locked palette colors above were a clean fit:
 // green is overused, brick red is SKIP, amber gold is the star badge).
 export const retiredAction = '#5C7A99';
-export const retiredActionText = '#F2EDE0';
+export const retiredActionText = '#FCF7F1';
 
 export const fonts = {
   display:          'Lora_700Bold',

@@ -312,7 +312,7 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null, 
   return (
     <View>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>FULL DAY FORECAST</Text>
+        <Text style={styles.headerTitle}>Full Day Forecast</Text>
         <Text style={styles.headerSubtitle}>Tap a bar to see details</Text>
       </View>
 
@@ -486,12 +486,12 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
 
 const styles = StyleSheet.create({
   header: { marginBottom: 10 },
+  // Serif title per the phase-4 mockup (was a small all-caps label).
   headerTitle: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    fontWeight: '600',
+    fontFamily: 'Lora_700Bold',
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 11,
