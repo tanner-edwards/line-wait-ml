@@ -11,6 +11,7 @@
 // are what turn "it returned something" into "it returned the right thing".
 // Add scenarios freely; the runner picks them up from SCENARIOS.
 
+import { createHash } from 'crypto';
 import { Persona, Ride, RideMetadata, VerdictReason, Verdict } from '../../src/types';
 import { RideForPrompt, PromptContext } from '../../src/recommendations/promptBuilder';
 
@@ -97,7 +98,12 @@ export interface RideState {
 }
 
 const KEYS = Object.keys(CATALOG) as RideKey[];
-const rideId = (k: RideKey) => `00000000-0000-4000-8000-${String(KEYS.indexOf(k) + 1).padStart(12, '0')}`;
+// Deterministic but random-looking UUIDs (real ride IDs are random UUIDs; near-identical
+// all-zero fixtures make models garble them, which would be a test artifact, not a model flaw).
+const rideId = (k: RideKey) => {
+  const h = createHash('sha1').update(`club32-bench-${k}`).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
+};
 
 const DEFAULT_PRIMARY: Record<Verdict, VerdictReason> = {
   star: 'rare-low',

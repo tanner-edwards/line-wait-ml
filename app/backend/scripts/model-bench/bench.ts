@@ -336,10 +336,13 @@ function report(records: RunRecord[], models: string[]) {
     for (const r of records.filter(x => x.model === m)) {
       for (const f of r.hardFailures) counts.set(`${r.scenario} :: ${f}`, (counts.get(`${r.scenario} :: ${f}`) ?? 0) + 1);
     }
+    const softCounts = new Map<string, number>();
+    for (const r of records.filter(x => x.model === m)) for (const f of r.softFailures) softCounts.set(f.split(':')[0], (softCounts.get(f.split(':')[0]) ?? 0) + 1);
     const errs = [...new Set(records.filter(x => x.model === m && x.error).map(x => x.error!))];
-    if (counts.size || errs.length) {
+    if (counts.size || errs.length || softCounts.size) {
       console.log(`\n--- ${m}`);
       for (const e of errs) console.log(`  ERROR ${e}`);
+      if (softCounts.size) console.log('  copy-rule failures: ' + [...softCounts].sort((a, b) => b[1] - a[1]).map(([k, n]) => `${k} x${n}`).join(', '));
       for (const [k, n] of [...counts].sort((a, b) => b[1] - a[1]).slice(0, 6)) console.log(`  ${n}x ${k}`);
     }
   }
