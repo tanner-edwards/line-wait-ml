@@ -2,7 +2,7 @@
 // results file, and aggregates the evaluations other models write back.
 //
 //   # 1. Build the pack (writes evaluation-pack.md + evaluation-key.json)
-//   npx tsx scripts/model-bench/eval-pack.ts build scripts/model-bench/results/<run>.json \
+//   npx tsx scripts/model-bench/eval-pack.ts build scripts/model-bench/results/<run>.json [<run2>.json ...] \
 //       [--out-dir scripts/model-bench/results/pack] [--seed 1] [--models idA,idB]
 //
 //   # 2. Give evaluation-pack.md to one or more evaluator models (any chat UI / API).
@@ -144,9 +144,10 @@ Reply with ONLY one JSON object (no markdown fences, no commentary), exactly thi
 Include every scenario and every label. Do not add fields.
 `;
 
-function build(resultsPath: string, outDir: string, seed: number, only?: string[]) {
-  const saved = JSON.parse(readFileSync(resultsPath, 'utf8')) as { records: Rec[] };
-  const records = saved.records.filter(r => r.scenario !== '*' && !r.error && (r.text || r.rawText));
+function build(resultsPaths: string[], outDir: string, seed: number, only?: string[]) {
+  const resultsPath = resultsPaths.join(',');
+  const allRecords = resultsPaths.flatMap(f => (JSON.parse(readFileSync(f, 'utf8')) as { records: Rec[] }).records);
+  const records = allRecords.filter(r => r.scenario !== '*' && !r.error && (r.text || r.rawText));
   const allModels = [...new Set(records.map(r => r.model))].filter(m => !only || only.includes(m));
   if (!allModels.length) throw new Error('No usable records (need successful runs with saved answer text).');
   const scenarioIds = new Set(records.map(r => r.scenario));
@@ -305,10 +306,10 @@ function aggregate(keyPath: string, evalPaths: string[]) {
 
 const [cmd, ...rest] = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !(i > 0 && all[i - 1].startsWith('--')));
 if (cmd === 'build' && rest[0]) {
-  build(rest[0], arg('out-dir', join(__dirname, 'results', 'pack'))!, Number(arg('seed', '1')), arg('models')?.split(','));
+  build(rest, arg('out-dir', join(__dirname, 'results', 'pack'))!, Number(arg('seed', '1')), arg('models')?.split(','));
 } else if (cmd === 'aggregate' && rest.length >= 2) {
   aggregate(rest[0], rest.slice(1));
 } else {
-  console.error('Usage:\n  eval-pack.ts build <results.json> [--out-dir d] [--seed n] [--models a,b]\n  eval-pack.ts aggregate <evaluation-key.json> <eval1.json> [eval2.json ...]');
+  console.error('Usage:\n  eval-pack.ts build <results.json> [more.json ...] [--out-dir d] [--seed n] [--models a,b]\n  eval-pack.ts aggregate <evaluation-key.json> <eval1.json> [eval2.json ...]');
   process.exit(2);
 }

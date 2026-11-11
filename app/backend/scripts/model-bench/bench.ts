@@ -12,6 +12,7 @@
 //       [--runs 5] [--judge us.anthropic.claude-sonnet-4-5-20250929-v1:0] \
 //       [--temperature 0] [--max-tokens 2000] [--out results/run.json]
 //   npx tsx scripts/model-bench/bench.ts --dry-run     # no AWS calls; validates fixtures + checks
+//   npx tsx scripts/model-bench/bench.ts --rescore results/run1.json   # re-grade saved answers with current checks (no AWS calls)
 //   OPENAI_API_KEY=... npx tsx scripts/model-bench/bench.ts --list-models openai   # also: gemini (GEMINI_API_KEY)
 //
 // Safety/speed flags: --timeout-ms 60000 (per call) | --skip-if-slower-than <ms> (skip a model whose warm-up is slower)
@@ -263,6 +264,7 @@ interface RunRecord {
   checksRun: { hard: number; soft: number };
   judge?: { ranking: number; copy: number; note: string } | null;
   rawText?: string;
+  text?: string; // full model answer (spread in from the call result)
 }
 
 function evaluate(b: BuiltScenario, recs: ParsedRec[]) {
@@ -358,6 +360,16 @@ function report(records: RunRecord[], models: string[]) {
   }
 }
 
+// Re-grade one saved record with the CURRENT scenario checks (no model call).
+function rescoreOne(r: RunRecord): RunRecord {
+  const text = r.text ?? r.rawText;
+  const sc = SCENARIOS.find(x => x.id === r.scenario);
+  if (r.error || !text || !sc) return r;
+  const { recs, fenced, error } = parseModelText(text);
+  if (!recs) return { ...r, parsed: false, fenced, hardFailures: [`parse: ${error}`], softFailures: [], checksRun: { hard: 1, soft: 0 } };
+  return { ...r, parsed: true, fenced, ...evaluate(buildScenario(sc), recs) };
+}
+
 // --------------------------------------------------------------------- main
 
 async function dryRun() {
@@ -402,9 +414,20 @@ async function dryRun() {
 async function main() {
   if (DRY) return dryRun();
   if (arg('list-models')) return listModels(arg('list-models')!);
-  if (arg('report')) {
-    const saved = JSON.parse(readFileSync(arg('report')!, 'utf8')) as { records: RunRecord[] };
-    const real = saved.records.filter(r => r.scenario !== '*');
+  if (arg('report') || arg('rescore')) {
+    // --report a.json[,b.json]   re-print the summary from saved results
+    // --rescore a.json[,b.json]  re-grade the SAVED answers with the current checks (no Bedrock calls),
+    //                            then print the summary; add --out f.json to save the re-graded records.
+    const files = (arg('report') ?? arg('rescore'))!;
+    let real = files.split(',').flatMap(f => (JSON.parse(readFileSync(f.trim(), 'utf8')) as { records: RunRecord[] }).records).filter(r => r.scenario !== '*');
+    if (arg('rescore')) {
+      real = real.map(rescoreOne);
+      if (arg('out')) {
+        mkdirSync(dirname(arg('out')!), { recursive: true });
+        writeFileSync(arg('out')!, JSON.stringify({ rescoredFrom: files, at: new Date().toISOString(), records: real }, null, 2));
+        console.log(`Wrote ${arg('out')}`);
+      }
+    }
     report(real, [...new Set(real.map(r => r.model))]);
     return;
   }

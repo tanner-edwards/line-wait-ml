@@ -61,6 +61,15 @@ nothing. Re-print a summary from any saved file: `--report <file.json>`.
 Pick the fastest model whose **hard pass %** is at your bar (compare against the current production
 model's number), then confirm on a larger `--runs`.
 
+## Re-grading saved results
+
+Changed a check? Re-grade the answers you already paid for, with no Bedrock calls:
+
+```bash
+npx tsx scripts/model-bench/bench.ts --rescore scripts/model-bench/results/run1.json
+npx tsx scripts/model-bench/bench.ts --rescore run1.json,run2.json --out results/merged-rescored.json
+```
+
 ## Judging answer quality (evaluation pack)
 
 The automatic checks catch rule-breaking, not mediocre advice. To judge the advice itself, build a
