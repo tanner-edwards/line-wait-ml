@@ -11,7 +11,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Compass, Sparkles, User } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { Home } from '../screens/Home';
-import { Recommendations } from '../screens/Recommendations';
+import { RecsStack } from './RecsStack';
 import { Profile } from '../screens/Profile';
 
 const Tab = createBottomTabNavigator();
@@ -32,7 +32,7 @@ export function AppNavigator(): React.ReactElement {
       >
         <Tab.Screen
           name="Recommendations"
-          component={Recommendations}
+          component={RecsStack}
           options={{
             tabBarIcon: ({ color, focused }) => (
               <Sparkles size={22} color={color} fill={focused ? color : 'none'} />

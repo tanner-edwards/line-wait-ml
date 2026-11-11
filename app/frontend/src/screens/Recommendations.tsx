@@ -19,7 +19,9 @@ import {
   Text,
   View,
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RecsStackParamList } from '../navigation/RecsStack';
 import { ApiError, fetchRecommendations } from '../api';
 import { DailyContext, ParkSlug, Persona, RecommendationsResponse, Ride } from '../types';
 import { useRides } from '../context/RideContext';
@@ -33,6 +35,7 @@ import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { PickerSheet, parkDisplayName } from '../components/PickerSheet';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { RecommendationTile } from '../components/RecommendationTile';
+import { useRecs } from '../context/RecsContext';
 import { UndoToast } from '../components/UndoToast';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { GradientHeader } from '../components/GradientHeader';
@@ -62,8 +65,8 @@ const DCA_CENTER = { lat: 33.8058, lng: -117.9218 };
 const GPS_CHANGE_THRESHOLD_M = 100;
 const STALE_MS = 5 * 60 * 1000;
 const FETCH_DEBOUNCE_MS = 1000;
-// Full cards up top, the next few as "More to Consider" tiles. The backend
-// batch is 5, so the tile row usually holds 2 until See All lands.
+// Full cards up top, the rest of the first batch as "More to Consider" tiles
+// (capped). Tile count follows whatever the backend batch returns.
 const TOP_PICK_COUNT = 3;
 const TILE_COUNT = 3;
 
@@ -84,18 +87,16 @@ export function Recommendations(): React.ReactElement {
   const { coords, status, requestPermission, retry, setDebugCoords, clearDebugCoords } = useLocation();
   const { debugMode } = useDebugMode();
   const { openDetail } = useNotificationDetail();
+  const navigation = useNavigation<NativeStackNavigationProp<RecsStackParamList>>();
 
-  const [recs, setRecs] = useState<RecommendationsResponse | null>(null);
+  const { recs, setInitialRecs, firstBatchCount } = useRecs();
   const [recsLoading, setRecsLoading] = useState(false);
   const [recsError, setRecsError] = useState<string | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [debugPickerOpen, setDebugPickerOpen] = useState(false);
   const [debugPickerDismissed, setDebugPickerDismissed] = useState(false);
   const [undoToast, setUndoToast] = useState<{ rideId: string; key: number } | null>(null);
 
   const inFlightAbort = useRef<AbortController | null>(null);
-  const loadMoreAbort = useRef<AbortController | null>(null);
 
   // Baseline for the focus-triggered refetch check — set the moment runFetch
   // actually commits to a network call (any trigger: auto, retry, pull-to-
@@ -138,7 +139,7 @@ export function Recommendations(): React.ReactElement {
     inFlightAbort.current = controller;
 
     if (!isParkOpen(park)) {
-      setRecs(null);
+      setInitialRecs(null);
       setRecsError(null);
       setRecsLoading(false);
       return;
@@ -152,8 +153,6 @@ export function Recommendations(): React.ReactElement {
 
     setRecsLoading(true);
     setRecsError(null);
-    setLoadMoreError(null);
-    loadMoreAbort.current?.abort();
     try {
       const idToken = await getIdToken();
       const res = await fetchRecommendations({
@@ -167,13 +166,13 @@ export function Recommendations(): React.ReactElement {
         at: timeTravelAt ?? undefined,
       });
       if (controller.signal.aborted) return;
-      setRecs(res);
+      setInitialRecs(res);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
       // 402 = not entitled. The tab paywall handles the upsell UI; here we just
       // avoid surfacing a scary error if an unentitled request slips through.
       if (err instanceof ApiError && err.statusCode === 402) {
-        setRecs(null);
+        setInitialRecs(null);
         setRecsError(null);
         return;
       }
@@ -182,49 +181,7 @@ export function Recommendations(): React.ReactElement {
     } finally {
       if (!controller.signal.aborted) setRecsLoading(false);
     }
-  }, [isParkOpen, persona, dailyContext?.parks, getIdToken, retiredRideIds, timeTravelAt]);
-
-  const loadMore = useCallback(async () => {
-    if (!recs || !coords) return;
-    const park = derivePark(coords.lat, coords.lng, dailyContext?.parks);
-    loadMoreAbort.current?.abort();
-    const controller = new AbortController();
-    loadMoreAbort.current = controller;
-
-    setLoadingMore(true);
-    setLoadMoreError(null);
-    try {
-      const idToken = await getIdToken();
-      const res = await fetchRecommendations({
-        park,
-        userLat: coords.lat,
-        userLng: coords.lng,
-        persona,
-        excludeRideIds: [...recs.recommendations.map(r => r.rideId), ...retiredRideIds],
-        signal: controller.signal,
-        idToken,
-        at: timeTravelAt ?? undefined,
-      });
-      if (controller.signal.aborted) return;
-      setRecs(prev => prev
-        ? {
-            ...res,
-            currentRide: prev.currentRide,
-            lastUpdated: prev.lastUpdated,
-            degraded: prev.degraded,
-            recommendations: [...prev.recommendations, ...res.recommendations],
-            hasMore: res.hasMore,
-          }
-        : res
-      );
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return;
-      const message = err instanceof ApiError ? err.message : 'Unknown error';
-      setLoadMoreError(message);
-    } finally {
-      if (!controller.signal.aborted) setLoadingMore(false);
-    }
-  }, [recs, coords, dailyContext, persona, getIdToken, retiredRideIds, timeTravelAt]);
+  }, [isParkOpen, persona, dailyContext?.parks, getIdToken, retiredRideIds, timeTravelAt, setInitialRecs]);
 
   const onRefresh = useCallback(() => {
     if (!coords) return;
@@ -452,8 +409,8 @@ export function Recommendations(): React.ReactElement {
           recs={recs}
           ridesById={ridesById}
           retiredRideIds={retiredRideIds}
-          // loadMore / loadingMore / loadMoreError move to the "See All" list
-          // in the next redesign phase — not reachable from this screen now.
+          firstBatchCount={firstBatchCount}
+          onSeeAll={() => navigation.navigate('MoreToConsider')}
           refreshing={recsLoading}
           onRefresh={onRefresh}
           debugMode={debugMode}
@@ -504,6 +461,8 @@ function RecsList({
   recs,
   ridesById,
   retiredRideIds,
+  firstBatchCount,
+  onSeeAll,
   refreshing,
   onRefresh,
   debugMode,
@@ -513,6 +472,8 @@ function RecsList({
   recs: RecommendationsResponse;
   ridesById: Map<string, Ride>;
   retiredRideIds: string[];
+  firstBatchCount: number;
+  onSeeAll: () => void;
   refreshing: boolean;
   onRefresh: () => void;
   debugMode: boolean;
@@ -522,11 +483,17 @@ function RecsList({
   // Defensive filter — the request-level excludeRideIds already keeps
   // retired rides out of fresh fetches, but this also drops one instantly
   // from a cached response without waiting on the next fetch.
-  const visibleRecs = recs.recommendations.filter(r => !retiredRideIds.includes(r.rideId));
+  // Only the first batch feeds this screen — anything Show more appended
+  // belongs to More to Consider.
+  const visibleRecs = recs.recommendations
+    .slice(0, firstBatchCount)
+    .filter(r => !retiredRideIds.includes(r.rideId));
 
-  // Top picks get full cards; the rest become "More to Consider" tiles.
+  // Top picks get full cards; the rest of the first batch become tiles.
   const cardRecs = visibleRecs.slice(0, TOP_PICK_COUNT);
   const tileRecs = visibleRecs.slice(TOP_PICK_COUNT, TOP_PICK_COUNT + TILE_COUNT);
+  // See All only when there's something past the first batch to show.
+  const canSeeAll = recs.hasMore || recs.recommendations.length > firstBatchCount;
 
   if (visibleRecs.length === 0) {
     return (
@@ -568,11 +535,12 @@ function RecsList({
           <View style={styles.moreSection} testID="recs-more-to-consider">
             <View style={styles.moreHeader}>
               <Text style={styles.moreTitle}>More to Consider</Text>
-              {/* See All opens the full list in the next redesign phase. */}
-              <Pressable style={styles.seeAll} onPress={() => {}} hitSlop={8} testID="recs-see-all">
-                <Text style={styles.seeAllText}>See All</Text>
-                <ChevronRight size={16} color={colors.brand} />
-              </Pressable>
+              {canSeeAll ? (
+                <Pressable style={styles.seeAll} onPress={onSeeAll} hitSlop={8} testID="recs-see-all">
+                  <Text style={styles.seeAllText}>See All</Text>
+                  <ChevronRight size={16} color={colors.brand} />
+                </Pressable>
+              ) : null}
             </View>
             <View style={styles.tileRow}>
               {tileRecs.map(rec => (

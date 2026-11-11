@@ -1,13 +1,15 @@
-// Compact square tile for the "More to Consider" row on Recommendations —
-// ride name over its wait. Same wait logic as RecommendationCard.
+// Compact square tile for the "More to Consider" row on Recommendations:
+// icon, ride name, walk pill, wait. Same wait logic and accent rule as
+// RecommendationCard.
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { Footprints } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
-import { recWaitDisplay } from './RecommendationCard';
+import { WalkPill } from './WalkPill';
+import { RideIcon } from './icons/RideIcon';
+import { recWaitLabel } from './RecommendationCard';
 
 interface Props {
   rec: Recommendation;
@@ -17,26 +19,18 @@ interface Props {
 
 export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactElement | null {
   if (!ride) return null;
-  const { walkOn, wait } = recWaitDisplay(rec, ride);
+  const waitLabel = recWaitLabel(rec, ride);
+  const verdict = ride.verdict?.verdict ?? null;
+  const accent = verdict === 'go' ? colors.go : verdict === 'star' ? colors.star : undefined;
 
   return (
     <Pressable onPress={onPress} style={styles.pressable} testID={`rec-tile-${rec.rideId}`}>
-      <Card style={styles.card}>
+      <Card accent={accent} style={styles.card}>
+        <RideIcon rideId={rec.rideId} size={36} />
         <Text style={styles.name} numberOfLines={2}>{ride.name}</Text>
-        <View style={styles.waitRow}>
-          {walkOn ? (
-            <>
-              <Footprints size={14} color={colors.go} />
-              <Text style={styles.walkOn}>Walk On</Text>
-            </>
-          ) : wait !== null ? (
-            <>
-              <Text style={styles.waitNumber}>{wait}</Text>
-              <Text style={styles.waitMin}> min</Text>
-            </>
-          ) : (
-            <Text style={styles.waitMin}>—</Text>
-          )}
+        <View style={styles.meta}>
+          {rec.walkMinutes !== null ? <WalkPill minutes={rec.walkMinutes} emphasized /> : null}
+          {waitLabel ? <Text style={styles.wait}>{waitLabel}</Text> : null}
         </View>
       </Card>
     </Pressable>
@@ -48,10 +42,9 @@ const styles = StyleSheet.create({
   card: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'space-between',
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
-    minHeight: 96,
+    gap: spacing.xs,
   },
   name: {
     ...typography.label,
@@ -60,26 +53,15 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     textAlign: 'center',
   },
-  waitRow: {
-    flexDirection: 'row',
+  meta: {
+    marginTop: 'auto',
     alignItems: 'center',
-    gap: 2,
-    marginTop: spacing.sm,
+    gap: spacing.xs,
   },
-  waitNumber: {
-    ...typography.waitNumber,
-    fontSize: 20,
-    color: colors.textPrimary,
-  },
-  waitMin: {
+  wait: {
     ...typography.label,
-    color: colors.textSecondary,
-    alignSelf: 'flex-end',
-    paddingBottom: 2,
-  },
-  walkOn: {
-    ...typography.label,
+    fontSize: 13,
     fontWeight: '600',
-    color: colors.go,
+    color: colors.textPrimary,
   },
 });

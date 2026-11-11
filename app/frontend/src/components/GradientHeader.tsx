@@ -7,7 +7,8 @@
 // the export name so callers don't churn.
 
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { ChevronLeft } from 'lucide-react-native';
 import { colors, spacing, typography } from '../theme/tokens';
 
 interface GradientHeaderProps {
@@ -16,11 +17,25 @@ interface GradientHeaderProps {
   subtitle?: React.ReactNode;
   /** Buttons or actions floated to the right. */
   right?: React.ReactNode;
+  /** Pushed screens: shows "‹ backLabel" above the title. */
+  back?: { label: string; onPress: () => void };
 }
 
-export function GradientHeader({ title, subtitle, right }: GradientHeaderProps): React.ReactElement {
+export function GradientHeader({ title, subtitle, right, back }: GradientHeaderProps): React.ReactElement {
   return (
     <View style={styles.header}>
+      {back ? (
+        <Pressable
+          accessibilityRole="button"
+          onPress={back.onPress}
+          hitSlop={8}
+          style={styles.back}
+          testID="header-back"
+        >
+          <ChevronLeft size={20} color={colors.textInverse} />
+          <Text style={styles.backLabel}>{back.label}</Text>
+        </Pressable>
+      ) : null}
       <View style={styles.inner}>
         <View style={styles.left}>
           <Text style={styles.title}>{title}</Text>
@@ -73,6 +88,18 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textInverseMuted,
     marginTop: spacing.xs,
+  },
+  back: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginLeft: -4,
+    marginBottom: spacing.xs,
+  },
+  backLabel: {
+    ...typography.label,
+    fontSize: 15,
+    color: colors.textInverse,
   },
   right: {
     flexDirection: 'row',
