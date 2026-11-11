@@ -285,10 +285,10 @@ async function runOne(model: string, b: BuiltScenario, run: number): Promise<Run
     const call = await converse(model, system, user, { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
     const { recs, fenced, error } = parseModelText(call.text);
     if (!recs) {
-      return { ...base, ...call, parsed: false, fenced, hardFailures: [`parse: ${error}`], softFailures: [], checksRun: { hard: 1, soft: 0 }, rawText: call.text.slice(0, 500) };
+      return { ...base, ...call, parsed: false, fenced, hardFailures: [`parse: ${error}`], softFailures: [], checksRun: { hard: 1, soft: 0 }, rawText: call.text.slice(0, 2000) };
     }
     const ev = evaluate(b, recs);
-    return { ...base, ...call, parsed: true, fenced, ...ev, judge: await judge(b, user, call.text), rawText: ev.hardFailures.length ? call.text.slice(0, 800) : undefined };
+    return { ...base, ...call, parsed: true, fenced, ...ev, judge: await judge(b, user, call.text), rawText: call.text.slice(0, 6000) };
   } catch (err) {
     return { ...base, error: `${(err as Error).name}: ${(err as Error).message.slice(0, 120)}`, parsed: false, fenced: false, hardFailures: [], softFailures: [], checksRun: { hard: 0, soft: 0 } };
   }

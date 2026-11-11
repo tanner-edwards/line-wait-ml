@@ -61,6 +61,26 @@ nothing. Re-print a summary from any saved file: `--report <file.json>`.
 Pick the fastest model whose **hard pass %** is at your bar (compare against the current production
 model's number), then confirm on a larger `--runs`.
 
+## Judging answer quality (evaluation pack)
+
+The automatic checks catch rule-breaking, not mediocre advice. To judge the advice itself, build a
+self-contained pack from a saved results file and give it to other models (or read it yourself):
+
+```bash
+# 1. Build: rubric + product rules + per-scenario data + every model's answers, anonymized and shuffled
+npx tsx scripts/model-bench/eval-pack.ts build scripts/model-bench/results/<run>.json
+
+# 2. Paste results/pack/evaluation-pack.md into one or more strong models (ideally NOT only a Claude model,
+#    to avoid same-family bias). Save each model's JSON reply to its own file, e.g. evalClaude.json.
+
+# 3. Aggregate: de-anonymizes via evaluation-key.json and joins quality with speed + rule-pass %
+npx tsx scripts/model-bench/eval-pack.ts aggregate scripts/model-bench/results/pack/evaluation-key.json evalClaude.json evalNova.json
+```
+
+Keep `evaluation-key.json` away from evaluators. Scores: grounding, ranking, copy, constraints, overall (1-5).
+Disagreement between evaluators is a signal to read the pack yourself. Pack uses each model's first run per
+scenario; use `--models a,b` to limit the models included and `--seed n` to reshuffle labels.
+
 ## Adding scenarios
 
 Add an entry to `SCENARIOS` in `scenarios.ts` with a persona, clock, ride board, and checks.
