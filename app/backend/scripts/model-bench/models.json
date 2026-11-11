@@ -1,5 +1,5 @@
 {
-  "_comment": "Bedrock models to compare (first = production today). IDs are best guesses: list what your account can actually call with `aws bedrock list-inference-profiles --region us-west-2` and `aws bedrock list-foundation-models --region us-west-2 --by-output-modality TEXT`. Delete any you don't want. The harness can also call 'openai:<model>' / 'gemini:<model>' directly if you ever get API keys.",
+  "_comment": "Bedrock models to compare; first = production today. The Claude 3/3.5 Haiku, Llama 4 Scout / 3.1 8B, Mistral Small, Qwen3 and Gemma IDs are best guesses: a wrong or not-enabled ID just prints an error and is skipped. List what you can call: `aws bedrock list-foundation-models --region us-west-2 --by-output-modality TEXT` and `aws bedrock list-inference-profiles --region us-west-2`. gpt-oss models are last because they are reasoning models and very slow; spot-test them first (see README).",
   "models": [
     {
       "id": "us.anthropic.claude-haiku-4-5-20251001-v1:0"
@@ -18,6 +18,27 @@
     },
     {
       "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0"
+    },
+    {
+      "id": "us.anthropic.claude-3-5-haiku-20241022-v1:0"
+    },
+    {
+      "id": "us.anthropic.claude-3-haiku-20240307-v1:0"
+    },
+    {
+      "id": "us.meta.llama4-scout-17b-instruct-v1:0"
+    },
+    {
+      "id": "us.meta.llama3-1-8b-instruct-v1:0"
+    },
+    {
+      "id": "mistral.mistral-small-2402-v1:0"
+    },
+    {
+      "id": "qwen.qwen3-32b-v1:0"
+    },
+    {
+      "id": "google.gemma-3-12b-it"
     },
     {
       "id": "openai.gpt-oss-120b-1:0"

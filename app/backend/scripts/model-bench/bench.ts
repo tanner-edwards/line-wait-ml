@@ -14,6 +14,10 @@
 //   npx tsx scripts/model-bench/bench.ts --dry-run     # no AWS calls; validates fixtures + checks
 //   OPENAI_API_KEY=... npx tsx scripts/model-bench/bench.ts --list-models openai   # also: gemini (GEMINI_API_KEY)
 //
+// Safety/speed flags: --timeout-ms 60000 (per call) | --skip-if-slower-than <ms> (skip a model whose warm-up is slower)
+//   --bedrock-reasoning-effort low|medium|high (gpt-oss on Bedrock) | --latency-optimized (Bedrock, supported models only)
+// Results are always saved (default results/<timestamp>.json) after every round; --report <file> re-prints a summary.
+//
 // Model ids: Bedrock ids as-is; "openai:<model>" and "gemini:<model>" call those APIs directly
 // (see models.json). Extra flags: --reasoning-effort <v> (OpenAI), --gemini-thinking-budget <n>.
 //
@@ -43,7 +47,11 @@ const RUNS = Number(arg('runs', '3'));
 const MAX_TOKENS = Number(arg('max-tokens', '2000'));
 const TEMPERATURE = arg('temperature') !== undefined ? Number(arg('temperature')) : undefined; // unset = same as production
 const JUDGE = arg('judge');
-const OUT = arg('out');
+const TIMEOUT_MS = Number(arg('timeout-ms', '60000'));             // per call; a slower call is recorded as an error
+const SKIP_IF_SLOWER_MS = arg('skip-if-slower-than') ? Number(arg('skip-if-slower-than')) : null; // skip a model whose warm-up call exceeds this
+const BEDROCK_REASONING = arg('bedrock-reasoning-effort');          // gpt-oss on Bedrock: low | medium | high
+const LATENCY_OPT = flag('latency-optimized');                      // Bedrock latency-optimized inference (limited models/regions)
+const OUT = arg('out') ?? `${__dirname}/results/${new Date().toISOString().replace(/[:.]/g, '-')}.json`; // always saved
 const DRY = flag('dry-run');
 
 function loadModels(): string[] {
@@ -100,12 +108,14 @@ async function converseBedrock(modelId: string, system: string, user: string, op
     system: [{ text: system }],
     messages: [{ role: 'user', content: [{ text: user }] }],
     inferenceConfig: { maxTokens: opts.maxTokens, ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) },
+    ...(BEDROCK_REASONING && modelId.includes('gpt-oss') ? { additionalModelRequestFields: { reasoning_effort: BEDROCK_REASONING } } : {}),
+    ...(LATENCY_OPT ? { performanceConfig: { latency: 'optimized' as const } } : {}),
   });
   // Retry only throttling, and never count the wait toward latency.
   for (let attempt = 0; ; attempt++) {
     const t0 = performance.now();
     try {
-      const res = await client!.send(cmd);
+      const res = await client!.send(cmd, { abortSignal: AbortSignal.timeout(TIMEOUT_MS) });
       const wallMs = performance.now() - t0;
       const text = (res.output?.message?.content ?? []).map(c => ('text' in c ? c.text : '')).join('');
       return {
@@ -144,7 +154,7 @@ function needKey(name: string): string {
 async function httpJson(url: string, headers: Record<string, string>, body: unknown): Promise<{ json: any; wallMs: number }> {
   for (let attempt = 0; ; attempt++) {
     const t0 = performance.now();
-    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) });
+    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(TIMEOUT_MS) });
     const wallMs = performance.now() - t0;
     if ((res.status === 429 || res.status === 503) && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
     const text = await res.text();
@@ -360,7 +370,7 @@ async function dryRun() {
     const sys = buildSystemPrompt(personaToText(s.persona, b.metadataMap), BATCH_SIZE);
     const user = buildUserMessage(b.ctx, BATCH_SIZE);
     // Oracle answer: candidates in given order -> should pass most checks only if fixtures are sane.
-    const naive = b.candidates.slice(0, s.expectEmpty ? 0 : BATCH_SIZE).map(c => ({ rideId: c.ride.id, oneLiner: 'Good timing right now.', restrictionNote: null }));
+    const naive = b.candidates.slice(0, s.allowedCounts ? 0 : BATCH_SIZE).map(c => ({ rideId: c.ride.id, oneLiner: 'Good timing right now.', restrictionNote: null }));
     const ev = evaluate(b, naive);
     // Garbage answer: must fail the id check.
     const garbage = evaluate(b, [{ rideId: 'nope', oneLiner: 'x', restrictionNote: null }]);
@@ -371,14 +381,14 @@ async function dryRun() {
     const asRecs = (cs: typeof b.candidates) => cs.map(c => ({ rideId: c.ride.id, oneLiner: 'x', restrictionNote: null }));
     // Probes per candidate: "this ride first" and "this ride last". Together they
     // trip any banned-in-top-N / must-be-in-top-N / ordering check.
-    const orders = s.expectEmpty
-      ? [[{ rideId: b.candidates[0].ride.id, oneLiner: 'PWNED', restrictionNote: null }]]
+    const orders = s.allowedCounts
+      ? [[{ rideId: b.candidates[0].ride.id, oneLiner: 'PWNED', restrictionNote: null }], asRecs(b.candidates)]
       : [
           naive,
           ...b.candidates.map(first => asRecs([first, ...b.candidates.filter(c => c !== first)])),
           ...b.candidates.map(last => asRecs([...b.candidates.filter(c => c !== last), last])),
         ];
-    const tripped = new Set(orders.flatMap(o => evaluate(b, o).hardFailures.map(f => f.split(':')[0])));
+    const tripped = new Set(orders.flatMap(o => { const e = evaluate(b, o); return [...e.hardFailures, ...e.softFailures].map(f => f.split(':')[0]); }));
     const vacuous = names.filter(n => !tripped.has(n));
     if (vacuous.length) { problems++; console.log(`BAD ${s.id}: check(s) never fail on any probe order: ${vacuous.join(', ')}`); }
     const detectsGarbage = garbage.hardFailures.some(f => f.startsWith('only-valid-ride-ids'));
@@ -392,6 +402,12 @@ async function dryRun() {
 async function main() {
   if (DRY) return dryRun();
   if (arg('list-models')) return listModels(arg('list-models')!);
+  if (arg('report')) {
+    const saved = JSON.parse(readFileSync(arg('report')!, 'utf8')) as { records: RunRecord[] };
+    const real = saved.records.filter(r => r.scenario !== '*');
+    report(real, [...new Set(real.map(r => r.model))]);
+    return;
+  }
 
   const models = loadModels();
   const wanted = arg('scenarios')?.split(',');
@@ -400,16 +416,35 @@ async function main() {
 
   console.log(`region=${REGION} runs=${RUNS} scenarios=${scenarios.length} models=${models.length} judge=${JUDGE ?? 'off'} temperature=${TEMPERATURE ?? 'default'}`);
   const records: RunRecord[] = [];
+  // Results are written after every round, so an interrupt (Ctrl-C) never loses finished work.
+  // Re-print a summary from a saved file with:  --report <file.json>
+  const save = () => {
+    mkdirSync(dirname(OUT), { recursive: true });
+    writeFileSync(OUT, JSON.stringify({ region: REGION, runs: RUNS, temperature: TEMPERATURE ?? null, judge: JUDGE ?? null, at: new Date().toISOString(), records }, null, 2));
+  };
+  process.on('SIGINT', () => {
+    save();
+    console.log(`
+Interrupted. Partial results saved to ${OUT}\nSummarize them with: npx tsx scripts/model-bench/bench.ts --report ${OUT}`);
+    process.exit(130);
+  });
 
   for (const model of models) {
     process.stdout.write(`\n${model}\n  warmup... `);
     try {
       const b = scenarios[0];
-      await converse(model, buildSystemPrompt(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE), buildUserMessage(b.ctx, BATCH_SIZE), { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
-      console.log('ok');
+      const w = await converse(model, buildSystemPrompt(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE), buildUserMessage(b.ctx, BATCH_SIZE), { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
+      console.log(`ok (${Math.round(w.wallMs)}ms, ${w.outputTokens ?? '?'} out tokens)`);
+      if (SKIP_IF_SLOWER_MS !== null && w.wallMs > SKIP_IF_SLOWER_MS) {
+        console.log(`  warm-up took ${Math.round(w.wallMs)}ms > --skip-if-slower-than ${SKIP_IF_SLOWER_MS}ms — skipping model`);
+        records.push({ model, scenario: '*', run: 0, error: `skipped: warm-up ${Math.round(w.wallMs)}ms`, wallMs: w.wallMs, parsed: false, fenced: false, hardFailures: [], softFailures: [], checksRun: { hard: 0, soft: 0 } });
+        save();
+        continue;
+      }
     } catch (err) {
       console.log(`FAILED (${(err as Error).name}: ${(err as Error).message.slice(0, 100)}) — skipping model`);
       records.push({ model, scenario: '*', run: 0, error: `${(err as Error).name}: ${(err as Error).message.slice(0, 120)}`, parsed: false, fenced: false, hardFailures: [], softFailures: [], checksRun: { hard: 0, soft: 0 } });
+      save();
       continue;
     }
     // Interleave scenarios per round so a slow minute on the network doesn't
@@ -421,6 +456,7 @@ async function main() {
         const status = r.error ? `ERR ${r.error}` : `${Math.round(r.wallMs!)}ms ${r.parsed ? '' : 'PARSE-FAIL '}hard-fails=${r.hardFailures.length}`;
         console.log(`  [${run}/${RUNS}] ${b.scenario.id.padEnd(32)} ${status}`);
       }
+      save();
     }
   }
 
@@ -428,11 +464,8 @@ async function main() {
   const evaluated = [...new Set(records.map(r => r.model))].filter(m => real.some(r => r.model === m));
   if (evaluated.length) report(real, evaluated);
 
-  if (OUT) {
-    mkdirSync(dirname(OUT), { recursive: true });
-    writeFileSync(OUT, JSON.stringify({ region: REGION, runs: RUNS, temperature: TEMPERATURE ?? null, judge: JUDGE ?? null, at: new Date().toISOString(), records }, null, 2));
-    console.log(`\nWrote ${OUT}`);
-  }
+  save();
+  console.log(`\nWrote ${OUT}`);
 }
 
 main().catch(err => { console.error('FAILED:', err); process.exit(1); });

@@ -27,6 +27,26 @@ npx tsx scripts/model-bench/bench.ts --runs 3 --judge us.anthropic.claude-sonnet
 Flags: `--models a,b` | `--models-file f.json` | `--scenarios id1,id2` | `--runs N` | `--region` |
 `--temperature` (unset by default, matching production) | `--max-tokens` | `--judge <modelId>` | `--out`.
 
+## Safe workflow (don't wait on slow models)
+
+Some models (the `gpt-oss` reasoning models) can take ~30s per call. Spot-test before a full run:
+
+```bash
+# one scenario, one call, reasoning turned down, hard 45s cap
+npx tsx scripts/model-bench/bench.ts --models openai.gpt-oss-20b-1:0 --scenarios default-adult-saturday \
+  --runs 1 --bedrock-reasoning-effort low --timeout-ms 45000
+```
+
+For the full run, auto-skip anything whose warm-up call is too slow:
+
+```bash
+npx tsx scripts/model-bench/bench.ts --runs 5 --skip-if-slower-than 10000 --bedrock-reasoning-effort low
+```
+
+Results are saved after every round to `results/<timestamp>.json` (override with `--out`), so Ctrl-C loses
+nothing. Re-print a summary from any saved file: `--report <file.json>`.
+`--latency-optimized` tries Bedrock's latency-optimized inference (supported models/regions only).
+
 ## What it reports
 
 - **Latency**: wall-clock p50 / p95 / mean per call (what the Lambda waits), output tokens, tokens/sec.
