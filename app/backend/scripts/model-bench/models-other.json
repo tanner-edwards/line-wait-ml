@@ -1,0 +1,45 @@
+{
+  "_comment": "Not run by default. Copy an entry into models.json (or pass --models) to try it.",
+  "models": [
+    {
+      "id": "us.amazon.nova-lite-v1:0",
+      "status": "dropped: unreliable (invented ride IDs, missed the star ride)"
+    },
+    {
+      "id": "us.amazon.nova-pro-v1:0",
+      "status": "dropped: slower than Llama 70B, invented ride IDs, weaker on ranking checks"
+    },
+    {
+      "id": "us.anthropic.claude-sonnet-4-5-20250929-v1:0",
+      "status": "unavailable: Bedrock marks it Legacy for this account"
+    },
+    {
+      "id": "us.anthropic.claude-3-5-haiku-20241022-v1:0",
+      "status": "unavailable: end of life"
+    },
+    {
+      "id": "us.anthropic.claude-3-haiku-20240307-v1:0",
+      "status": "never run: may also be end of life"
+    },
+    {
+      "id": "us.meta.llama3-1-8b-instruct-v1:0",
+      "status": "never run: untested, probably too weak for the ranking rules"
+    },
+    {
+      "id": "mistral.mistral-small-2402-v1:0",
+      "status": "invalid ID: find the real one with aws bedrock list-foundation-models"
+    },
+    {
+      "id": "google.gemma-3-12b-it",
+      "status": "never run: ID unverified"
+    },
+    {
+      "id": "openai.gpt-oss-120b-1:0",
+      "status": "dropped: 13s typical, reasoning tokens overflow the 2000-token cap"
+    },
+    {
+      "id": "openai.gpt-oss-20b-1:0",
+      "status": "dropped: 30s typical, 76% broken JSON"
+    }
+  ]
+}
