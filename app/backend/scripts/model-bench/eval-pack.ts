@@ -11,12 +11,15 @@
 //   # 3. Aggregate: joins scores back to model names (via the key) and to speed
 //   npx tsx scripts/model-bench/eval-pack.ts aggregate evaluation-key.json evalByClaude.json evalByNova.json
 //
+//   # 4. Readable Markdown report (scoreboard, agreement, scenario-by-scenario, quotes):
+//   npx tsx scripts/model-bench/eval-pack.ts report evaluation-key.json evalByClaude.json evalByGpt.json evalByGemini.json
+//
 // The pack hides model names and latency and shuffles answer order per
 // scenario, so evaluators can't be swayed by either. Keep evaluation-key.json
 // to yourself (don't give it to evaluators).
 
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { buildSystemPrompt } from '../../src/recommendations/promptBuilder';
 import { personaToText } from '../../src/recommendations/persona';
 import { BATCH_SIZE, ParsedRec, SCENARIOS, buildScenario } from './scenarios';
@@ -237,7 +240,18 @@ function extractJson(text: string): any {
   const a = text.indexOf('{');
   const z = text.lastIndexOf('}');
   if (a === -1 || z <= a) throw new Error('no JSON object found');
-  return JSON.parse(text.slice(a, z + 1));
+  const body = text.slice(a, z + 1);
+  try {
+    return JSON.parse(body);
+  } catch {
+    // Chat UIs sometimes mangle pasted JSON: HTML entities for spaces, markdown line-break
+    // backslashes, escaped punctuation. Strip those and retry.
+    const cleaned = body
+      .replace(/&#x20;|&nbsp;/g, ' ')
+      .replace(/&quot;/g, '\\"')
+      .replace(/\\(?![\\"\/bfnrtu])/g, '');
+    return JSON.parse(cleaned);
+  }
 }
 
 function aggregate(keyPath: string, evalPaths: string[]) {
@@ -302,14 +316,158 @@ function aggregate(keyPath: string, evalPaths: string[]) {
   }
 }
 
+
+// ----------------------------------------------------------------- report
+
+interface Ans { evaluator: string; scenario: string; model: string; g: number; r: number; c: number; k: number; o: number; issues: string }
+
+function collect(keyPath: string, evalPaths: string[]) {
+  const key = JSON.parse(readFileSync(keyPath, 'utf8')) as Key;
+  const answers: Ans[] = [];
+  const firsts: { evaluator: string; scenario: string; model: string }[] = [];
+  const evaluators: string[] = [];
+  for (const p of evalPaths) {
+    let ev: any;
+    try { ev = extractJson(readFileSync(p, 'utf8')); } catch (e) { console.warn(`Skipping ${p}: ${(e as Error).message}`); continue; }
+    let name = String(ev.evaluator ?? p);
+    while (evaluators.includes(name)) name += '*';
+    evaluators.push(name);
+    for (const sc of ev.scenarios ?? []) {
+      const labels = key.entries[sc.scenario];
+      if (!labels) continue;
+      for (const a of sc.answers ?? []) {
+        const model = labels[a.label];
+        if (!model || ![a.grounding, a.ranking, a.copy, a.constraints, a.overall].every(Number.isFinite)) continue;
+        answers.push({ evaluator: name, scenario: sc.scenario, model, g: a.grounding, r: a.ranking, c: a.copy, k: a.constraints, o: a.overall, issues: String(a.issues ?? '') });
+      }
+      const f = Array.isArray(sc.ranking_order) ? labels[sc.ranking_order[0]] : undefined;
+      if (f) firsts.push({ evaluator: name, scenario: sc.scenario, model: f });
+    }
+  }
+  if (!evaluators.length) throw new Error('No evaluation files could be read.');
+  return { key, answers, firsts, evaluators };
+}
+
+const avg = (xs: number[]) => (xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : NaN);
+const f1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : '-');
+const short = (m: string) => m.replace(/^(us|eu|apac)\./, '').replace(/-v\d+:\d+$/, '');
+const clip = (t: string, n = 110) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
+
+function report(keyPath: string, evalPaths: string[], outPath: string) {
+  const { key, answers, firsts, evaluators } = collect(keyPath, evalPaths);
+  const models = [...new Set(answers.map(a => a.model))];
+  const scenarios = Object.keys(key.entries);
+  const L: string[] = [];
+
+  const per = models.map(m => {
+    const a = answers.filter(x => x.model === m);
+    // consensus wins: scenario where this model has the top mean overall
+    let wins = 0;
+    for (const sc of scenarios) {
+      const means = models.map(mm => ({ mm, v: avg(answers.filter(x => x.model === mm && x.scenario === sc).map(x => x.o)) })).filter(x => Number.isFinite(x.v));
+      if (!means.length) continue;
+      const top = Math.max(...means.map(x => x.v));
+      if (means.some(x => x.mm === m && x.v === top)) wins++;
+    }
+    return { m, n: new Set(a.map(x => x.scenario)).size, o: avg(a.map(x => x.o)), g: avg(a.map(x => x.g)), r: avg(a.map(x => x.r)), c: avg(a.map(x => x.c)), k: avg(a.map(x => x.k)), wins, p50: key.modelStats[m]?.p50Ms ?? null, rules: key.modelStats[m]?.hardPassPct ?? null };
+  }).sort((x, y) => y.o - x.o);
+
+  L.push('# Model evaluation report', '');
+  L.push(`Evaluators: **${evaluators.join(', ')}** | Models: **${models.length}** | Scenarios: **${scenarios.length}**`, '');
+  L.push('_Scores are 1 (bad) to 5 (excellent), averaged across evaluators. Each model is judged on one answer per scenario (blind: names and speed were hidden from evaluators). Treat gaps under about 0.4 as ties._', '');
+
+  // ---- bottom line
+  const best = per[0];
+  const fastest = [...per].filter(p => p.p50 != null).sort((a, b) => a.p50! - b.p50!)[0];
+  const nearBest = per.filter(p => p.p50 != null && p.o >= best.o - 0.5).sort((a, b) => a.p50! - b.p50!)[0];
+  L.push('## Bottom line', '');
+  L.push(`- **Best advice quality:** ${short(best.m)} (${f1(best.o)}/5)${best.p50 ? `, ${(best.p50 / 1000).toFixed(1)}s typical response` : ''}.`);
+  if (fastest) L.push(`- **Fastest:** ${short(fastest.m)} (${(fastest.p50! / 1000).toFixed(1)}s), quality ${f1(fastest.o)}/5${fastest.m === best.m ? ' — also the best quality' : `, ${f1(best.o - fastest.o)} below the best`}.`);
+  if (nearBest) L.push(`- **Fastest within 0.5 points of the best quality:** ${short(nearBest.m)} (${(nearBest.p50! / 1000).toFixed(1)}s, ${f1(nearBest.o)}/5). This is the "fast but still good" pick.`);
+  L.push('');
+
+  // ---- scoreboard
+  L.push('## Scoreboard', '');
+  L.push('| Model | Typical speed | Rule checks passed | **Overall** | Accuracy | Ranking | Copy | Constraints | Scenarios won (of rated) |');
+  L.push('|---|---|---|---|---|---|---|---|---|');
+  for (const p of per) L.push(`| ${short(p.m)} | ${p.p50 ? `${(p.p50 / 1000).toFixed(1)}s` : '-'} | ${p.rules != null ? p.rules + '%' : '-'} | **${f1(p.o)}** | ${f1(p.g)} | ${f1(p.r)} | ${f1(p.c)} | ${f1(p.k)} | ${p.wins}/${p.n} |`);
+  L.push('', '_Accuracy = captions match the data. Ranking = right picks/order for the guest. Copy = tone, concision, no restating numbers. Constraints = rules and guest needs respected. "Scenarios won" = highest average overall score in that scenario (ties count for both)._', '');
+
+  // ---- evaluator agreement
+  L.push('## Do the evaluators agree?', '');
+  L.push('| Evaluator | Average overall score they gave | Strictness |', '|---|---|---|');
+  const allMean = avg(answers.map(a => a.o));
+  for (const e of evaluators) {
+    const mu = avg(answers.filter(a => a.evaluator === e).map(a => a.o));
+    L.push(`| ${e} | ${f1(mu)} | ${mu > allMean + 0.3 ? 'generous' : mu < allMean - 0.3 ? 'strict' : 'typical'} |`);
+  }
+  L.push('');
+  if (evaluators.length > 1) {
+    L.push('| Pair | Gave the same overall score | Within 1 point | Same favorite answer |', '|---|---|---|---|');
+    for (let i = 0; i < evaluators.length; i++) for (let j = i + 1; j < evaluators.length; j++) {
+      const pairs: [number, number][] = [];
+      for (const a of answers.filter(x => x.evaluator === evaluators[i])) {
+        const b = answers.find(x => x.evaluator === evaluators[j] && x.scenario === a.scenario && x.model === a.model);
+        if (b) pairs.push([a.o, b.o]);
+      }
+      const same = pairs.filter(([x, y]) => x === y).length, close = pairs.filter(([x, y]) => Math.abs(x - y) <= 1).length;
+      const fi = firsts.filter(f => f.evaluator === evaluators[i]), fj = firsts.filter(f => f.evaluator === evaluators[j]);
+      const common = fi.filter(f => fj.some(g => g.scenario === f.scenario));
+      const agreeFav = common.filter(f => fj.find(g => g.scenario === f.scenario)!.model === f.model).length;
+      L.push(`| ${evaluators[i]} vs ${evaluators[j]} | ${pairs.length ? Math.round((100 * same) / pairs.length) : 0}% | ${pairs.length ? Math.round((100 * close) / pairs.length) : 0}% | ${agreeFav}/${common.length} scenarios |`);
+    }
+    L.push('');
+  }
+
+  // ---- scenario by scenario
+  L.push('## Scenario by scenario', '');
+  const SC_TITLE: Record<string, string> = {};
+  for (const s of SCENARIOS) SC_TITLE[s.id] = s.description;
+  for (const sc of scenarios) {
+    const rows = models.map(m => {
+      const a = answers.filter(x => x.model === m && x.scenario === sc);
+      if (!a.length) return null;
+      const worst = [...a].sort((x, y) => x.o - y.o)[0];
+      const issue = [...a].sort((x, y) => x.o - y.o).map(x => x.issues).find(t => t && !/^none\.?$/i.test(t)) ?? 'none';
+      return { m, o: avg(a.map(x => x.o)), per: evaluators.map(e => a.find(x => x.evaluator === e)?.o ?? NaN), issue, worstEval: worst.evaluator };
+    }).filter((x): x is NonNullable<typeof x> => x !== null).sort((x, y) => y.o - x.o);
+    L.push(`### ${sc}`, '', `_${SC_TITLE[sc] ?? ''}_`, '');
+    L.push(`| Model | Average | ${evaluators.map(e => e.split(' ')[0]).join(' | ')} | Main criticism |`, `|---|---|${evaluators.map(() => '---').join('|')}|---|`);
+    for (const r of rows) L.push(`| ${short(r.m)} | **${f1(r.o)}** | ${r.per.map(f1).join(' | ')} | ${clip(r.issue)} |`);
+    L.push('');
+  }
+
+  // ---- per model
+  L.push('## What evaluators said about each model', '');
+  for (const p of per) {
+    const a = answers.filter(x => x.model === p.m && !/^none\.?$/i.test(x.issues) && x.issues).sort((x, y) => x.o - y.o).slice(0, 4);
+    L.push(`### ${short(p.m)} (${f1(p.o)}/5)`, '');
+    if (!a.length) L.push('- No complaints recorded.');
+    for (const x of a) L.push(`- _${x.scenario}_ (${x.evaluator.split(' ')[0]}, ${x.o}/5): ${clip(x.issues, 160)}`);
+    L.push('');
+  }
+
+  L.push('## How much to trust this', '');
+  L.push(`- Small sample: ${scenarios.length} scenarios, one answer per model each. Differences under about 0.4 points are noise.`);
+  L.push('- AI evaluators can favor writing that resembles their own. Check whether the Claude-family evaluator ranks Claude models noticeably higher than the others do.');
+  L.push('- A model with no usable answer in a scenario (for example, broken JSON) is not scored there, which flatters its average. Compare the "of rated" counts above, and read them alongside the benchmark\'s JSON-valid rate.');
+  L.push('- Evaluators can be wrong about facts. Use the "Main criticism" notes to spot-check against the ride data in `evaluation-pack.md`.');
+  L.push('- Speed and "rule checks passed" come from the benchmark run, not from the evaluators.', '');
+
+  writeFileSync(outPath, L.join('\n'));
+  console.log(`Wrote ${outPath}`);
+}
+
 // ------------------------------------------------------------------- main
 
 const [cmd, ...rest] = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !(i > 0 && all[i - 1].startsWith('--')));
 if (cmd === 'build' && rest[0]) {
   build(rest, arg('out-dir', join(__dirname, 'results', 'pack'))!, Number(arg('seed', '1')), arg('models')?.split(','));
+} else if (cmd === 'report' && rest.length >= 2) {
+  report(rest[0], rest.slice(1), arg('out', join(dirname(rest[0]), 'evaluation-report.md'))!);
 } else if (cmd === 'aggregate' && rest.length >= 2) {
   aggregate(rest[0], rest.slice(1));
 } else {
-  console.error('Usage:\n  eval-pack.ts build <results.json> [more.json ...] [--out-dir d] [--seed n] [--models a,b]\n  eval-pack.ts aggregate <evaluation-key.json> <eval1.json> [eval2.json ...]');
+  console.error('Usage:\n  eval-pack.ts build <results.json> [more.json ...] [--out-dir d] [--seed n] [--models a,b]\n  eval-pack.ts aggregate <evaluation-key.json> <eval1.json> [eval2.json ...]\n  eval-pack.ts report <evaluation-key.json> <eval1.json> [eval2.json ...] [--out report.md]  (readable Markdown report)');
   process.exit(2);
 }

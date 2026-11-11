@@ -86,6 +86,14 @@ npx tsx scripts/model-bench/eval-pack.ts build scripts/model-bench/results/<run>
 npx tsx scripts/model-bench/eval-pack.ts aggregate scripts/model-bench/results/pack/evaluation-key.json evalClaude.json evalNova.json
 ```
 
+For a readable Markdown report (scoreboard, evaluator agreement, scenario-by-scenario table, quotes per model):
+
+```bash
+npx tsx scripts/model-bench/eval-pack.ts report scripts/model-bench/results/pack/evaluation-key.json evalClaude.json evalGpt.json evalGemini.json
+```
+
+Replies pasted from chat UIs with stray `&#x20;` or trailing backslashes are cleaned automatically.
+
 Keep `evaluation-key.json` away from evaluators. Scores: grounding, ranking, copy, constraints, overall (1-5).
 Disagreement between evaluators is a signal to read the pack yourself. Pack uses each model's first run per
 scenario; use `--models a,b` to limit the models included and `--seed n` to reshuffle labels.
