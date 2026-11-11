@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from 'react-native';
-import { Bookmark, Clock, LocateFixed, LocateOff, MapPin, MapPinOff, SearchX } from 'lucide-react-native';
+import { Bell, Clock, LocateFixed, LocateOff, MapPin, MapPinOff, SearchX } from 'lucide-react-native';
 import { StateBlock } from '../components/StateBlock';
 import { colors, radius } from '../theme/tokens';
 import {
@@ -25,7 +25,7 @@ import { formatHHMM, olderLastUpdated } from '../timestamp';
 import { TimeTravelModal } from '../components/TimeTravelModal';
 import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
-import { GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
+import { ContentPanel, GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
 import { RideRow } from '../components/RideRow';
 import { SearchField } from '../components/SearchField';
 import { DiscoverChip, DiscoverChips } from '../components/DiscoverChips';
@@ -40,13 +40,9 @@ import { usePersona } from '../context/PersonaContext';
 import { filterByDailyParks } from '../utils/parkFilter';
 import { CombinedResponse, Persona, Ride } from '../types';
 
-// Keeps rides matching `keep`; drops park headers left with no rides. Errored
-// park headers always stay — they carry the "data unavailable" notice.
+// Keeps rides matching `keep` (flattenSorted output has no headers).
 function filterRides(items: ListItem[], keep: (ride: Ride) => boolean): ListItem[] {
-  const kept = items.filter(item => item.kind !== 'ride' || keep(item.ride));
-  return kept.filter((item, i) =>
-    item.kind !== 'park-header' || item.errored || kept[i + 1]?.kind === 'ride'
-  );
+  return items.filter(item => item.kind !== 'ride' || keep(item.ride));
 }
 
 export function Home() {
@@ -188,14 +184,18 @@ export function Home() {
             <NotificationBellButton />
           </>
         }
+        bottom={
+          <SearchField
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            placeholder="Search for an attraction…"
+            containerStyle={styles.search}
+            testID="home-search"
+          />
+        }
+        panelBelow
       />
-      <SearchField
-        value={searchQuery}
-        onChangeText={setSearchQuery}
-        placeholder="Search attractions"
-        containerStyle={styles.search}
-        testID="home-search"
-      />
+      <ContentPanel>
       <DiscoverChips
         active={chip}
         landLabel={selectedLand}
@@ -241,7 +241,7 @@ export function Home() {
             />
           ) : chip === 'list' ? (
             <StateBlock
-              icon={<Bookmark size={48} color={colors.textTertiary} />}
+              icon={<Bell size={48} color={colors.textTertiary} />}
               title="Your list is empty"
               body="Tap Watch on a ride to add it here."
               testID="list-empty-state"
@@ -254,6 +254,7 @@ export function Home() {
         ]}
       />
       )}
+      </ContentPanel>
       <SortMenu
         visible={showSortMenu}
         current={chip ? undefined : sortBy}
@@ -391,13 +392,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bg },
   emptyListContent: { flexGrow: 1 },
   listContent: { paddingBottom: 16 },
-  // Pill shape carried over from the old floating search bar.
+  // White pill on the green header (pill shape from the old floating bar).
   search: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 12,
     borderRadius: radius.pill,
-    borderColor: colors.borderStrong,
+    borderColor: 'transparent',
   },
   center: {
     flex: 1,

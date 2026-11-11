@@ -158,9 +158,10 @@ function compareOpportunity(
 }
 
 /**
- * Flattens the response into a park-grouped, land-free sorted list.
- * Park headers are preserved; land headers are omitted.
- * `origin` is required only for 'distance' sort — pass null otherwise.
+ * Flattens the response into one sorted ride list across every park — no
+ * park or land headers (the A–Z view, flattenForList, is the grouped one).
+ * Errored parks contribute nothing; Home's error banner names them.
+ * `origin` is required only for 'distance' / 'nearby' — pass null otherwise.
  */
 export function flattenSorted(
   response: CombinedResponse,
@@ -168,19 +169,9 @@ export function flattenSorted(
   origin: { lat: number; lng: number } | null,
   persona: Persona | null = null
 ): ListItem[] {
-  const items: ListItem[] = [];
-
-  for (const entry of response.parks) {
-    items.push({
-      kind: 'park-header',
-      key: `park:${entry.park}`,
-      park: entry.park,
-      errored: isParkError(entry),
-    });
-
-    if (isParkError(entry)) continue;
-
-    const sorted = [...entry.rides].sort((a, b) => {
+  const rides = successfulParks(response).flatMap(p => p.rides.map(ride => ({ park: p.park, ride })));
+  return rides
+    .sort(({ ride: a }, { ride: b }) => {
       if (sortBy === 'opportunity') return compareOpportunity(a, b, origin, persona);
       if (sortBy === 'nearby' && origin) {
         // Bucket by the walk minutes the row displays — raw meters almost
@@ -216,14 +207,8 @@ export function flattenSorted(
         return aDist !== bDist ? aDist - bDist : a.name.localeCompare(b.name);
       }
       return a.name.localeCompare(b.name);
-    });
-
-    for (const ride of sorted) {
-      items.push({ kind: 'ride', key: `ride:${entry.park}:${ride.id}`, ride });
-    }
-  }
-
-  return items;
+    })
+    .map(({ park, ride }) => ({ kind: 'ride' as const, key: `ride:${park}:${ride.id}`, ride }));
 }
 
 /** Discover's Nearby chip: rides within this walk... */

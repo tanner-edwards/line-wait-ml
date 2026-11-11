@@ -204,17 +204,17 @@ describe('Home — initial successful load', () => {
     // After load, the loaded view appears
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    // Park headers still render in opportunity-sort mode; land headers do
-    // not (flattenSorted emits flat rides under each park header).
-    expect(screen.getByTestId('park-Disneyland')).toBeTruthy();
-    expect(screen.getByTestId('park-Disney California Adventure')).toBeTruthy();
+    // Sorted/chip views are one flat list — no park or land headers (only
+    // the A–Z sort groups by park and land).
+    expect(screen.queryByTestId('park-Disneyland')).toBeNull();
+    expect(screen.queryByTestId('park-Disney California Adventure')).toBeNull();
     expect(screen.queryByTestId('land-Fantasyland')).toBeNull();
     expect(screen.queryByTestId('land-Tomorrowland')).toBeNull();
     expect(screen.queryByTestId('land-Cars Land')).toBeNull();
 
     // Ride rows render with the right labels
     expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();
-    expect(screen.getByText('55')).toBeTruthy();
+    expect(screen.getByText('55 min wait')).toBeTruthy();
 
     // Missing wait renders as "—"
     expect(screen.getByText('Snow White')).toBeTruthy();
@@ -286,8 +286,8 @@ describe('Home — partial failure', () => {
 
     // DL rides still render
     expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();
-    // DCA header still appears, marked errored
-    expect(screen.getByTestId('park-Disney California Adventure')).toBeTruthy();
+    // No park headers in the default view — the banner carries the failure.
+    expect(screen.queryByTestId('park-Disney California Adventure')).toBeNull();
   });
 });
 
@@ -331,7 +331,7 @@ describe('Home — v1 historical-context indicators', () => {
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByText('40')).toBeTruthy();
+    expect(screen.getByText('40 min wait')).toBeTruthy();
     expect(screen.queryByTestId('trend-arrow-down')).toBeNull();
     expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
     expect(screen.queryByTestId('trend-arrow-stable')).toBeNull();
@@ -339,54 +339,27 @@ describe('Home — v1 historical-context indicators', () => {
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
   });
 
-  // The row trend is sourced from the ML prediction's trend, gated by
-  // confidence. Only the trend field matters here (confidence 'high' so it
-  // isn't gated out).
+  // Rows dropped the trend label in the phase-3 redesign (ride detail keeps
+  // it) — a falling or rising trajectory must not show on the row.
   const predictionWithTrend = (trend: Prediction['trend']): Prediction => ({
     t10: 0, t20: 0, t30: 0, t40: 0, t50: 0, t60: 0, t90: 0, t120: 0, t150: 0,
     trend, trendDelta30: 0, confidence: 'high', updatedAt: 't',
   });
 
-  it('shows Dropping ↓ when the verdict trajectory is falling', async () => {
+  it.each(['falling', 'rising'] as const)('shows no trend on the row when the trajectory is %s', async (trend) => {
     mockFetchWaits.mockResolvedValue(
       singleRideResponse({
         id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 50, prediction: predictionWithTrend('falling'),
+        status: 'OPERATING', currentWait: 50, prediction: predictionWithTrend(trend),
       })
     );
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByTestId('trend-arrow-down')).toBeTruthy();
-    expect(screen.getByText('Dropping')).toBeTruthy();
-  });
-
-  it('shows Rising ↑ when the verdict trajectory is rising', async () => {
-    mockFetchWaits.mockResolvedValue(
-      singleRideResponse({
-        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 30, prediction: predictionWithTrend('rising'),
-      })
-    );
-    renderHome();
-    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
-
-    expect(screen.getByTestId('trend-arrow-up')).toBeTruthy();
-    expect(screen.getByText('Rising')).toBeTruthy();
-  });
-
-  it('suppresses the trend arrow when the trajectory is stable', async () => {
-    mockFetchWaits.mockResolvedValue(
-      singleRideResponse({
-        id: 'space', name: 'Hyperspace Mountain', land: 'Tomorrowland',
-        status: 'OPERATING', currentWait: 30, prediction: predictionWithTrend('stable'),
-      })
-    );
-    renderHome();
-    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
-
-    expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
     expect(screen.queryByTestId('trend-arrow-down')).toBeNull();
+    expect(screen.queryByTestId('trend-arrow-up')).toBeNull();
+    expect(screen.queryByText('Dropping')).toBeNull();
+    expect(screen.queryByText('Rising')).toBeNull();
   });
 
   it('the wait number is a neutral fact — below/above-normal badges are gone', async () => {
@@ -401,7 +374,7 @@ describe('Home — v1 historical-context indicators', () => {
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    expect(screen.getByText('10')).toBeTruthy();
+    expect(screen.getByText('10 min wait')).toBeTruthy();
     expect(screen.queryByTestId('below-normal-badge')).toBeNull();
     expect(screen.queryByTestId('above-normal-badge')).toBeNull();
   });
@@ -540,6 +513,18 @@ describe('Discover — chips', () => {
 
     expect(screen.getByTestId('list-empty-state')).toBeTruthy();
     expect(screen.queryByText('Hyperspace Mountain')).toBeNull();
+  });
+
+  it('A–Z by land is the grouped full list with park and land headers', async () => {
+    mockFetchWaits.mockResolvedValue(happyResponse);
+    renderHome();
+    await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
+
+    fireEvent.press(screen.getByTestId('sort-button'));
+    fireEvent.press(screen.getByText('A–Z by land'));
+
+    expect(screen.getByTestId('park-Disneyland')).toBeTruthy();
+    expect(screen.getByTestId('land-Fantasyland')).toBeTruthy();
   });
 
   it('picking a sort clears the Nearby chip and restores the list', async () => {

@@ -9,7 +9,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { CircleAlert, ListChecks } from 'lucide-react-native';
-import { GradientHeader } from '../components/GradientHeader';
+import { ContentPanel, GradientHeader } from '../components/GradientHeader';
 import { RecommendationCard } from '../components/RecommendationCard';
 import { StateBlock } from '../components/StateBlock';
 import { UndoToast } from '../components/UndoToast';
@@ -53,6 +53,7 @@ export function MoreToConsider(): React.ReactElement {
       title="More to Consider"
       subtitle="Additional recommendations for right now."
       back={{ label: 'Recommendations', onPress: () => navigation.goBack() }}
+      panelBelow
     />
   );
 
@@ -60,12 +61,14 @@ export function MoreToConsider(): React.ReactElement {
     return (
       <SafeAreaView style={styles.container} testID="more-no-recs">
         {header}
-        <StateBlock
-          icon={<CircleAlert size={48} color={colors.textTertiary} />}
-          title="No recommendations loaded"
-          body="Head back to Recommendations to get fresh picks."
-          action={{ label: 'Back', onPress: () => navigation.goBack() }}
-        />
+        <ContentPanel>
+          <StateBlock
+            icon={<CircleAlert size={48} color={colors.textTertiary} />}
+            title="No recommendations loaded"
+            body="Head back to Recommendations to get fresh picks."
+            action={{ label: 'Back', onPress: () => navigation.goBack() }}
+          />
+        </ContentPanel>
       </SafeAreaView>
     );
   }
@@ -73,6 +76,7 @@ export function MoreToConsider(): React.ReactElement {
   return (
     <SafeAreaView style={styles.container} testID="more-loaded">
       {header}
+      <ContentPanel>
       <FlatList
         data={extraRecs}
         keyExtractor={r => r.rideId}
@@ -124,6 +128,7 @@ export function MoreToConsider(): React.ReactElement {
           ) : null
         }
       />
+      </ContentPanel>
       {undoToast ? (
         <UndoToast
           key={undoToast.key}

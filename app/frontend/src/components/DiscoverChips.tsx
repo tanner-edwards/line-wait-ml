@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { Pressable, ScrollView, StyleSheet, Text } from 'react-native';
-import { Bookmark, Castle, MapPin } from 'lucide-react-native';
+import { Bell, Castle, ChevronDown, MapPin } from 'lucide-react-native';
 import { colors, fonts, spacing } from '../theme/tokens';
 
 export type DiscoverChip = 'nearby' | 'land' | 'list';
@@ -31,10 +31,12 @@ export function DiscoverChips({ active, landLabel, onNearby, onLand, onList }: P
         icon={Castle}
         label={active === 'land' && landLabel ? landLabel : 'By Land'}
         active={active === 'land'}
+        dropdown
         onPress={onLand}
         testID="chip-land"
       />
-      <Chip icon={Bookmark} label="Your List" active={active === 'list'} onPress={onList} testID="chip-list" />
+      {/* Bell, not heart/bookmark — matches Watch everywhere else. */}
+      <Chip icon={Bell} label="Your List" active={active === 'list'} onPress={onList} testID="chip-list" />
     </ScrollView>
   );
 }
@@ -43,12 +45,15 @@ function Chip({
   icon: Icon,
   label,
   active,
+  dropdown = false,
   onPress,
   testID,
 }: {
   icon: typeof MapPin;
   label: string;
   active: boolean;
+  /** Trailing chevron — the chip opens a picker rather than toggling. */
+  dropdown?: boolean;
   onPress: () => void;
   testID: string;
 }) {
@@ -63,6 +68,7 @@ function Chip({
     >
       <Icon size={16} color={fg} />
       <Text style={[styles.label, { color: fg }]} numberOfLines={1}>{label}</Text>
+      {dropdown ? <ChevronDown size={16} color={fg} /> : null}
     </Pressable>
   );
 }
@@ -74,7 +80,8 @@ const styles = StyleSheet.create({
   row: {
     gap: spacing.sm,
     paddingHorizontal: spacing.base,
-    paddingBottom: spacing.md,
+    paddingTop: spacing.base,
+    paddingBottom: spacing.sm,
   },
   chip: {
     flexDirection: 'row',

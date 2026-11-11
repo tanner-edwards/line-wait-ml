@@ -19,11 +19,16 @@ interface GradientHeaderProps {
   right?: React.ReactNode;
   /** Pushed screens: shows "‹ backLabel" above the title. */
   back?: { label: string; onPress: () => void };
+  /** Full-width content under the title row, inside the green (e.g. search). */
+  bottom?: React.ReactNode;
+  /** Set when a ContentPanel follows — extends the green so the panel's
+   *  rounded top can overlap it without covering header content. */
+  panelBelow?: boolean;
 }
 
-export function GradientHeader({ title, subtitle, right, back }: GradientHeaderProps): React.ReactElement {
+export function GradientHeader({ title, subtitle, right, back, bottom, panelBelow }: GradientHeaderProps): React.ReactElement {
   return (
-    <View style={styles.header}>
+    <View style={[styles.header, panelBelow && styles.headerWithPanel]}>
       {back ? (
         <Pressable
           accessibilityRole="button"
@@ -49,8 +54,21 @@ export function GradientHeader({ title, subtitle, right, back }: GradientHeaderP
         </View>
         {right != null ? <View style={styles.right}>{right}</View> : null}
       </View>
+      {bottom != null ? <View style={styles.bottom}>{bottom}</View> : null}
     </View>
   );
+}
+
+/** How far a ContentPanel's rounded top tucks up under the header. */
+export const PANEL_OVERLAP = 20;
+
+/**
+ * Cream content area with a rounded top that overlaps the green header above
+ * it. Pair with <GradientHeader panelBelow>. Clips scrolled content to the
+ * rounded corners.
+ */
+export function ContentPanel({ children }: { children: React.ReactNode }): React.ReactElement {
+  return <View style={styles.panel}>{children}</View>;
 }
 
 export const gradientHeaderTextStyles = StyleSheet.create({
@@ -75,6 +93,12 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xs,
     paddingBottom: spacing.base,
   },
+  headerWithPanel: {
+    paddingBottom: spacing.base + PANEL_OVERLAP,
+  },
+  bottom: {
+    marginTop: spacing.base,
+  },
   inner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -88,6 +112,14 @@ const styles = StyleSheet.create({
     ...typography.caption,
     color: colors.textInverseMuted,
     marginTop: spacing.xs,
+  },
+  panel: {
+    flex: 1,
+    marginTop: -PANEL_OVERLAP,
+    backgroundColor: colors.bg,
+    borderTopLeftRadius: PANEL_OVERLAP,
+    borderTopRightRadius: PANEL_OVERLAP,
+    overflow: 'hidden',
   },
   back: {
     flexDirection: 'row',

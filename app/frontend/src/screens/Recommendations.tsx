@@ -38,7 +38,7 @@ import { RecommendationTile } from '../components/RecommendationTile';
 import { useRecs } from '../context/RecsContext';
 import { UndoToast } from '../components/UndoToast';
 import { NotificationBellButton } from '../components/NotificationBellButton';
-import { GradientHeader } from '../components/GradientHeader';
+import { ContentPanel, GradientHeader } from '../components/GradientHeader';
 import { StateBlock } from '../components/StateBlock';
 import { ChevronRight, CircleAlert, Info, LocateFixed, LocateOff, MapPin, MapPinOff, MoonStar } from 'lucide-react-native';
 import { formatHHMM } from '../timestamp';
@@ -374,7 +374,10 @@ export function Recommendations(): React.ReactElement {
             <NotificationBellButton />
           )
         }
+        panelBelow
       />
+
+      <ContentPanel>
 
       {(status === 'idle' || status === 'locating') && !debugMode ? (
         <StateBlock
@@ -426,6 +429,7 @@ export function Recommendations(): React.ReactElement {
           onRetire={handleRetire}
         />
       ) : null}
+      </ContentPanel>
 
       {undoToast ? (
         <UndoToast
