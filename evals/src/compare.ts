@@ -4,6 +4,7 @@
 //   npm run compare -- baseline short-ids            (variant names = their most recent saved run)
 //   npm run compare -- results/baseline-X.json results/short-ids-Y.json [--model <id>] [--pairs 3]
 //        [--judges idA,idB] [--out report.md] [--mock] [--max-judge-calls 400]
+//   --no-judge   speed + rule checks + caption stats only (no judge calls, free)
 //
 // How the judging works (to keep it trustworthy):
 //  - Blind: judges see "Answer X" / "Answer Y", never variant names.
@@ -16,7 +17,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
 import { buildSystemPrompt } from '../../app/backend/src/recommendations/promptBuilder';
-import { arg, EVALS_ROOT, PRODUCTION_MODEL, stamp } from './args';
+import { arg, flag, EVALS_ROOT, PRODUCTION_MODEL, stamp } from './args';
 import { converse, MOCK } from './llm';
 import { extractJson, mean, parseModelText, pct } from './parse';
 import { answerMarkdown, scenarioMarkdown } from './render';
@@ -81,6 +82,27 @@ function answerOf(r: Rec, variantId: string, b: BuiltScenario): ParsedRec[] | nu
   if (!p.recs) return null;
   const v = getVariant(variantId);
   return v.decode ? v.decode(p.recs, b) : p.recs;
+}
+
+/** What the captions actually look like: length, and which ones repeat (a sign of copied examples or boilerplate). */
+function captionStats(records: Rec[], variantId: string) {
+  const caps: string[] = [];
+  for (const sc of SCENARIOS) {
+    const b = buildScenario(sc);
+    for (const r of records.filter(x => x.scenario === sc.id)) {
+      const a = answerOf(r, variantId, b);
+      if (a) caps.push(...a.map(x => x.oneLiner.trim()));
+    }
+  }
+  const counts = new Map<string, number>();
+  for (const c of caps) counts.set(c.toLowerCase(), (counts.get(c.toLowerCase()) ?? 0) + 1);
+  return {
+    captions: caps.length,
+    meanChars: caps.length ? Math.round(mean(caps.map(c => c.length))) : NaN,
+    over80Pct: caps.length ? Math.round((100 * caps.filter(c => c.length > 80).length) / caps.length) : NaN,
+    distinct: counts.size,
+    topRepeated: [...counts].filter(([, n]) => n >= 3).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([text, n]) => ({ text, n })),
+  };
 }
 
 // ------------------------------------------------------------------ judging
@@ -165,6 +187,8 @@ async function main() {
   const judges = (arg('judges') ?? (JSON.parse(readFileSync(`${EVALS_ROOT}/config/judges.json`, 'utf8')) as { judges: string[] }).judges.join(',')).split(',').map(s => s.trim()).filter(Boolean);
   const base = load(files[0], model), cand = load(files[1], model);
   const bm = metrics(base.records), cm = metrics(cand.records);
+  const bc = captionStats(base.records, base.variantId), cc = captionStats(cand.records, cand.variantId);
+  const NO_JUDGE = flag('no-judge'); // speed, rule checks and caption stats only: no judge calls
 
   // build the list of judging tasks
   type Item = { b: BuiltScenario; base: ParsedRec[]; cand: ParsedRec[]; pair: number };
@@ -179,14 +203,14 @@ async function main() {
       else skipped++; // a side had no usable answer (broken JSON etc.): counted in rule checks, not judged
     }
   }
-  const calls = items.length * judges.length * 2;
+  const calls = NO_JUDGE ? 0 : items.length * judges.length * 2;
   const maxCalls = Number(arg('max-judge-calls', '400'));
   if (calls > maxCalls) throw new Error(`This would make ${calls} judge calls (limit ${maxCalls}). Lower --pairs or raise --max-judge-calls.`);
   console.log(`Comparing ${cand.variantId} (candidate) vs ${base.variantId} (baseline) on ${model}${MOCK ? '  [MOCK]' : ''}`);
   console.log(`${items.length} answer pairs x ${judges.length} judges x 2 orderings = ${calls} judge calls${skipped ? `  (${skipped} pairs skipped: one side had no usable answer)` : ''}`);
 
   const tasks: (() => Promise<Verdict | null>)[] = [];
-  for (const j of judges) for (const it of items) for (const first of [true, false]) tasks.push(() => judgeOnce(j, it.b, it.base, it.cand, first, it.pair));
+  for (const j of NO_JUDGE ? [] : judges) for (const it of items) for (const first of [true, false]) tasks.push(() => judgeOnce(j, it.b, it.base, it.cand, first, it.pair));
   const raw = await pool(tasks, 4);
   const verdicts = raw.filter((v): v is Verdict => v !== null);
   const failed = raw.length - verdicts.length;
@@ -237,6 +261,24 @@ async function main() {
   L.push(`| Hard rules passed | ${bm.hardPassPct}% | ${cm.hardPassPct}% | ${delta(bm.hardPassPct, cm.hardPassPct, ' pts')} |`);
   L.push(`| Copy rules passed | ${bm.softPassPct}% | ${cm.softPassPct}% | ${delta(bm.softPassPct, cm.softPassPct, ' pts')} |`);
   L.push(`| Calls / errors | ${bm.calls} / ${bm.errors} | ${cm.calls} / ${cm.errors} | |`, '');
+  L.push('## What the captions look like', '', '| | Baseline | Candidate |', '|---|---|---|');
+  L.push(`| Captions analysed | ${bc.captions} | ${cc.captions} |`);
+  L.push(`| Average length | ${bc.meanChars} chars | ${cc.meanChars} chars |`);
+  L.push(`| Over the 80-char limit | ${bc.over80Pct}% | ${cc.over80Pct}% |`);
+  L.push(`| Distinct captions | ${bc.distinct} | ${cc.distinct} |`, '');
+  for (const [name, st] of [['Baseline', bc], ['Candidate', cc]] as const) {
+    L.push(st.topRepeated.length ? `${name} captions used 3+ times: ${st.topRepeated.map(t => `"${t.text}" x${t.n}`).join(' | ')}` : `${name}: no caption repeated 3+ times.`, '');
+  }
+  if (NO_JUDGE) {
+    const outNJ = arg('out') ?? `${EVALS_ROOT}/results/stats-${cand.variantId}-vs-${base.variantId}-${stamp()}.md`;
+    mkdirSync(dirname(outNJ), { recursive: true });
+    writeFileSync(outNJ, L.join('\n'));
+    console.log(`Speed p50 ${bm.p50Ms}ms -> ${cm.p50Ms}ms (${pctDelta(bm.p50Ms, cm.p50Ms)}) | output tokens ${bm.outTokens} -> ${cm.outTokens} | hard rules ${bm.hardPassPct}% -> ${cm.hardPassPct}%`);
+    console.log(`Captions: avg ${bc.meanChars} -> ${cc.meanChars} chars | over 80: ${bc.over80Pct}% -> ${cc.over80Pct}% | distinct ${bc.distinct}/${bc.captions} -> ${cc.distinct}/${cc.captions}`);
+    for (const [name, st] of [['baseline', bc], ['candidate', cc]] as const) if (st.topRepeated.length) console.log(`Repeated in ${name}: ${st.topRepeated.map(t => `"${t.text}" x${t.n}`).join(' | ')}`);
+    console.log(`Wrote ${outNJ} (no judging)`);
+    return;
+  }
   L.push('## Advice quality (blind judges)', '');
   L.push(`Candidate **won ${wins}**, **lost ${losses}**, tied ${ties} (of ${outcomes.length} judged comparisons). Sign-test p = ${p.toFixed(3)} (rough).${agree != null ? ` Judges agreed on ${agree}% of comparisons.` : ''}${failed ? ` ${failed} judge replies were unusable.` : ''}`, '');
   L.push('| Axis | Candidate minus baseline (1-5 scale) |', '|---|---|');
@@ -267,10 +309,13 @@ async function main() {
     at: new Date().toISOString(), mock: MOCK, model, judges, judgeVersion: 2, verdict,
     baseline: { variant: base.variantId, file: files[0], ...bm }, candidate: { variant: cand.variantId, file: files[1], ...cm },
     judging: { wins, ties, losses, p, agreePct: agree, dimDelta, unusableReplies: failed },
+    captions: { baseline: bc, candidate: cc },
     byScenario: SCENARIOS.map(sc => { const os = outcomes.filter(o => o.scenario === sc.id); return { scenario: sc.id, wins: os.filter(o => o.result === 'candidate').length, ties: os.filter(o => o.result === 'tie').length, losses: os.filter(o => o.result === 'baseline').length }; }),
   }, null, 2));
   console.log(`\nVerdict: ${verdict}`);
   console.log(`Speed p50 ${bm.p50Ms}ms -> ${cm.p50Ms}ms (${pctDelta(bm.p50Ms, cm.p50Ms)}) | output tokens ${bm.outTokens} -> ${cm.outTokens} | hard rules ${bm.hardPassPct}% -> ${cm.hardPassPct}%`);
+  console.log(`Captions: avg ${bc.meanChars} -> ${cc.meanChars} chars | over 80: ${bc.over80Pct}% -> ${cc.over80Pct}% | distinct ${bc.distinct}/${bc.captions} -> ${cc.distinct}/${cc.captions}`);
+  for (const [name, st] of [['baseline', bc], ['candidate', cc]] as const) if (st.topRepeated.length) console.log(`Repeated in ${name}: ${st.topRepeated.map(t => `"${t.text}" x${t.n}`).join(' | ')}`);
   console.log(`Judges: candidate won ${wins}, lost ${losses}, tied ${ties}`);
   console.log(`Wrote ${out} (+ .json and -details.md with every judged pair)`);
 }

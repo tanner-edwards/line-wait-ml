@@ -6,6 +6,7 @@
   "scripts": {
     "bench": "tsx src/bench.ts",
     "compare": "tsx src/compare.ts",
+    "losses": "tsx src/losses.ts",
     "pack": "tsx src/eval-pack.ts",
     "dry-run": "tsx src/bench.ts --dry-run",
     "typecheck": "tsc --noEmit -p ."
