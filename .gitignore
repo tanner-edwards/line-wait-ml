@@ -21,3 +21,4 @@ served_history_cache.pkl
 history_raw/
 
 evals/results/
+evals/site/

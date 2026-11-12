@@ -35,12 +35,12 @@ import {
 
 // ---------------------------------------------------------------- CLI args
 
-const RUNS = Number(arg('runs', '3'));
+export const RUNS = Number(arg('runs', '3'));
 const MAX_TOKENS = Number(arg('max-tokens', '2000'));
 const TEMPERATURE = arg('temperature') !== undefined ? Number(arg('temperature')) : undefined; // unset = same as production
 const JUDGE = arg('judge'); // optional per-answer 1-5 grading by a Bedrock model (compare.ts is the better judge)
 const SKIP_IF_SLOWER_MS = arg('skip-if-slower-than') ? Number(arg('skip-if-slower-than')) : null; // skip a model whose warm-up call exceeds this
-const VARIANT = getVariant(arg('variant', 'baseline')!);
+export const VARIANT = getVariant(arg('variant', 'baseline')!);
 const OUT = arg('out') ?? `${EVALS_ROOT}/results/${VARIANT.id}-${stamp()}.json`; // always saved
 const DRY = flag('dry-run');
 
@@ -77,7 +77,7 @@ async function judge(b: BuiltScenario, userMsg: string, answer: string): Promise
 
 // ------------------------------------------------------------------ one run
 
-interface RunRecord {
+export interface RunRecord {
   model: string;
   scenario: string;
   run: number;
@@ -97,7 +97,7 @@ interface RunRecord {
   text?: string; // full model answer (spread in from the call result)
 }
 
-function evaluate(b: BuiltScenario, recs: ParsedRec[]) {
+export function evaluate(b: BuiltScenario, recs: ParsedRec[]) {
   const hardFailures: string[] = [];
   const softFailures: string[] = [];
   let hard = 0, soft = 0;
@@ -193,7 +193,7 @@ function report(records: RunRecord[], models: string[]) {
 }
 
 // Re-grade one saved record with the CURRENT scenario checks (no model call).
-function rescoreOne(r: RunRecord): RunRecord {
+export function rescoreOne(r: RunRecord): RunRecord {
   const text = r.text ?? r.rawText;
   const sc = SCENARIOS.find(x => x.id === r.scenario);
   if (r.error || !text || !sc) return r;
@@ -289,6 +289,15 @@ async function main() {
     return;
   }
 
+  const { records } = await generate();
+  const real = records.filter(r => r.scenario !== '*');
+  const evaluated = [...new Set(records.map(r => r.model))].filter(m => real.some(r => r.model === m));
+  if (evaluated.length) report(real, evaluated);
+  console.log(`\nWrote ${OUT}`);
+}
+
+/** Run every model x scenario x run for the selected variant; saves after each round. Used by `bench` and `eval`. */
+export async function generate(): Promise<{ file: string; records: RunRecord[] }> {
   const models = loadModels();
   const wanted = arg('scenarios')?.split(',');
   const scenarios = SCENARIOS.filter(s => !wanted || wanted.includes(s.id)).map(buildScenario);
@@ -305,7 +314,7 @@ async function main() {
   process.on('SIGINT', () => {
     save();
     console.log(`
-Interrupted. Partial results saved to ${OUT}\nSummarize them with: npx tsx scripts/model-bench/bench.ts --report ${OUT}`);
+Interrupted. Partial results saved to ${OUT}\nSummarize them with: npm run bench -- --report ${OUT}`);
     process.exit(130);
   });
 
@@ -340,12 +349,8 @@ Interrupted. Partial results saved to ${OUT}\nSummarize them with: npx tsx scrip
     }
   }
 
-  const real = records.filter(r => r.scenario !== '*');
-  const evaluated = [...new Set(records.map(r => r.model))].filter(m => real.some(r => r.model === m));
-  if (evaluated.length) report(real, evaluated);
-
   save();
-  console.log(`\nWrote ${OUT}`);
+  return { file: OUT, records };
 }
 
-main().catch(err => { console.error('FAILED:', err); process.exit(1); });
+if (require.main === module) main().catch(err => { console.error('FAILED:', err); process.exit(1); });

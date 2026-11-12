@@ -4,6 +4,7 @@
   "private": true,
   "description": "Repeatable evaluation harness for the /v2/recommendations LLM prompt (speed, rule checks, automated head-to-head judging). Not part of the app.",
   "scripts": {
+    "eval": "tsx src/eval.ts",
     "bench": "tsx src/bench.ts",
     "compare": "tsx src/compare.ts",
     "losses": "tsx src/losses.ts",

@@ -14,10 +14,10 @@
 //  - Pairs run k of baseline vs run k of candidate, per scenario, up to --pairs.
 // Writes <out>.md (human report) and <out>.json (machine-readable summary, for history/dashboards).
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname } from 'path';
 import { buildSystemPrompt } from '../../app/backend/src/recommendations/promptBuilder';
-import { arg, flag, EVALS_ROOT, PRODUCTION_MODEL, stamp } from './args';
+import { arg, flag, EVALS_ROOT, PRODUCTION_MODEL, resolveRun, stamp } from './args';
 import { converse, MOCK } from './llm';
 import { extractJson, mean, parseModelText, pct } from './parse';
 import { answerMarkdown, scenarioMarkdown } from './render';
@@ -36,19 +36,6 @@ const DIMS = ['grounding', 'ranking', 'copy', 'constraints'] as const;
 type Dim = (typeof DIMS)[number];
 
 // ------------------------------------------------------------------ load + metrics
-
-/** A results file path, or a variant name ("baseline") meaning that variant's most recent run in results/. */
-function resolveRun(a: string): string {
-  if (existsSync(a)) return a;
-  const dir = join(EVALS_ROOT, 'results');
-  if (existsSync(join(dir, a))) return join(dir, a);
-  const re = new RegExp(`^${a.replace(/[^a-zA-Z0-9-]/g, '')}-\\d{4}-\\d{2}-\\d{2}T.*\\.json$`);
-  const hits = existsSync(dir) ? readdirSync(dir).filter(f => re.test(f)).sort() : [];
-  if (!hits.length) throw new Error(`No results file or saved run found for "${a}". Run: npm run bench -- --variant ${a} --runs 5`);
-  const pick = join(dir, hits[hits.length - 1]);
-  console.log(`"${a}" -> ${pick}`);
-  return pick;
-}
 
 function load(path: string, model: string) {
   const f = JSON.parse(readFileSync(path, 'utf8')) as RunFile;

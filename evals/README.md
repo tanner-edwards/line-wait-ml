@@ -17,6 +17,28 @@ evals/
   results/           saved runs and reports (git-ignored)
 ```
 
+## Quick start: one command, one report
+
+```bash
+cd evals && npm install                 # once
+npm run eval -- --mock                  # try it free, offline (fake answers)
+npm run eval                            # real run: baseline prompt on Haiku, 3 runs, AI judges, HTML report
+npm run eval -- --from baseline         # judge + report your latest saved run, no new Haiku calls
+```
+
+It prints a 2-line summary and opens the report (on a Mac). Files:
+
+- `evals/site/runs/<run>.html`: one run. Headline numbers, where to look first (rule failures,
+  lowest-rated answers), and every scenario with each answer, its rule checks and the AI judges'
+  scores and reasons side by side.
+- `evals/site/index.html`: history of every run.
+
+`evals/site/` is a plain static folder (no scripts, no external requests), ready for GitHub Pages
+later. Note: Pages sites are usually public, and these pages include the full prompt and answers.
+
+Speed and rule checks are measured. AI judge scores are pointers: read their reasons next to the
+answers and decide whether you agree.
+
 ## Setup (once)
 
 ```bash
@@ -26,7 +48,7 @@ npm run dry-run                      # no AWS: checks fixtures, rule checks and 
 npm run bench -- --mock --runs 1     # whole pipeline offline with fake answers (free)
 ```
 
-## The loop: improve Haiku
+## Comparing two prompt variants (for later)
 
 ```bash
 # 1. Measure the current prompt (production model = Haiku 4.5)

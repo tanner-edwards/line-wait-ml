@@ -73,6 +73,10 @@ async function converseMock(system: string, user: string): Promise<CallResult> {
   if (/PAIRWISE JUDGE/.test(system)) {
     const w = ['X', 'Y', 'tie'][hash(user) % 3];
     text = JSON.stringify({ winner: w, x: { grounding: 3, ranking: 3, copy: 3, constraints: 4 }, y: { grounding: 3, ranking: 3, copy: 3, constraints: 4 }, reason: 'mock verdict' });
+  } else if (/ANSWER JUDGE/.test(system)) {
+    const h = hash(user);
+    const v = (k: number) => 2 + ((h >>> k) % 4); // 2..5
+    text = JSON.stringify({ grounding: v(0), ranking: v(3), copy: v(6), constraints: v(9), overall: v(12), summary: 'Mock judgement: picks are plausible but captions are generic.', problems: h % 2 ? ['Mock problem: caption restates the wait time'] : [] });
   } else if (/You grade a theme-park/.test(system)) {
     text = JSON.stringify({ ranking: 3, copy: 3, note: 'mock' });
   } else {
