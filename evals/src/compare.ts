@@ -1,6 +1,7 @@
 // Head-to-head comparison of two saved runs (baseline vs candidate prompt variant), fully automatic:
 //   speed + rule checks from the runs, quality from blind pairwise judging by Bedrock models.
 //
+//   npm run compare -- baseline short-ids            (variant names = their most recent saved run)
 //   npm run compare -- results/baseline-X.json results/short-ids-Y.json [--model <id>] [--pairs 3]
 //        [--judges idA,idB] [--out report.md] [--mock] [--max-judge-calls 400]
 //
@@ -12,8 +13,8 @@
 //  - Pairs run k of baseline vs run k of candidate, per scenario, up to --pairs.
 // Writes <out>.md (human report) and <out>.json (machine-readable summary, for history/dashboards).
 
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname } from 'path';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { dirname, join } from 'path';
 import { buildSystemPrompt } from '../../app/backend/src/recommendations/promptBuilder';
 import { arg, EVALS_ROOT, PRODUCTION_MODEL, stamp } from './args';
 import { converse, MOCK } from './llm';
@@ -34,6 +35,19 @@ const DIMS = ['grounding', 'ranking', 'copy', 'constraints'] as const;
 type Dim = (typeof DIMS)[number];
 
 // ------------------------------------------------------------------ load + metrics
+
+/** A results file path, or a variant name ("baseline") meaning that variant's most recent run in results/. */
+function resolveRun(a: string): string {
+  if (existsSync(a)) return a;
+  const dir = join(EVALS_ROOT, 'results');
+  if (existsSync(join(dir, a))) return join(dir, a);
+  const re = new RegExp(`^${a.replace(/[^a-zA-Z0-9-]/g, '')}-\\d{4}-\\d{2}-\\d{2}T.*\\.json$`);
+  const hits = existsSync(dir) ? readdirSync(dir).filter(f => re.test(f)).sort() : [];
+  if (!hits.length) throw new Error(`No results file or saved run found for "${a}". Run: npm run bench -- --variant ${a} --runs 5`);
+  const pick = join(dir, hits[hits.length - 1]);
+  console.log(`"${a}" -> ${pick}`);
+  return pick;
+}
 
 function load(path: string, model: string) {
   const f = JSON.parse(readFileSync(path, 'utf8')) as RunFile;
@@ -141,6 +155,8 @@ const pctDelta = (b: number, c: number) => (b ? `${c - b >= 0 ? '+' : ''}${(((c 
 async function main() {
   const files = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !(i > 0 && all[i - 1].startsWith('--')));
   if (files.length !== 2) { console.error('Usage: compare.ts <baseline-results.json> <candidate-results.json> [--model id] [--pairs 3] [--judges a,b] [--out report.md] [--mock]'); process.exit(2); }
+  files[0] = resolveRun(files[0]);
+  files[1] = resolveRun(files[1]);
   const model = arg('model', PRODUCTION_MODEL)!;
   const PAIRS = Number(arg('pairs', '3'));
   const judges = (arg('judges') ?? (JSON.parse(readFileSync(`${EVALS_ROOT}/config/judges.json`, 'utf8')) as { judges: string[] }).judges.join(',')).split(',').map(s => s.trim()).filter(Boolean);
