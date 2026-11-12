@@ -25,8 +25,12 @@ export function scenarioMarkdown(b: BuiltScenario): string[] {
   return md;
 }
 
-export function answerMarkdown(recs: ParsedRec[], b: BuiltScenario): string[] {
+/** `lengths` adds each caption's character count (flagged when over the 80-char card limit). */
+export function answerMarkdown(recs: ParsedRec[], b: BuiltScenario, opts: { lengths?: boolean } = {}): string[] {
   const names = new Map(b.candidates.map(c => [c.ride.id, c.ride.name]));
   if (!recs.length) return ['_(empty list: no recommendations)_'];
-  return recs.map((r, j) => `${j + 1}. **${names.get(r.rideId) ?? `UNKNOWN RIDE ID ${r.rideId}`}**: "${r.oneLiner}"${r.restrictionNote ? ` _(restriction note: ${r.restrictionNote})_` : ''}`);
+  return recs.map((r, j) => {
+    const len = opts.lengths ? ` [${r.oneLiner.length} chars${r.oneLiner.length > 80 ? ', OVER THE 80-CHAR LIMIT' : ''}]` : '';
+    return `${j + 1}. **${names.get(r.rideId) ?? `UNKNOWN RIDE ID ${r.rideId}`}**: "${r.oneLiner}"${len}${r.restrictionNote ? ` _(restriction note: ${r.restrictionNote})_` : ''}`;
+  });
 }
