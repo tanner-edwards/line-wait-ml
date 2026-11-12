@@ -247,9 +247,19 @@ async function main() {
     L.push(`| ${sc.id} | ${w} | ${os.length - w - l} | ${l} | ${ex.replace(/\|/g, '/').slice(0, 120)} |`);
   }
   L.push('');
+  // Audit trail: every judged pair with both answers and each judge's reasoning, so verdicts can be spot-checked.
+  const D: string[] = [`# Judged pairs: ${cand.variantId} (candidate) vs ${base.variantId} (baseline)`, '', '_Read a few where the baseline won to see whether the judges\' reasons hold up._', ''];
+  for (const it of items) {
+    D.push(`## ${it.b.scenario.id} (pair ${it.pair})`, '', '**Baseline answer**', '', ...answerMarkdown(it.base, it.b), '', '**Candidate answer**', '', ...answerMarkdown(it.cand, it.b), '');
+    for (const o of outcomes.filter(x => x.scenario === it.b.scenario.id && x.pair === it.pair)) {
+      D.push(`- **${o.judge.split('.').pop()}**: ${o.result === 'tie' ? 'tie' : o.result + ' preferred'}${o.reasons.length ? ` (${o.reasons.map(r => `"${r}"`).join(' / ')})` : ''}`);
+    }
+    D.push('');
+  }
   const out = arg('out') ?? `${EVALS_ROOT}/results/compare-${cand.variantId}-vs-${base.variantId}-${stamp()}.md`;
   mkdirSync(dirname(out), { recursive: true });
   writeFileSync(out, L.join('\n'));
+  writeFileSync(out.replace(/\.md$/, '') + '-details.md', D.join('\n'));
   writeFileSync(out.replace(/\.md$/, '') + '.json', JSON.stringify({
     at: new Date().toISOString(), mock: MOCK, model, judges, verdict,
     baseline: { variant: base.variantId, file: files[0], ...bm }, candidate: { variant: cand.variantId, file: files[1], ...cm },
@@ -259,7 +269,7 @@ async function main() {
   console.log(`\nVerdict: ${verdict}`);
   console.log(`Speed p50 ${bm.p50Ms}ms -> ${cm.p50Ms}ms (${pctDelta(bm.p50Ms, cm.p50Ms)}) | output tokens ${bm.outTokens} -> ${cm.outTokens} | hard rules ${bm.hardPassPct}% -> ${cm.hardPassPct}%`);
   console.log(`Judges: candidate won ${wins}, lost ${losses}, tied ${ties}`);
-  console.log(`Wrote ${out} (+ .json)`);
+  console.log(`Wrote ${out} (+ .json and -details.md with every judged pair)`);
 }
 
 main().catch(err => { console.error('FAILED:', err.message ?? err); process.exit(1); });

@@ -42,7 +42,8 @@ const shortIds: Variant = {
       rides: ctx.rides.map((rf, i) => ({ ...rf, ride: { ...rf.ride, id: code(i) } })),
     }, n),
   decode: (recs, b) => recs.map(r => {
-    const m = /^r(\d+)$/.exec(r.rideId);
+    // Tolerate harmless formatting drift: "R3", " r3 ", "3", "r3.", "(r3)", "#3".
+    const m = /^[\s(#]*r?\s*(\d+)[\s.)]*$/i.exec(r.rideId);
     const real = m ? b.candidates[Number(m[1]) - 1]?.ride.id : undefined;
     return { ...r, rideId: real ?? r.rideId }; // unknown codes stay as-is so the checks flag them
   }),
