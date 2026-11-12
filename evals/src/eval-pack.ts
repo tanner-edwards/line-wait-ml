@@ -20,9 +20,12 @@
 
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname, join } from 'path';
-import { buildSystemPrompt } from '../../src/recommendations/promptBuilder';
-import { personaToText } from '../../src/recommendations/persona';
+import { buildSystemPrompt } from '../../app/backend/src/recommendations/promptBuilder';
 import { BATCH_SIZE, ParsedRec, SCENARIOS, buildScenario } from './scenarios';
+import { extractJson } from './parse';
+import { EVALS_ROOT } from './args';
+import { answerMarkdown, scenarioMarkdown } from './render';
+import { getVariant } from './variants';
 
 interface Rec {
   model: string;
@@ -33,6 +36,7 @@ interface Rec {
   parsed?: boolean;
   text?: string;
   rawText?: string;
+  variant?: string;
   hardFailures?: string[];
   checksRun?: { hard: number; soft: number };
 }
@@ -178,7 +182,6 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
   let nScenarios = 0;
   for (const sc of SCENARIOS.filter(s => scenarioIds.has(s.id))) {
     const b = buildScenario(sc);
-    const names = new Map(b.candidates.map(c => [c.ride.id, c.ride.name]));
 
     const answers: { model: string; recs: ParsedRec[] }[] = [];
     for (const m of allModels) {
@@ -187,7 +190,9 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
         // Use the LONGEST saved copy: older result files kept a truncated rawText (500-800 chars)
         // for runs that failed a check, and parsing that would wrongly discard the answer.
         const full = [r.text, r.rawText].filter((t): t is string => !!t).sort((a, b) => b.length - a.length)[0];
-        const recs = parseRecs(full);
+        const raw = parseRecs(full);
+        const v = getVariant(r.variant ?? 'baseline');
+        const recs = raw && v.decode ? v.decode(raw, b) : raw;
         if (recs) { answers.push({ model: m, recs }); break; } // first parseable run
       }
     }
@@ -198,33 +203,14 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
 
     md.push(`\n---\n\n## Scenario: ${sc.id}\n`);
     md.push(`${sc.description}\n`);
-    md.push(`- Park: Disneyland`);
-    md.push(`- Local time: ${sc.currentLocalTime}`);
-    md.push(`- Park hours today: ${sc.parkHours ? `${sc.parkHours.open}-${sc.parkHours.close}` : 'unknown'}`);
-    md.push(`- Guest is currently at: ${b.ctx.currentRide.name} (excluded from the list)`);
-    md.push(`\n**Guest persona given to the models:**\n\n> ${personaToText(sc.persona, b.metadataMap).replace(/\n/g, '\n> ')}\n`);
-    md.push('**Rides available** (waits in minutes; "usual" = typical wait for right now; "later" = typical wait in 30/60/90 min; "range" = p10-p90 for the day type):\n');
-    md.push('| Ride | Wait now | Usual now | Later (30/60/90) | Range | Walk | App verdict | Trend |');
-    md.push('|---|---|---|---|---|---|---|---|');
-    for (const c of b.candidates) {
-      const r = c.ride;
-      const bk = r.historicalAverage?.buckets ?? [];
-      const later = [1, 2, 3].map(i => bk[i]?.wait ?? '-').join('/');
-      const v = r.verdict;
-      const trend = r.prediction && (r.prediction as unknown as { trend?: string }).trend ? (r.prediction as unknown as { trend: string }).trend : '-';
-      md.push(`| ${r.name} | ${r.currentWait ?? '-'} | ${v?.reasons.typical ?? '-'} | ${later} | ${r.rideStats ? `${r.rideStats.p10}-${r.rideStats.p90}` : '-'} | ${c.walkMinutes ?? '?'} min | ${v ? `${v.verdict} (${v.reasons.primary})` : '-'} | ${trend} |`);
-    }
+    md.push(...scenarioMarkdown(b));
 
     md.push('\n**Answers to evaluate:**\n');
     ordered.forEach((a, i) => {
       const label = String.fromCharCode(65 + i);
       key.entries[sc.id][label] = a.model;
       md.push(`### Answer ${label}\n`);
-      if (!a.recs.length) md.push('_(empty list: no recommendations)_\n');
-      a.recs.forEach((r, j) => {
-        const nm = names.get(r.rideId) ?? `UNKNOWN RIDE ID ${r.rideId}`;
-        md.push(`${j + 1}. **${nm}**: "${r.oneLiner}"${r.restrictionNote ? ` _(restriction note: ${r.restrictionNote})_` : ''}`);
-      });
+      md.push(...answerMarkdown(a.recs, b));
       md.push('');
     });
   }
@@ -244,24 +230,6 @@ function build(resultsPaths: string[], outDir: string, seed: number, only?: stri
 }
 
 // -------------------------------------------------------------- aggregate
-
-function extractJson(text: string): any {
-  const a = text.indexOf('{');
-  const z = text.lastIndexOf('}');
-  if (a === -1 || z <= a) throw new Error('no JSON object found');
-  const body = text.slice(a, z + 1);
-  try {
-    return JSON.parse(body);
-  } catch {
-    // Chat UIs sometimes mangle pasted JSON: HTML entities for spaces, markdown line-break
-    // backslashes, escaped punctuation. Strip those and retry.
-    const cleaned = body
-      .replace(/&#x20;|&nbsp;/g, ' ')
-      .replace(/&quot;/g, '\\"')
-      .replace(/\\(?![\\"\/bfnrtu])/g, '');
-    return JSON.parse(cleaned);
-  }
-}
 
 function aggregate(keyPath: string, evalPaths: string[]) {
   const key = JSON.parse(readFileSync(keyPath, 'utf8')) as Key;
@@ -471,7 +439,7 @@ function report(keyPath: string, evalPaths: string[], outPath: string) {
 
 const [cmd, ...rest] = process.argv.slice(2).filter((a, i, all) => !a.startsWith('--') && !(i > 0 && all[i - 1].startsWith('--')));
 if (cmd === 'build' && rest[0]) {
-  build(rest, arg('out-dir', join(__dirname, 'results', 'pack'))!, Number(arg('seed', '1')), arg('models')?.split(','));
+  build(rest, arg('out-dir', join(EVALS_ROOT, 'results', 'pack'))!, Number(arg('seed', '1')), arg('models')?.split(','));
 } else if (cmd === 'report' && rest.length >= 2) {
   report(rest[0], rest.slice(1), arg('out', join(dirname(rest[0]), 'evaluation-report.md'))!);
 } else if (cmd === 'aggregate' && rest.length >= 2) {

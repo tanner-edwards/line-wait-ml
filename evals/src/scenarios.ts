@@ -12,8 +12,8 @@
 // Add scenarios freely; the runner picks them up from SCENARIOS.
 
 import { createHash } from 'crypto';
-import { Persona, Ride, RideMetadata, VerdictReason, Verdict } from '../../src/types';
-import { RideForPrompt, PromptContext } from '../../src/recommendations/promptBuilder';
+import { Persona, Ride, RideMetadata, VerdictReason, Verdict } from '../../app/backend/src/types';
+import { RideForPrompt, PromptContext } from '../../app/backend/src/recommendations/promptBuilder';
 
 export const BATCH_SIZE = 5; // mirrors BATCH_SIZE in src/recommendations/handler.ts
 

@@ -20,4 +20,4 @@ df_features_cache.pkl
 served_history_cache.pkl
 history_raw/
 
-app/backend/scripts/model-bench/results/
+evals/results/

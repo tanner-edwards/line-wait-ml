@@ -1,230 +1,59 @@
-// Bedrock model benchmark for the /v2/recommendations prompt.
+// Runner: scenarios x runs for a prompt VARIANT on one or more Bedrock models.
 //
-// For each model x scenario x run it: builds the production prompt, calls
-// Bedrock (Converse API, so any model family works), times the full round
-// trip, parses the answer, and scores it against deterministic checks.
-// Optionally asks a stronger "judge" model to grade ranking/copy quality.
+// For each model x scenario x run it builds the prompt (via the selected variant), calls Bedrock,
+// times the full round trip, parses the answer, and scores it against deterministic checks.
+// Results are saved to results/<variant>-<timestamp>.json after every round.
 //
-// Usage (from app/backend):
-//   AWS_REGION=us-west-2 npx tsx scripts/model-bench/bench.ts \
-//       [--models id1,id2 | --models-file scripts/model-bench/models.json] \
-//       [--scenarios default-adult-saturday,toddler-family] \
-//       [--runs 5] [--judge us.anthropic.claude-sonnet-4-5-20250929-v1:0] \
-//       [--temperature 0] [--max-tokens 2000] [--out results/run.json]
-//   npx tsx scripts/model-bench/bench.ts --dry-run     # no AWS calls; validates fixtures + checks
-//   npx tsx scripts/model-bench/bench.ts --rescore results/run1.json   # re-grade saved answers with current checks (no AWS calls)
-//   OPENAI_API_KEY=... npx tsx scripts/model-bench/bench.ts --list-models openai   # also: gemini (GEMINI_API_KEY)
+// Usage (from evals/):
+//   npm run bench -- --variant baseline --runs 5            # production model, current prompt
+//   npm run bench -- --variant short-ids --runs 5           # an experiment
+//   npm run bench -- --all-models --runs 3                  # every finalist in config/models.json
+//   npm run bench -- --models id1,id2 --scenarios toddler-family,pregnant-guest
+//   npm run dry-run                                         # no AWS calls; validates fixtures, checks, variants
+//   npm run bench -- --mock --runs 2                        # whole pipeline offline with fake answers
+//   npm run bench -- --rescore results/x.json               # re-grade saved answers with current checks
+//   npm run bench -- --report results/x.json                # re-print a summary
+// Then compare two runs head-to-head with judges:  npm run compare -- results/a.json results/b.json
 //
-// Safety/speed flags: --timeout-ms 60000 (per call) | --skip-if-slower-than <ms> (skip a model whose warm-up is slower)
-//   --bedrock-reasoning-effort low|medium|high (gpt-oss on Bedrock) | --latency-optimized (Bedrock, supported models only)
-// Results are always saved (default results/<timestamp>.json) after every round; --report <file> re-prints a summary.
+// Flags: --temperature n | --max-tokens n | --timeout-ms n (per call, default 60000) |
+//   --skip-if-slower-than ms (skip a model whose warm-up is slower) | --region r |
+//   --bedrock-reasoning-effort low|medium|high (gpt-oss) | --latency-optimized (supported models only)
 //
-// Model ids: Bedrock ids as-is; "openai:<model>" and "gemini:<model>" call those APIs directly
-// (see models.json). Extra flags: --reasoning-effort <v> (OpenAI), --gemini-thinking-budget <n>.
-//
-// Latency is wall-clock around the SDK call (what a Lambda would wait), which
-// is the number that matters since the endpoint is non-streaming. The
-// server-side `metrics.latencyMs` from Bedrock is recorded alongside it.
+// Latency is wall-clock around the SDK call (what a Lambda waits), since the endpoint is
+// non-streaming. Bedrock's server-side `metrics.latencyMs` is recorded alongside it.
 
-import { BedrockRuntimeClient, ConverseCommand } from '@aws-sdk/client-bedrock-runtime';
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
 import { dirname } from 'path';
-import { buildSystemPrompt, buildUserMessage } from '../../src/recommendations/promptBuilder';
-import { personaToText } from '../../src/recommendations/persona';
+import { personaToText } from '../../app/backend/src/recommendations/persona';
+import { arg, flag, EVALS_ROOT, PRODUCTION_MODEL, stamp } from './args';
+import { converse, REGION } from './llm';
+import { mean, parseModelText, pct } from './parse';
+import { getVariant, VARIANTS } from './variants';
 import {
   BATCH_SIZE, BuiltScenario, GENERIC_CHECKS, ParsedRec, SCENARIOS, buildScenario,
 } from './scenarios';
 
 // ---------------------------------------------------------------- CLI args
 
-function arg(name: string, fallback?: string): string | undefined {
-  const i = process.argv.indexOf(`--${name}`);
-  return i !== -1 ? process.argv[i + 1] : fallback;
-}
-const flag = (name: string) => process.argv.includes(`--${name}`);
-
-const REGION = arg('region', process.env.BEDROCK_REGION ?? process.env.AWS_REGION ?? 'us-west-2')!;
 const RUNS = Number(arg('runs', '3'));
 const MAX_TOKENS = Number(arg('max-tokens', '2000'));
 const TEMPERATURE = arg('temperature') !== undefined ? Number(arg('temperature')) : undefined; // unset = same as production
-const JUDGE = arg('judge');
-const TIMEOUT_MS = Number(arg('timeout-ms', '60000'));             // per call; a slower call is recorded as an error
+const JUDGE = arg('judge'); // optional per-answer 1-5 grading by a Bedrock model (compare.ts is the better judge)
 const SKIP_IF_SLOWER_MS = arg('skip-if-slower-than') ? Number(arg('skip-if-slower-than')) : null; // skip a model whose warm-up call exceeds this
-const BEDROCK_REASONING = arg('bedrock-reasoning-effort');          // gpt-oss on Bedrock: low | medium | high
-const LATENCY_OPT = flag('latency-optimized');                      // Bedrock latency-optimized inference (limited models/regions)
-const OUT = arg('out') ?? `${__dirname}/results/${new Date().toISOString().replace(/[:.]/g, '-')}.json`; // always saved
+const VARIANT = getVariant(arg('variant', 'baseline')!);
+const OUT = arg('out') ?? `${EVALS_ROOT}/results/${VARIANT.id}-${stamp()}.json`; // always saved
 const DRY = flag('dry-run');
 
+// Default = only the production model (the prompt-iteration workflow). --all-models runs the
+// finalist list in config/models.json; --models a,b picks explicitly.
 function loadModels(): string[] {
   const inline = arg('models');
   if (inline) return inline.split(',').map(s => s.trim()).filter(Boolean);
-  const file = arg('models-file', `${__dirname}/models.json`)!;
-  return (JSON.parse(readFileSync(file, 'utf8')) as { models: { id: string }[] }).models.map(m => m.id);
-}
-
-// ------------------------------------------------------------------ helpers
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-function pct(sorted: number[], p: number): number {
-  if (!sorted.length) return NaN;
-  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[idx];
-}
-const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
-
-// Same fence-stripping the handler does, but we record that it was needed.
-function parseModelText(text: string): { recs: ParsedRec[] | null; fenced: boolean; error?: string } {
-  const trimmed = text.trim();
-  const m = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/);
-  const body = m ? m[1].trim() : trimmed;
-  try {
-    const root = JSON.parse(body) as { recommendations?: unknown };
-    if (!Array.isArray(root.recommendations)) return { recs: null, fenced: !!m, error: 'no recommendations array' };
-    const recs: ParsedRec[] = [];
-    for (const e of root.recommendations as Record<string, unknown>[]) {
-      if (typeof e?.rideId !== 'string' || typeof e?.oneLiner !== 'string') return { recs: null, fenced: !!m, error: 'malformed entry' };
-      recs.push({ rideId: e.rideId, oneLiner: e.oneLiner, restrictionNote: typeof e.restrictionNote === 'string' ? e.restrictionNote : null });
-    }
-    return { recs, fenced: !!m };
-  } catch (err) {
-    return { recs: null, fenced: !!m, error: `invalid JSON: ${(err as Error).message.slice(0, 60)}` };
+  if (flag('all-models')) {
+    const file = arg('models-file', `${EVALS_ROOT}/config/models.json`)!;
+    return (JSON.parse(readFileSync(file, 'utf8')) as { models: { id: string }[] }).models.map(m => m.id);
   }
-}
-
-// ------------------------------------------------------------------ Bedrock
-
-const client = DRY ? null : new BedrockRuntimeClient({ region: REGION });
-
-interface CallResult {
-  text: string;
-  wallMs: number;
-  serverMs: number | null;
-  inputTokens: number | null;
-  outputTokens: number | null;
-}
-
-async function converseBedrock(modelId: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
-  const cmd = new ConverseCommand({
-    modelId,
-    system: [{ text: system }],
-    messages: [{ role: 'user', content: [{ text: user }] }],
-    inferenceConfig: { maxTokens: opts.maxTokens, ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}) },
-    ...(BEDROCK_REASONING && modelId.includes('gpt-oss') ? { additionalModelRequestFields: { reasoning_effort: BEDROCK_REASONING } } : {}),
-    ...(LATENCY_OPT ? { performanceConfig: { latency: 'optimized' as const } } : {}),
-  });
-  // Retry only throttling, and never count the wait toward latency.
-  for (let attempt = 0; ; attempt++) {
-    const t0 = performance.now();
-    try {
-      const res = await client!.send(cmd, { abortSignal: AbortSignal.timeout(TIMEOUT_MS) });
-      const wallMs = performance.now() - t0;
-      const text = (res.output?.message?.content ?? []).map(c => ('text' in c ? c.text : '')).join('');
-      return {
-        text,
-        wallMs,
-        serverMs: res.metrics?.latencyMs ?? null,
-        inputTokens: res.usage?.inputTokens ?? null,
-        outputTokens: res.usage?.outputTokens ?? null,
-      };
-    } catch (err) {
-      const name = (err as Error).name;
-      if (name === 'ThrottlingException' && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
-      throw err;
-    }
-  }
-}
-
-
-// ---------------------------------------------------- non-Bedrock providers
-//
-// Model ids are routed by prefix: "openai:<model>" -> OpenAI API,
-// "gemini:<model>" -> Google Gemini API, anything else -> Bedrock.
-// These go over the public internet (not your AWS region), so their latency
-// includes a network path Bedrock doesn't have; compare with that in mind.
-// Keys come from OPENAI_API_KEY / GEMINI_API_KEY.
-
-const REASONING_EFFORT = arg('reasoning-effort');            // OpenAI reasoning models, e.g. minimal | low | none
-const GEMINI_THINKING_BUDGET = arg('gemini-thinking-budget'); // Gemini: 0 disables thinking where supported
-
-function needKey(name: string): string {
-  const v = process.env[name];
-  if (!v) throw new Error(`${name} is not set`);
-  return v;
-}
-
-async function httpJson(url: string, headers: Record<string, string>, body: unknown): Promise<{ json: any; wallMs: number }> {
-  for (let attempt = 0; ; attempt++) {
-    const t0 = performance.now();
-    const res = await fetch(url, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body), signal: AbortSignal.timeout(TIMEOUT_MS) });
-    const wallMs = performance.now() - t0;
-    if ((res.status === 429 || res.status === 503) && attempt < 4) { await sleep(2000 * 2 ** attempt); continue; }
-    const text = await res.text();
-    if (!res.ok) { const e = new Error(`HTTP ${res.status}: ${text.slice(0, 160)}`); e.name = `Http${res.status}`; throw e; }
-    return { json: JSON.parse(text), wallMs };
-  }
-}
-
-async function converseOpenAI(model: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
-  const { json, wallMs } = await httpJson('https://api.openai.com/v1/chat/completions',
-    { authorization: `Bearer ${needKey('OPENAI_API_KEY')}` },
-    {
-      model,
-      messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      // Newer models reject max_tokens; max_completion_tokens covers hidden reasoning tokens too.
-      max_completion_tokens: opts.maxTokens,
-      ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-      ...(REASONING_EFFORT ? { reasoning_effort: REASONING_EFFORT } : {}),
-    });
-  return {
-    text: json.choices?.[0]?.message?.content ?? '',
-    wallMs,
-    serverMs: null,
-    inputTokens: json.usage?.prompt_tokens ?? null,
-    outputTokens: json.usage?.completion_tokens ?? null, // includes reasoning tokens
-  };
-}
-
-async function converseGemini(model: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
-  const { json, wallMs } = await httpJson(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-    { 'x-goog-api-key': needKey('GEMINI_API_KEY') },
-    {
-      systemInstruction: { parts: [{ text: system }] },
-      contents: [{ role: 'user', parts: [{ text: user }] }],
-      generationConfig: {
-        maxOutputTokens: opts.maxTokens,
-        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-        ...(GEMINI_THINKING_BUDGET !== undefined ? { thinkingConfig: { thinkingBudget: Number(GEMINI_THINKING_BUDGET) } } : {}),
-      },
-    });
-  const parts: { text?: string; thought?: boolean }[] = json.candidates?.[0]?.content?.parts ?? [];
-  const u = json.usageMetadata ?? {};
-  return {
-    text: parts.filter(p => !p.thought).map(p => p.text ?? '').join(''),
-    wallMs,
-    serverMs: null,
-    inputTokens: u.promptTokenCount ?? null,
-    outputTokens: u.candidatesTokenCount != null ? u.candidatesTokenCount + (u.thoughtsTokenCount ?? 0) : null,
-  };
-}
-
-function converse(modelId: string, system: string, user: string, opts: { maxTokens: number; temperature?: number }): Promise<CallResult> {
-  if (modelId.startsWith('openai:')) return converseOpenAI(modelId.slice(7), system, user, opts);
-  if (modelId.startsWith('gemini:')) return converseGemini(modelId.slice(7), system, user, opts);
-  return converseBedrock(modelId, system, user, opts);
-}
-
-async function listModels(provider: string) {
-  if (provider === 'openai') {
-    const r = await fetch('https://api.openai.com/v1/models', { headers: { authorization: `Bearer ${needKey('OPENAI_API_KEY')}` } });
-    const j = await r.json() as { data?: { id: string }[] };
-    console.log((j.data ?? []).map(m => `openai:${m.id}`).sort().join('\n'));
-  } else if (provider === 'gemini') {
-    const r = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', { headers: { 'x-goog-api-key': needKey('GEMINI_API_KEY') } });
-    const j = await r.json() as { models?: { name: string; supportedGenerationMethods?: string[] }[] };
-    console.log((j.models ?? []).filter(m => m.supportedGenerationMethods?.includes('generateContent')).map(m => `gemini:${m.name.replace('models/', '')}`).sort().join('\n'));
-  } else {
-    throw new Error('--list-models takes "openai" or "gemini" (for Bedrock: aws bedrock list-inference-profiles)');
-  }
+  return [PRODUCTION_MODEL];
 }
 
 // ------------------------------------------------------------------ judging
@@ -263,6 +92,7 @@ interface RunRecord {
   softFailures: string[];
   checksRun: { hard: number; soft: number };
   judge?: { ranking: number; copy: number; note: string } | null;
+  variant?: string;
   rawText?: string;
   text?: string; // full model answer (spread in from the call result)
 }
@@ -280,12 +110,14 @@ function evaluate(b: BuiltScenario, recs: ParsedRec[]) {
 }
 
 async function runOne(model: string, b: BuiltScenario, run: number): Promise<RunRecord> {
-  const system = buildSystemPrompt(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE);
-  const user = buildUserMessage(b.ctx, BATCH_SIZE);
-  const base = { model, scenario: b.scenario.id, run };
+  const system = VARIANT.buildSystem(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE);
+  const user = VARIANT.buildUser(b.ctx, BATCH_SIZE);
+  const base = { model, scenario: b.scenario.id, run, variant: VARIANT.id };
   try {
     const call = await converse(model, system, user, { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
-    const { recs, fenced, error } = parseModelText(call.text);
+    const parsedModel = parseModelText(call.text);
+    const { fenced, error } = parsedModel;
+    const recs = parsedModel.recs && VARIANT.decode ? VARIANT.decode(parsedModel.recs, b) : parsedModel.recs;
     if (!recs) {
       return { ...base, ...call, parsed: false, fenced, hardFailures: [`parse: ${error}`], softFailures: [], checksRun: { hard: 1, soft: 0 }, rawText: call.text.slice(0, 2000) };
     }
@@ -365,9 +197,13 @@ function rescoreOne(r: RunRecord): RunRecord {
   const text = r.text ?? r.rawText;
   const sc = SCENARIOS.find(x => x.id === r.scenario);
   if (r.error || !text || !sc) return r;
-  const { recs, fenced, error } = parseModelText(text);
+  const parsedModel = parseModelText(text);
+  const { fenced, error } = parsedModel;
+  const v = getVariant(r.variant ?? 'baseline');
+  const b = buildScenario(sc);
+  const recs = parsedModel.recs && v.decode ? v.decode(parsedModel.recs, b) : parsedModel.recs;
   if (!recs) return { ...r, parsed: false, fenced, hardFailures: [`parse: ${error}`], softFailures: [], checksRun: { hard: 1, soft: 0 } };
-  return { ...r, parsed: true, fenced, ...evaluate(buildScenario(sc), recs) };
+  return { ...r, parsed: true, fenced, ...evaluate(b, recs) };
 }
 
 // --------------------------------------------------------------------- main
@@ -379,8 +215,8 @@ async function dryRun() {
   let problems = 0;
   for (const s of SCENARIOS) {
     const b = buildScenario(s);
-    const sys = buildSystemPrompt(personaToText(s.persona, b.metadataMap), BATCH_SIZE);
-    const user = buildUserMessage(b.ctx, BATCH_SIZE);
+    const sys = VARIANT.buildSystem(personaToText(s.persona, b.metadataMap), BATCH_SIZE);
+    const user = VARIANT.buildUser(b.ctx, BATCH_SIZE);
     // Oracle answer: candidates in given order -> should pass most checks only if fixtures are sane.
     const naive = b.candidates.slice(0, s.allowedCounts ? 0 : BATCH_SIZE).map(c => ({ rideId: c.ride.id, oneLiner: 'Good timing right now.', restrictionNote: null }));
     const ev = evaluate(b, naive);
@@ -407,13 +243,34 @@ async function dryRun() {
     if (!detectsGarbage) problems++;
     console.log(`${detectsGarbage ? 'ok ' : 'BAD'} ${s.id.padEnd(32)} rides=${b.candidates.length} sys=${sys.length}ch user=${user.length}ch  naive-order hard fails: ${ev.hardFailures.length ? ev.hardFailures.map(f => f.split(':')[0]).join(', ') : 'none'}`);
   }
-  console.log(problems ? `\n${problems} scenario(s) failed validation` : '\nAll scenarios built and checks respond correctly.');
+  // Every registered variant must build a prompt for every scenario, and id-renaming variants must round-trip.
+  console.log('\nVariants:');
+  for (const v of Object.values(VARIANTS)) {
+    let ok = true, detail = '';
+    for (const s of SCENARIOS) {
+      const b = buildScenario(s);
+      const sys = v.buildSystem(personaToText(s.persona, b.metadataMap), BATCH_SIZE);
+      const user = v.buildUser(b.ctx, BATCH_SIZE);
+      if (!sys || !user) { ok = false; detail = `empty prompt in ${s.id}`; break; }
+      if (v.encodeId && v.decode) {
+        const fake = b.candidates.slice(0, BATCH_SIZE).map(c => ({ rideId: v.encodeId!(b, c.ride.id), oneLiner: 'x', restrictionNote: null }));
+        const shown = fake.every(f => user.includes(`(${f.rideId})`));
+        const back = v.decode(fake, b).every((r, i) => r.rideId === b.candidates[i].ride.id);
+        if (!shown || !back) { ok = false; detail = `id round-trip failed in ${s.id} (shown=${shown}, decoded=${back})`; break; }
+      }
+    }
+    const b0 = buildScenario(SCENARIOS[0]);
+    const sysLen = v.buildSystem(personaToText(null, b0.metadataMap), BATCH_SIZE).length;
+    const userLen = v.buildUser(b0.ctx, BATCH_SIZE).length;
+    if (!ok) problems++;
+    console.log(`${ok ? 'ok ' : 'BAD'} ${v.id.padEnd(12)} system=${sysLen}ch user=${userLen}ch  ${ok ? v.description : detail}`);
+  }
+  console.log(problems ? `\n${problems} problem(s) found` : '\nAll scenarios built, checks respond correctly, and all variants build.');
   if (problems) process.exit(1);
 }
 
 async function main() {
   if (DRY) return dryRun();
-  if (arg('list-models')) return listModels(arg('list-models')!);
   if (arg('report') || arg('rescore')) {
     // --report a.json[,b.json]   re-print the summary from saved results
     // --rescore a.json[,b.json]  re-grade the SAVED answers with the current checks (no Bedrock calls),
@@ -443,7 +300,7 @@ async function main() {
   // Re-print a summary from a saved file with:  --report <file.json>
   const save = () => {
     mkdirSync(dirname(OUT), { recursive: true });
-    writeFileSync(OUT, JSON.stringify({ region: REGION, runs: RUNS, temperature: TEMPERATURE ?? null, judge: JUDGE ?? null, at: new Date().toISOString(), records }, null, 2));
+    writeFileSync(OUT, JSON.stringify({ variant: VARIANT.id, region: REGION, runs: RUNS, temperature: TEMPERATURE ?? null, judge: JUDGE ?? null, at: new Date().toISOString(), records }, null, 2));
   };
   process.on('SIGINT', () => {
     save();
@@ -456,7 +313,7 @@ Interrupted. Partial results saved to ${OUT}\nSummarize them with: npx tsx scrip
     process.stdout.write(`\n${model}\n  warmup... `);
     try {
       const b = scenarios[0];
-      const w = await converse(model, buildSystemPrompt(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE), buildUserMessage(b.ctx, BATCH_SIZE), { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
+      const w = await converse(model, VARIANT.buildSystem(personaToText(b.scenario.persona, b.metadataMap), BATCH_SIZE), VARIANT.buildUser(b.ctx, BATCH_SIZE), { maxTokens: MAX_TOKENS, temperature: TEMPERATURE });
       console.log(`ok (${Math.round(w.wallMs)}ms, ${w.outputTokens ?? '?'} out tokens)`);
       if (SKIP_IF_SLOWER_MS !== null && w.wallMs > SKIP_IF_SLOWER_MS) {
         console.log(`  warm-up took ${Math.round(w.wallMs)}ms > --skip-if-slower-than ${SKIP_IF_SLOWER_MS}ms — skipping model`);

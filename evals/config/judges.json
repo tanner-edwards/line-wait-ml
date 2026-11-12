@@ -1,0 +1,7 @@
+{
+  "_comment": "Bedrock models that judge candidate-vs-baseline answers. Keep them from a DIFFERENT family than the model under test (Haiku), so it isn't grading its own style. Override per run with --judges a,b. IDs are best guesses; confirm with aws bedrock list-inference-profiles.",
+  "judges": [
+    "us.meta.llama3-3-70b-instruct-v1:0",
+    "qwen.qwen3-32b-v1:0"
+  ]
+}
