@@ -26,7 +26,7 @@ export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactEl
   return (
     <Pressable onPress={onPress} style={styles.pressable} testID={`rec-tile-${rec.rideId}`}>
       <Card accent={accent} style={styles.card}>
-        <RideIcon rideId={rec.rideId} size={36} />
+        <RideIcon rideId={rec.rideId} rideName={ride.name} size={44} />
         <Text style={styles.name} numberOfLines={2}>{ride.name}</Text>
         <View style={styles.meta}>
           {rec.walkMinutes !== null ? <WalkPill minutes={rec.walkMinutes} emphasized /> : null}

@@ -2,7 +2,7 @@
 //
 //   [Ride icon] │ Ride name
 //               │ Land · Park                      [walk pill]
-//   ┌ Verdict banner: icon + RARE FIND / GOOD TIME TO RIDE / SKIP FOR NOW ┐
+//   ┌ Verdict banner: icon + RARE OPPORTUNITY / GOOD TIME TO RIDE / SKIP FOR NOW ┐
 //   └ deterministic why-line                                             ┘
 //   [Post-reopen opportunity card — dormant until ML ships]
 //   ┌─ white card (everything above sits on the sheet's cream) ─────────
@@ -31,7 +31,7 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing, typography } from '../../theme/tokens';
 import { WalkPill } from '../WalkPill';
-import { RideIcon } from '../icons/RideIcon';
+import { RideIcon, SHOW_RIDE_ICONS } from '../icons/RideIcon';
 import { TodaysRange } from './TodaysRange';
 import { Tile } from './Tile';
 import { Badge } from '../../types';
@@ -52,7 +52,7 @@ const DIRECTION: Record<'up' | 'down' | 'stable', { label: string; Icon: typeof 
 // earlier pill copy. Backgrounds are solid hexes (badge color on white) so
 // the sheet's cream can't show through — same values ReasonCard used.
 const VERDICT_BANNER: Record<'star' | 'go' | 'skip', { title: string; color: string; bg: string; border: string; Icon: typeof Star }> = {
-  star: { title: 'RARE FIND', color: colors.star, bg: '#F3E8CD', border: colors.starBorder, Icon: Star },
+  star: { title: 'RARE OPPORTUNITY', color: colors.star, bg: '#F3E8CD', border: colors.starBorder, Icon: Star },
   go: { title: 'GOOD TIME TO RIDE', color: colors.go, bg: '#E6EDEB', border: colors.goBorder, Icon: CheckCircle },
   skip: { title: 'SKIP FOR NOW', color: colors.skip, bg: '#F8EBEA', border: colors.skipBorder, Icon: OctagonX },
 };
@@ -125,8 +125,8 @@ export function RideDetailHeader({
     <View>
       {/* Identity — icon │ name + location */}
       <View style={styles.identity}>
-        <RideIcon rideId={rideId} size={56} />
-        <View style={styles.identityDivider} />
+        <RideIcon rideId={rideId} rideName={rideName} size={64} />
+        {SHOW_RIDE_ICONS ? <View style={styles.identityDivider} /> : null}
         <View style={styles.identityText}>
           <Text style={styles.rideName}>{rideName}</Text>
           <View style={styles.locationRow}>

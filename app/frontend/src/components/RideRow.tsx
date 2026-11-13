@@ -59,7 +59,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   return (
     <Pressable onPress={onPress} style={styles.pressable} testID={`ride-${ride.id}`}>
       <View style={styles.row}>
-        <RideIcon rideId={ride.id} size={44} />
+        <RideIcon rideId={ride.id} rideName={ride.name} size={52} />
         <View style={styles.content}>
           <View style={styles.nameRow}>
             {badge ? <Pill variant={badge} /> : null}

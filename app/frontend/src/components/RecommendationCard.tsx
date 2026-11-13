@@ -86,7 +86,7 @@ export function RecommendationCard({
         <Pressable onPress={onPress} testID={`rec-card-${rec.rideId}`}>
           <Card accent={cardAccent}>
             <View style={styles.layout}>
-              <RideIcon rideId={rec.rideId} size={48} />
+              <RideIcon rideId={rec.rideId} rideName={ride?.name} size={56} />
               <View style={styles.content}>
                 {isStar ? (
                   <View style={styles.starRow}>

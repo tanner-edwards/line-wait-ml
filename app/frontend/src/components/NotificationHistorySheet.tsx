@@ -30,7 +30,7 @@ type ChipDef = { key: NotificationCategory; label: string };
 const CHIPS: ChipDef[] = [
   { key: 'trough',     label: 'Short Waits' },
   { key: 'peak',       label: 'Long Waits'  },
-  { key: 'rare-find',  label: 'Rare Find'   },
+  { key: 'rare-find',  label: 'Rare Opportunity' },
   { key: 'closure',    label: 'Closures'    },
   { key: 'reopen',     label: 'Reopened'    },
 ];

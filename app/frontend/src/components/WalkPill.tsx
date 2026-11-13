@@ -1,4 +1,4 @@
-// Walking-distance pill. Used wherever we show "~N min walk" — list rows,
+// Walking-distance pill. Used wherever we show "N min walk" — list rows,
 // the ride detail header, recommendation cards. Two visual modes:
 //
 //   - default (subtle): muted gray text, light bg. For list-row noise.
@@ -27,7 +27,7 @@ export function WalkPill({
   emphasized = false,
   testID,
 }: WalkPillProps): React.ReactElement {
-  const label = yards != null ? `~${minutes} min · ${yards} yds` : `~${minutes} min`;
+  const label = yards != null ? `${minutes} min · ${yards} yds` : `${minutes} min`;
   const iconColor = emphasized ? colors.brand : colors.textTertiary;
   return (
     <View style={[styles.pill, emphasized && styles.pillEmphasized]} testID={testID}>
