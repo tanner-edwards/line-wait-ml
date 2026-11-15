@@ -43,8 +43,6 @@ export const DEFAULT_BATCH_SIZE = 5;
 /** Upper bound on a client-requested `count`. Keeps LLM output (and latency)
  *  well inside bedrockClient's MAX_TOKENS cap. */
 export const MAX_BATCH_SIZE = 8;
-/** @deprecated Use DEFAULT_BATCH_SIZE. Kept so existing imports don't break. */
-export const BATCH_SIZE = DEFAULT_BATCH_SIZE;
 
 /** Clamp a requested batch size into [1, MAX_BATCH_SIZE]; undefined → default. */
 export function resolveBatchSize(count?: number): number {
