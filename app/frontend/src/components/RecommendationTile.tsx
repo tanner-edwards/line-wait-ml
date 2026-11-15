@@ -11,6 +11,7 @@ import { colors, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
 import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
+import { WaitPill } from './WaitPill';
 import { RideIcon } from './icons/RideIcon';
 import { RARE_CARD_STYLE, recWaitLabel } from './RecommendationCard';
 
@@ -38,7 +39,11 @@ export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactEl
         <Text style={styles.name} numberOfLines={2}>{ride.name}</Text>
         <View style={styles.meta}>
           {rec.walkMinutes !== null ? <WalkPill minutes={rec.walkMinutes} emphasized /> : null}
-          {waitLabel ? <Text style={styles.wait}>{waitLabel}</Text> : null}
+          {waitLabel ? (
+            <WaitPill style={styles.waitPill}>
+              <Text style={styles.wait} numberOfLines={1}>{waitLabel}</Text>
+            </WaitPill>
+          ) : null}
         </View>
       </Card>
     </Pressable>
@@ -71,6 +76,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.xs,
   },
+  waitPill: { alignSelf: 'center' },
   wait: {
     ...typography.label,
     fontSize: 13,

@@ -97,7 +97,7 @@ export function successfulParks(response: CombinedResponse): ParkData[] {
 
 // --- Sort support ---
 
-// 'nearby' is the Discover chip, not a SortMenu option: walk time first,
+// 'nearby' (the Nearby chip, walk-time limited by Home): walk time first,
 // opportunity within the same walk minute.
 export type SortBy = 'opportunity' | 'badge' | 'wait' | 'demand' | 'distance' | 'nearby';
 

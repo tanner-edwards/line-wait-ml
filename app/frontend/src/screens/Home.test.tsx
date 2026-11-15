@@ -520,22 +520,20 @@ describe('Discover — chips', () => {
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    fireEvent.press(screen.getByTestId('sort-button'));
-    fireEvent.press(screen.getByText('A–Z by land'));
+    fireEvent.press(screen.getByTestId('chip-az'));
 
     expect(screen.getByTestId('park-Disneyland')).toBeTruthy();
     expect(screen.getByTestId('land-Fantasyland')).toBeTruthy();
   });
 
-  it('picking a sort clears the Nearby chip and restores the list', async () => {
+  it('picking a sort chip replaces Nearby and restores the list', async () => {
     mockLocation.coords = null;
     mockLocation.status = 'denied';
     mockFetchWaits.mockResolvedValue(happyResponse);
     renderHome();
     await waitFor(() => expect(screen.queryByTestId('home-loaded')).toBeTruthy());
 
-    fireEvent.press(screen.getByTestId('sort-button'));
-    fireEvent.press(screen.getByText('Opportunity'));
+    fireEvent.press(screen.getByTestId('chip-opportunity'));
 
     expect(screen.queryByTestId('nearby-location-denied')).toBeNull();
     expect(screen.getByText('Hyperspace Mountain')).toBeTruthy();

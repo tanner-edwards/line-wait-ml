@@ -8,7 +8,8 @@ import { Platform, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Compass, Sparkles, User } from 'lucide-react-native';
+import { Sparkles, User } from 'lucide-react-native';
+import { CompassIcon } from '../components/icons/CompassIcon';
 import { colors } from '../theme/tokens';
 import { Home } from '../screens/Home';
 import { RecsStack } from './RecsStack';
@@ -43,10 +44,10 @@ export function AppNavigator(): React.ReactElement {
           name="Discover"
           component={Home}
           options={{
-            // Compass needle is a separate path — filling would cover it, so
-            // the focused state thickens the stroke instead.
+            // Filled circle with the needle knocked out in the tab bar's
+            // background color — matches the filled Sparkles/User icons.
             tabBarIcon: ({ color, focused }) => (
-              <Compass size={22} color={color} strokeWidth={focused ? 2.5 : 2} />
+              <CompassIcon size={22} color={color} filled={focused} cutoutColor={colors.surface} />
             ),
           }}
         />

@@ -11,8 +11,8 @@
 // Neutral = no badge. Star ("rare opportunity") cards get a gold border +
 // glow. Tiles keep the old icon-only badge.
 
-import React from 'react';
-import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import React, { useState } from 'react';
+import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
@@ -21,6 +21,7 @@ import { VerdictBadge } from './VerdictBadge';
 import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
+import { WaitPill } from './WaitPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 import { NO_POSTED_WAIT } from '../grouping';
@@ -100,7 +101,7 @@ export function RecommendationCard({
     <View style={styles.rowMargin}>
       <SwipeToRetireRow onConfirm={onRetire} isFirst={isFirst} testID={`rec-swipe-${rec.rideId}`}>
         <Pressable onPress={onPress} testID={`rec-card-${rec.rideId}`}>
-          <Card style={isStar ? RARE_CARD_STYLE : undefined} testID={isStar ? `rec-rare-${rec.rideId}` : undefined}>
+          <Card style={isStar ? { ...styles.cardPadding, ...RARE_CARD_STYLE } : styles.cardPadding} testID={isStar ? `rec-rare-${rec.rideId}` : undefined}>
             <View style={styles.layout}>
               <RideIcon rideId={rec.rideId} rideName={ride.name} size={ICON_SIZE} />
               <View style={styles.content}>
@@ -111,17 +112,13 @@ export function RecommendationCard({
                   ) : null}
                 </View>
                 {badge || waitLabel || rec.walkMinutes !== null ? (
-                  <View style={styles.metaRow}>
-                    {badge ? <VerdictBadge variant={badge} /> : null}
-                    {waitLabel ? (
-                      <Text style={[styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel]}>{waitLabel}</Text>
-                    ) : null}
-                    {rec.walkMinutes !== null ? (
-                      <View style={styles.walkEnd}>
-                        <WalkPill minutes={rec.walkMinutes} testID={`rec-walk-${rec.rideId}`} />
-                      </View>
-                    ) : null}
-                  </View>
+                  <MetaRow
+                    rideId={rec.rideId}
+                    badge={badge}
+                    waitLabel={waitLabel}
+                    walkOn={walkOn}
+                    walkMinutes={rec.walkMinutes}
+                  />
                 ) : null}
               </View>
               <ChevronRight size={18} color={colors.textTertiary} />
@@ -132,6 +129,67 @@ export function RecommendationCard({
           </Card>
         </Pressable>
       </SwipeToRetireRow>
+    </View>
+  );
+}
+
+const META_GAP = 10;
+
+/** "30 min wait" → "30 min" when the full label won't fit beside the badge and
+ *  walk pill. Other labels (Walk On, No posted wait) have no short form. */
+function shortWaitLabel(label: string): string {
+  return label.endsWith(' min wait') ? label.slice(0, -' wait'.length) : label;
+}
+
+interface MetaRowProps {
+  rideId: string;
+  badge: React.ComponentProps<typeof VerdictBadge>['variant'] | null;
+  waitLabel: string | null;
+  walkOn: boolean;
+  walkMinutes: number | null;
+}
+
+/**
+ * Badge · wait · walk pill on one line. Measures the row, the badge, the pill
+ * and the full wait label (an invisible copy, so its natural width isn't
+ * squeezed by the flex row); if the full label won't fit it drops "wait".
+ */
+export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaRowProps): React.ReactElement {
+  const [rowW, setRowW] = useState(0);
+  const [badgeW, setBadgeW] = useState(0);
+  const [pillW, setPillW] = useState(0);
+  const [labelW, setLabelW] = useState(0);
+  const w = (set: (n: number) => void) => (e: LayoutChangeEvent) => set(e.nativeEvent.layout.width);
+
+  const items = [badge, waitLabel, walkMinutes !== null].filter(Boolean).length;
+  const needed = badgeW + labelW + pillW + META_GAP * Math.max(items - 1, 0);
+  const tight = rowW > 0 && labelW > 0 && needed > rowW;
+  const shown = waitLabel && tight ? shortWaitLabel(waitLabel) : waitLabel;
+  const labelStyle = [styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel];
+
+  return (
+    <View style={styles.metaRow} onLayout={w(setRowW)} testID={`rec-meta-${rideId}`}>
+      {badge ? (
+        <View style={styles.noShrink} onLayout={w(setBadgeW)} testID={`rec-meta-badge-${rideId}`}>
+          <VerdictBadge variant={badge} />
+        </View>
+      ) : null}
+      {waitLabel ? (
+        <>
+          <WaitPill style={styles.waitShrink}>
+            <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+          </WaitPill>
+          {/* Off-screen copy of the full-label pill, measured at natural width. */}
+          <View style={styles.measure} onLayout={w(setLabelW)} aria-hidden testID={`rec-meta-measure-${rideId}`}>
+            <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+          </View>
+        </>
+      ) : null}
+      {walkMinutes !== null ? (
+        <View style={styles.walkEnd} onLayout={w(setPillW)} testID={`rec-meta-pill-${rideId}`}>
+          <WalkPill minutes={walkMinutes} testID={`rec-walk-${rideId}`} />
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -159,8 +217,8 @@ const styles = StyleSheet.create({
   },
   content: { flex: 1 },
   // Pushes the walk pill to the right edge of the text column, which ends
-  // where the chevron's gap begins.
-  walkEnd: { marginLeft: 'auto' },
+  // where the chevron's gap begins. Never shrinks — the wait label gives way.
+  walkEnd: { marginLeft: 'auto', flexShrink: 0 },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,20 +229,28 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
   },
+  // Narrower side padding than the base Card (14) — gives the meta row room
+  // so the badge, wait and walk pill fit on one line.
+  cardPadding: { paddingHorizontal: 10 },
+  // Single line: the card's padding leaves less width than a Discover row,
+  // so wrapping pushed the walk pill onto its own line. Tighter gap than
+  // RideRow for the same reason; MetaRow drops "wait" if it still won't fit.
   metaRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    columnGap: spacing.md,
-    rowGap: spacing.xs,
+    columnGap: META_GAP,
     marginTop: spacing.xs,
   },
   waitLabel: {
     ...typography.label,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
   },
+  noShrink: { flexShrink: 0 },
+  waitShrink: { flexShrink: 1 },
+  measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnLabel: { color: colors.go },
   noWaitLabel: { color: colors.textSecondary, fontWeight: '500' },
   // Spans the whole card, under the icon/name/chevron row.

@@ -90,9 +90,9 @@ export const typography = {
   },
   cardTitle: {
     fontFamily: 'Lora_600SemiBold',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '600' as const,
-    letterSpacing: -0.17,
+    letterSpacing: -0.18,
   },
   waitNumber: {
     fontFamily: 'Outfit_700Bold',

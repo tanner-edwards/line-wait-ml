@@ -6,7 +6,7 @@
 // batches. The list is shared with the main screen via RecsContext.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { CircleAlert, ListChecks } from 'lucide-react-native';
 import { ContentPanel, GradientHeader } from '../components/GradientHeader';
@@ -107,10 +107,7 @@ export function MoreToConsider(): React.ReactElement {
         }
         ListFooterComponent={
           loadingMore ? (
-            <View style={styles.loadingRow} testID="more-loading">
-              <ActivityIndicator size="small" />
-              <Text style={styles.loadingText}>Finding more picks…</Text>
-            </View>
+            <StateBlock loading title="Finding more picks…" testID="more-loading" />
           ) : loadMoreError ? (
             <View style={styles.errorRow}>
               <Text style={styles.errorBody}>{loadMoreError}</Text>
@@ -150,15 +147,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   moreButtonText: { color: colors.textInverse, fontSize: 16, fontWeight: '700' },
-  loadingRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: spacing.base,
-    paddingVertical: 14,
-    gap: spacing.sm,
-  },
-  loadingText: { ...typography.caption, color: colors.textSecondary },
   errorRow: { margin: spacing.base, alignItems: 'center' },
   errorBody: { ...typography.caption, color: colors.skip, marginBottom: spacing.sm, textAlign: 'center' },
 });
