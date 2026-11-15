@@ -1,31 +1,47 @@
-// Elevated Card item for the Recommendations tab (top picks + More to
-// Consider rows).
+// Elevated Card item for the Recommendations tab (top picks + the See All
+// list). Same layout as the Discover RideRow, plus the AI one-liner spanning
+// the full card width underneath:
 //
-// [Ride icon]  [★ Rare opportunity]           (star only)
-//              [Badge] Ride name [⚠]          [›]
-//              AI one-liner
-//              [~N min walk pill] · N min wait
+// [Ride icon]  Ride name [⚠]                                 [›]
+//              [★ GO NOW]  N min wait               [🚶 N min]
+// AI one-liner, full width — what the ride is doing and why it's
+// recommended.
 //
-// The trend label was dropped in the phase-2 redesign: the arrival wait
-// already folds it in, and ride detail keeps the evidence.
+// Badge (if any) left-aligned with the name, walk pill right-aligned.
+// Neutral = no badge. Star ("rare opportunity") cards get a gold border +
+// glow. Tiles keep the old icon-only badge.
 
 import React from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, ChevronRight, Star } from 'lucide-react-native';
+import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
-import { Pill } from './Pill';
-import { WalkPill } from './WalkPill';
+import { VerdictBadge } from './VerdictBadge';
 import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
+import { WalkPill } from './WalkPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
+import { NO_POSTED_WAIT } from '../grouping';
+
+const ICON_SIZE = 52;  // matches the Discover RideRow
+
+/** Gold border + gold glow for star ("rare opportunity") recs — shared with
+ *  RecommendationTile. */
+export const RARE_CARD_STYLE: ViewStyle = {
+  borderWidth: 1,
+  borderColor: colors.star,
+  shadowColor: colors.star,
+  shadowOffset: { width: 0, height: 0 },
+  shadowRadius: 10,
+  shadowOpacity: 0.35,
+  elevation: 6,
+};
 
 interface RecommendationCardProps {
   rec: Recommendation;
   ride: Ride | undefined;
-  debugMode: boolean;
   onPress: () => void;
   /** Marks this ride "Rode it" — excluded from recs for the rest of the trip. */
   onRetire: () => void;
@@ -33,11 +49,13 @@ interface RecommendationCardProps {
   isFirst?: boolean;
 }
 
-/** "Walk On" / "N min wait" / null — shared with RecommendationTile. */
+/** "Walk On" / "N min wait" / "No posted wait" / null — shared with
+ *  RecommendationTile. */
 export function recWaitLabel(rec: Recommendation, ride: Ride): string | null {
   const { walkOn, wait } = recWaitDisplay(rec, ride);
   if (walkOn) return 'Walk On';
-  return wait !== null ? `${wait} min wait` : null;
+  if (wait !== null) return `${wait} min wait`;
+  return ride.status === 'OPERATING' ? NO_POSTED_WAIT : null;
 }
 
 /**
@@ -59,7 +77,6 @@ export function recWaitDisplay(rec: Recommendation, ride: Ride): { walkOn: boole
 export function RecommendationCard({
   rec,
   ride,
-  debugMode,
   onPress,
   onRetire,
   isFirst,
@@ -72,57 +89,46 @@ export function RecommendationCard({
     );
   }
 
-  // Badge = the authoritative two-layer verdict (neutral → no chip). Star gets
-  // its own "Rare opportunity" line instead of an inline icon.
+  // Badge = the authoritative two-layer verdict (neutral → no badge).
   const rawVerdict = ride.verdict?.verdict ?? null;
   const badge = rawVerdict && rawVerdict !== 'neutral' ? rawVerdict : null;
   const isStar = badge === 'star';
+  const { walkOn } = recWaitDisplay(rec, ride);
   const waitLabel = recWaitLabel(rec, ride);
-  const cardAccent = badge === 'go' ? colors.go : isStar ? colors.star : undefined;
 
   return (
     <View style={styles.rowMargin}>
       <SwipeToRetireRow onConfirm={onRetire} isFirst={isFirst} testID={`rec-swipe-${rec.rideId}`}>
         <Pressable onPress={onPress} testID={`rec-card-${rec.rideId}`}>
-          <Card accent={cardAccent}>
+          <Card style={isStar ? RARE_CARD_STYLE : undefined} testID={isStar ? `rec-rare-${rec.rideId}` : undefined}>
             <View style={styles.layout}>
-              <RideIcon rideId={rec.rideId} rideName={ride?.name} size={56} />
+              <RideIcon rideId={rec.rideId} rideName={ride.name} size={ICON_SIZE} />
               <View style={styles.content}>
-                {isStar ? (
-                  <View style={styles.starRow}>
-                    <Star size={13} color={colors.star} fill={colors.star} />
-                    <Text style={styles.starLabel}>Rare opportunity</Text>
-                  </View>
-                ) : null}
                 <View style={styles.nameRow}>
-                  {badge && !isStar ? <Pill variant={badge} /> : null}
                   <Text style={styles.rideName}>{ride.name}</Text>
                   {rec.restrictionNote ? (
                     <AlertTriangle size={13} color={colors.star} />
                   ) : null}
                 </View>
-                {rec.oneLiner ? (
-                  <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
-                ) : null}
-                {rec.walkMinutes !== null || waitLabel ? (
+                {badge || waitLabel || rec.walkMinutes !== null ? (
                   <View style={styles.metaRow}>
+                    {badge ? <VerdictBadge variant={badge} /> : null}
+                    {waitLabel ? (
+                      <Text style={[styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel]}>{waitLabel}</Text>
+                    ) : null}
                     {rec.walkMinutes !== null ? (
-                      <WalkPill
-                        minutes={rec.walkMinutes}
-                        yards={debugMode ? rec.walkYards : null}
-                        emphasized
-                        testID={`rec-walk-${rec.rideId}`}
-                      />
+                      <View style={styles.walkEnd}>
+                        <WalkPill minutes={rec.walkMinutes} testID={`rec-walk-${rec.rideId}`} />
+                      </View>
                     ) : null}
-                    {rec.walkMinutes !== null && waitLabel ? (
-                      <Text style={styles.metaDot}>·</Text>
-                    ) : null}
-                    {waitLabel ? <Text style={styles.waitLabel}>{waitLabel}</Text> : null}
                   </View>
                 ) : null}
               </View>
               <ChevronRight size={18} color={colors.textTertiary} />
             </View>
+            {rec.oneLiner ? (
+              <Text style={styles.oneLiner}>{rec.oneLiner}</Text>
+            ) : null}
           </Card>
         </Pressable>
       </SwipeToRetireRow>
@@ -152,17 +158,9 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   content: { flex: 1 },
-  starRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginBottom: 2,
-  },
-  starLabel: {
-    ...typography.label,
-    fontWeight: '600',
-    color: colors.star,
-  },
+  // Pushes the walk pill to the right edge of the text column, which ends
+  // where the chevron's gap begins.
+  walkEnd: { marginLeft: 'auto' },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -173,25 +171,26 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
   },
-  oneLiner: {
-    ...typography.body,
-    color: colors.textSecondary,
-    marginTop: 2,
-  },
   metaRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    gap: spacing.sm,
-    marginTop: spacing.sm,
-  },
-  metaDot: {
-    ...typography.label,
-    color: colors.textTertiary,
+    columnGap: spacing.md,
+    rowGap: spacing.xs,
+    marginTop: spacing.xs,
   },
   waitLabel: {
     ...typography.label,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
+  },
+  walkOnLabel: { color: colors.go },
+  noWaitLabel: { color: colors.textSecondary, fontWeight: '500' },
+  // Spans the whole card, under the icon/name/chevron row.
+  oneLiner: {
+    ...typography.body,
+    color: colors.textSecondary,
+    marginTop: spacing.md,
   },
 });

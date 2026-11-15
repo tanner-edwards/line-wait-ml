@@ -218,7 +218,7 @@ describe('Home — initial successful load', () => {
 
     // Missing wait renders as "—"
     expect(screen.getByText('Snow White')).toBeTruthy();
-    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('No posted wait').length).toBeGreaterThan(0);
 
     // Closed ride renders "Closed"
     expect(screen.getByText("Peter Pan's Flight")).toBeTruthy();

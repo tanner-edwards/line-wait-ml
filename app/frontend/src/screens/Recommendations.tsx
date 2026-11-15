@@ -416,7 +416,6 @@ export function Recommendations(): React.ReactElement {
           onSeeAll={() => navigation.navigate('MoreToConsider')}
           refreshing={recsLoading}
           onRefresh={onRefresh}
-          debugMode={debugMode}
           onCardPress={(rec) =>
             openDetail({
               rideId: rec.rideId,
@@ -469,7 +468,6 @@ function RecsList({
   onSeeAll,
   refreshing,
   onRefresh,
-  debugMode,
   onCardPress,
   onRetire,
 }: {
@@ -480,7 +478,6 @@ function RecsList({
   onSeeAll: () => void;
   refreshing: boolean;
   onRefresh: () => void;
-  debugMode: boolean;
   onCardPress: (rec: RecommendationsResponse['recommendations'][number]) => void;
   onRetire: (rideId: string) => void;
 }): React.ReactElement {
@@ -520,7 +517,6 @@ function RecsList({
         <RecommendationCard
           rec={item}
           ride={ridesById.get(item.rideId)}
-          debugMode={debugMode}
           onPress={() => onCardPress(item)}
           onRetire={() => onRetire(item.rideId)}
           isFirst={index === 0}

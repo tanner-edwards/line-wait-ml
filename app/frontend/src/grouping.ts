@@ -76,10 +76,14 @@ function sortRidesWithinLand(rides: Ride[]): Ride[] {
  * - Rides in scheduled refurbishment: "Refurbishment"
  * - Anything else closed: "Closed"
  */
+/** Shown where the wait goes when a ride is open but has no posted wait. */
+export const NO_POSTED_WAIT = 'No posted wait';
+
 export function rideWaitLabel(ride: Ride): string {
   if (ride.status === 'REFURBISHMENT') return 'Refurbishment';
   if (ride.status !== 'OPERATING') return 'Closed';
-  if (ride.currentWait == null) return '—';
+  // Open, but Disney hasn't posted a wait (common right after opening).
+  if (ride.currentWait == null) return NO_POSTED_WAIT;
   return `${ride.currentWait} min`;
 }
 

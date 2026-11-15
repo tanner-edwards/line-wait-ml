@@ -1,13 +1,11 @@
 // Walking-distance pill. Used wherever we show "N min walk" — list rows,
 // the ride detail header, recommendation cards. Two visual modes:
 //
-//   - default (subtle): muted gray text, light bg. For list-row noise.
+//   - default (subtle): gray text, light bg. textSecondary, not tertiary —
+//                       tertiary washed out in direct sun.
 //   - emphasized:       brand color, semibold, slightly bigger padding.
 //                       For cards where the walk distance is a primary
 //                       piece of info, not just metadata.
-//
-// `yards` is shown appended when present — typically only in debug mode
-// at the call site (so the component itself doesn't need debug context).
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
@@ -16,19 +14,17 @@ import { WalkIcon } from './icons/WalkIcon';
 
 interface WalkPillProps {
   minutes: number;
-  yards?: number | null;
   emphasized?: boolean;
   testID?: string;
 }
 
 export function WalkPill({
   minutes,
-  yards = null,
   emphasized = false,
   testID,
 }: WalkPillProps): React.ReactElement {
-  const label = yards != null ? `${minutes} min · ${yards} yds` : `${minutes} min`;
-  const iconColor = emphasized ? colors.brand : colors.textTertiary;
+  const label = `${minutes} min`;
+  const iconColor = emphasized ? colors.brand : colors.textSecondary;
   return (
     <View style={[styles.pill, emphasized && styles.pillEmphasized]} testID={testID}>
       <WalkIcon size={emphasized ? 13 : 12} color={iconColor} />
@@ -55,7 +51,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.caption,
-    color: colors.textTertiary,
+    color: colors.textSecondary,
   },
   labelEmphasized: {
     color: colors.brand,

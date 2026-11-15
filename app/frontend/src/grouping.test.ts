@@ -194,8 +194,8 @@ describe('rideWaitLabel', () => {
     expect(rideWaitLabel(makeRide({ status: 'OPERATING', currentWait: 45 }))).toBe('45 min');
   });
 
-  it('returns "—" for an operating ride with a null wait', () => {
-    expect(rideWaitLabel(makeRide({ status: 'OPERATING', currentWait: null }))).toBe('—');
+  it('returns "No posted wait" for an operating ride with a null wait', () => {
+    expect(rideWaitLabel(makeRide({ status: 'OPERATING', currentWait: null }))).toBe('No posted wait');
   });
 
   it('returns "Closed" for non-operating statuses regardless of wait', () => {

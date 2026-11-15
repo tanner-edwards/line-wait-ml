@@ -16,7 +16,6 @@ import { UndoToast } from '../components/UndoToast';
 import { useRecs } from '../context/RecsContext';
 import { useRides } from '../context/RideContext';
 import { useDevice } from '../context/DeviceContext';
-import { useDebugMode } from '../context/DebugModeContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { colors, spacing, typography } from '../theme/tokens';
 
@@ -25,7 +24,6 @@ export function MoreToConsider(): React.ReactElement {
   const { recs, firstBatchCount, loadMore, loadingMore, loadMoreError } = useRecs();
   const { ridesById } = useRides();
   const { retiredRideIds, retireRide, unretireRide } = useDevice();
-  const { debugMode } = useDebugMode();
   const { openDetail } = useNotificationDetail();
   const [undoToast, setUndoToast] = useState<{ rideId: string; key: number } | null>(null);
 
@@ -85,7 +83,6 @@ export function MoreToConsider(): React.ReactElement {
           <RecommendationCard
             rec={item}
             ride={ridesById.get(item.rideId)}
-            debugMode={debugMode}
             onPress={() =>
               openDetail({
                 rideId: item.rideId,

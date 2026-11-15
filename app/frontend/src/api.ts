@@ -81,6 +81,11 @@ export async function fetchWaits(
   return (await res.json()) as CombinedResponse;
 }
 
+// Recs per /v2/recommendations call. The Recommendations screen fills 3 top
+// cards + 3 tiles from the first batch; Show more fetches the same size.
+// Backend default is 5, max 8 (values above are clamped).
+const RECOMMENDATIONS_COUNT = 6;
+
 interface FetchRecommendationsInput {
   park: ParkSlug;
   /** User's GPS coordinates (or debug-mode fake coordinates). */
@@ -116,7 +121,7 @@ export async function fetchRecommendations({
     throw new ApiError(null, 'API base URL or key not configured');
   }
 
-  const body: Record<string, unknown> = { park, userLat, userLng };
+  const body: Record<string, unknown> = { park, userLat, userLng, count: RECOMMENDATIONS_COUNT };
   if (persona) body.persona = persona;
   if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 

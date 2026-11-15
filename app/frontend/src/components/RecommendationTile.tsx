@@ -1,15 +1,18 @@
 // Compact square tile for the "More to Consider" row on Recommendations:
-// icon, ride name, walk pill, wait. Same wait logic and accent rule as
-// RecommendationCard.
+// icon, ride name, walk pill, wait. Same wait logic as RecommendationCard,
+// but keeps the old icon-only verdict badge (top-left corner) — tiles are too
+// small for the solid call-to-action badge. Neutral = no badge. Star tiles
+// also get the rare-opportunity gold border + glow, same as the cards.
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
+import { Pill } from './Pill';
 import { WalkPill } from './WalkPill';
 import { RideIcon } from './icons/RideIcon';
-import { recWaitLabel } from './RecommendationCard';
+import { RARE_CARD_STYLE, recWaitLabel } from './RecommendationCard';
 
 interface Props {
   rec: Recommendation;
@@ -21,11 +24,16 @@ export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactEl
   if (!ride) return null;
   const waitLabel = recWaitLabel(rec, ride);
   const verdict = ride.verdict?.verdict ?? null;
-  const accent = verdict === 'go' ? colors.go : verdict === 'star' ? colors.star : undefined;
+  const badge = verdict && verdict !== 'neutral' ? verdict : null;
 
   return (
     <Pressable onPress={onPress} style={styles.pressable} testID={`rec-tile-${rec.rideId}`}>
-      <Card accent={accent} style={styles.card}>
+      <Card style={verdict === 'star' ? { ...styles.card, ...RARE_CARD_STYLE } : styles.card}>
+        {badge ? (
+          <View style={styles.badgeCorner}>
+            <Pill variant={badge} />
+          </View>
+        ) : null}
         <RideIcon rideId={rec.rideId} rideName={ride.name} size={44} />
         <Text style={styles.name} numberOfLines={2}>{ride.name}</Text>
         <View style={styles.meta}>
@@ -45,6 +53,11 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.sm,
     gap: spacing.xs,
+  },
+  badgeCorner: {
+    position: 'absolute',
+    top: spacing.sm,
+    left: spacing.sm,
   },
   name: {
     ...typography.label,

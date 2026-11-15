@@ -108,7 +108,8 @@ export function Home() {
     );
   }
 
-  const walkOrigin = (chip || sortBy === 'distance' || sortBy === 'opportunity') ? locationCoords : null;
+  // Walk times show in every view (incl. A–Z) whenever location is known.
+  const walkOrigin = locationCoords;
 
   // Apply daily-park filter before flattening so the list (and any sort)
   // only sees rides in the selected park scope.
