@@ -375,6 +375,9 @@ export interface TripRecord {
   source: 'iap' | 'promo' | 'free';
   promoCode?: string;
   transactionId?: string; // Apple transaction ID (IAP only)
+  /** Travel day access first opened on — set by the first date edit made
+   *  once access is open; caps later edits (see tripEdit.ts). */
+  accessOpenedOn?: string; // YYYY-MM-DD
 }
 
 // Returned by POST /v1/users and GET /v1/users/me

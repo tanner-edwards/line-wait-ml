@@ -140,7 +140,7 @@ describe('handler — CORS headers', () => {
     expect(result.statusCode).toBe(200);
     expect(result.headers?.['Access-Control-Allow-Origin']).toBe('https://example.cloudfront.net');
     expect(result.headers?.['Access-Control-Allow-Headers']).toBe('x-api-key, content-type, authorization, x-app-version');
-    expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, POST, DELETE, OPTIONS');
+    expect(result.headers?.['Access-Control-Allow-Methods']).toBe('GET, POST, PUT, DELETE, OPTIONS');
   });
 
   it('includes CORS headers on a 401 response', async () => {

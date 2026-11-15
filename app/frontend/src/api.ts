@@ -312,6 +312,16 @@ export async function claimFreeTrip(
   return (body as { trip: TripRecord }).trip;
 }
 
+// Moves the latest trip to new dates. The server enforces the edit rules
+// (utils/tripEdit.ts mirrors them) and rejects with a user-facing message.
+export async function updateTripDates(
+  idToken: string,
+  input: { tripStart: string; tripEnd: string }
+): Promise<TripRecord> {
+  const body = await authedPostJson('/v1/users/trip', idToken, input, 'PUT');
+  return (body as { trip: TripRecord }).trip;
+}
+
 // Read-only check — validates the code server-side without claiming it.
 // Throws ApiError with the rejection reason if invalid.
 export async function checkPromoCode(idToken: string, code: string): Promise<void> {
@@ -444,12 +454,17 @@ async function postJson(path: string, body: object): Promise<unknown> {
   }
 }
 
-async function authedPostJson(path: string, idToken: string, body: object): Promise<unknown> {
+async function authedPostJson(
+  path: string,
+  idToken: string,
+  body: object,
+  method: 'POST' | 'PUT' = 'POST'
+): Promise<unknown> {
   if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         ...baseHeaders(),
         'content-type': 'application/json',

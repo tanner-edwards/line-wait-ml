@@ -285,6 +285,8 @@ export interface TripRecord {
   purchasedAt: string; // ISO
   source: 'iap' | 'promo' | 'free';
   promoCode?: string;
+  /** Travel day access first opened on — caps date edits (utils/tripEdit). */
+  accessOpenedOn?: string; // YYYY-MM-DD
 }
 
 // Server-evaluated feature flags (GET /v1/flags). Mirrors the backend's

@@ -70,7 +70,7 @@ export async function verifyAuthClaims(
 // user's local day and errs toward NOT locking out a paying user — a WDW /
 // Eastern guest simply gets up to 3h of extra leniency at the tripEnd
 // boundary. en-CA formats as YYYY-MM-DD, which sorts lexicographically.
-function parkTodayString(now: Date): string {
+export function parkTodayString(now: Date): string {
   return new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/Los_Angeles',
   }).format(now);
