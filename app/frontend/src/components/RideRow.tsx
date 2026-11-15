@@ -51,7 +51,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
       <Text style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
     </View>
   ) : isOperating && ride.currentWait !== null ? (
-    <Text style={styles.statusText}>{`${ride.currentWait} min wait`}</Text>
+    <Text numberOfLines={1} style={styles.statusText}>{`${ride.currentWait} min wait`}</Text>
   ) : isDown ? (
     <Text style={[styles.statusText, styles.downText]}>Down</Text>
   ) : (
@@ -102,8 +102,8 @@ const styles = StyleSheet.create({
   },
   content: { flex: 1 },
   // Pushes the walk pill to the right edge of the text column, which ends
-  // where the chevron's gap begins.
-  walkEnd: { marginLeft: 'auto' },
+  // where the chevron's gap begins. Never shrinks — the status gives way.
+  walkEnd: { marginLeft: 'auto', flexShrink: 0 },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -117,16 +117,16 @@ const styles = StyleSheet.create({
   rideNameDown: {
     color: colors.textTertiary,
   },
+  // Single line — the walk pill never wraps below the badge.
   metaRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
     columnGap: spacing.md,
-    rowGap: spacing.xs,
     marginTop: spacing.xs,
   },
   statusText: {
     ...typography.label,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,

@@ -114,7 +114,7 @@ export function RecommendationCard({
                   <View style={styles.metaRow}>
                     {badge ? <VerdictBadge variant={badge} /> : null}
                     {waitLabel ? (
-                      <Text style={[styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel]}>{waitLabel}</Text>
+                      <Text numberOfLines={1} style={[styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel]}>{waitLabel}</Text>
                     ) : null}
                     {rec.walkMinutes !== null ? (
                       <View style={styles.walkEnd}>
@@ -159,8 +159,8 @@ const styles = StyleSheet.create({
   },
   content: { flex: 1 },
   // Pushes the walk pill to the right edge of the text column, which ends
-  // where the chevron's gap begins.
-  walkEnd: { marginLeft: 'auto' },
+  // where the chevron's gap begins. Never shrinks — the wait label gives way.
+  walkEnd: { marginLeft: 'auto', flexShrink: 0 },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -171,16 +171,18 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
   },
+  // Single line: the card's padding leaves ~28pt less width than a Discover
+  // row, so wrapping pushed the walk pill onto its own line. Tighter gap than
+  // RideRow for the same reason.
   metaRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
     alignItems: 'center',
-    columnGap: spacing.md,
-    rowGap: spacing.xs,
+    columnGap: spacing.sm,
     marginTop: spacing.xs,
   },
   waitLabel: {
     ...typography.label,
+    flexShrink: 1,
     fontSize: 13,
     fontWeight: '600',
     color: colors.textPrimary,
