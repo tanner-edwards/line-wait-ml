@@ -132,7 +132,7 @@ export function RecommendationCard({
   );
 }
 
-const META_GAP = 8;
+const META_GAP = 10;
 
 /** "30 min wait" → "30 min" when the full label won't fit beside the badge and
  *  walk pill. Other labels (Walk On, No posted wait) have no short form. */

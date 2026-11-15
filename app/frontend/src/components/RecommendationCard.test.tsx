@@ -22,13 +22,13 @@ describe('MetaRow wait label', () => {
 
   it('keeps "min wait" when everything fits', () => {
     render(<MetaRow {...props} />);
-    measure(260, 110, 80, 54); // 110 + 80 + 54 + 2×8 = 260
+    measure(264, 110, 80, 54); // 110 + 80 + 54 + 2×10 = 264
     expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('120 min wait');
   });
 
   it('drops "wait" when the full label would not fit', () => {
     render(<MetaRow {...props} />);
-    measure(259, 110, 80, 54);
+    measure(263, 110, 80, 54);
     expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('120 min');
   });
 
