@@ -35,14 +35,14 @@ const BAR_TROUGH_PAST   = colors.barTroughPast;
 const BAR_PEAK_PAST     = colors.barPeakPast;
 const BAR_NEUTRAL_PAST  = colors.barNeutralPast;
 
-const DETAIL_TROUGH_BG      = 'rgba(61,124,101,0.06)';
-const DETAIL_TROUGH_BORDER  = 'rgba(61,124,101,0.22)';
+const DETAIL_TROUGH_BG      = 'rgba(6,75,54,0.06)';
+const DETAIL_TROUGH_BORDER  = 'rgba(6,75,54,0.22)';
 const DETAIL_PEAK_BG        = 'rgba(184,58,42,0.05)';
 const DETAIL_PEAK_BORDER    = 'rgba(184,58,42,0.18)';
 const DETAIL_NEUTRAL_BG     = 'rgba(10,107,90,0.05)';
 const DETAIL_NEUTRAL_BORDER = 'rgba(10,107,90,0.14)';
 
-const BADGE_TROUGH_BG  = 'rgba(61,124,101,0.10)';
+const BADGE_TROUGH_BG  = 'rgba(6,75,54,0.10)';
 const BADGE_PEAK_BG    = 'rgba(184,58,42,0.08)';
 const BADGE_NEUTRAL_BG = 'rgba(10,107,90,0.08)';
 
@@ -312,7 +312,7 @@ export function FullDayForecast({ fullDayForecast, rideName, prediction = null, 
   return (
     <View>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>FULL DAY FORECAST</Text>
+        <Text style={styles.headerTitle}>Full Day Forecast</Text>
         <Text style={styles.headerSubtitle}>Tap a bar to see details</Text>
       </View>
 
@@ -486,12 +486,12 @@ function SelectedBarDetail({ slot, rideName }: { slot: DisplaySlot; rideName: st
 
 const styles = StyleSheet.create({
   header: { marginBottom: 10 },
+  // Serif title per the phase-4 mockup (was a small all-caps label).
   headerTitle: {
-    fontSize: 10,
-    color: colors.textTertiary,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-    fontWeight: '600',
+    fontFamily: 'Lora_700Bold',
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.textPrimary,
   },
   headerSubtitle: {
     fontSize: 11,

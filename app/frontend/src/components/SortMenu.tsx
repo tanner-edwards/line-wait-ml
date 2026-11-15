@@ -6,7 +6,8 @@ import { colors } from '../theme/tokens';
 
 interface SortMenuProps {
   visible: boolean;
-  current: SortBy | null;
+  /** null = "A–Z by land"; undefined = nothing checked (a Discover chip is active). */
+  current: SortBy | null | undefined;
   distanceAvailable: boolean;
   onSelect: (sort: SortBy | null) => void;
   onClose: () => void;
