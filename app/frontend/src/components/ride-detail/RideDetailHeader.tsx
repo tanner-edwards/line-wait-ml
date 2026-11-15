@@ -131,7 +131,7 @@ export function RideDetailHeader({
           <Text style={styles.rideName}>{rideName}</Text>
           <View style={styles.locationRow}>
             <Text style={styles.location}>{subtitle}</Text>
-            {walkMins != null ? <WalkPill minutes={walkMins} /> : null}
+            {walkMins != null ? <WalkPill minutes={walkMins} pilled /> : null}
           </View>
         </View>
       </View>
