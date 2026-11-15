@@ -21,6 +21,7 @@ import { VerdictBadge } from './VerdictBadge';
 import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
+import { WaitPill } from './WaitPill';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 import { NO_POSTED_WAIT } from '../grouping';
@@ -175,8 +176,13 @@ export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaR
       ) : null}
       {waitLabel ? (
         <>
-          <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
-          <Text style={[labelStyle, styles.measure]} onLayout={w(setLabelW)} aria-hidden testID={`rec-meta-measure-${rideId}`}>{waitLabel}</Text>
+          <WaitPill style={styles.waitShrink}>
+            <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+          </WaitPill>
+          {/* Off-screen copy of the full-label pill, measured at natural width. */}
+          <View style={styles.measure} onLayout={w(setLabelW)} aria-hidden testID={`rec-meta-measure-${rideId}`}>
+            <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+          </View>
         </>
       ) : null}
       {walkMinutes !== null ? (
@@ -243,7 +249,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   noShrink: { flexShrink: 0 },
-  // Off-screen copy of the full wait label, measured at its natural width.
+  waitShrink: { flexShrink: 1 },
   measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnLabel: { color: colors.go },
   noWaitLabel: { color: colors.textSecondary, fontWeight: '500' },

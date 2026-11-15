@@ -17,6 +17,7 @@ import { Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { VerdictBadge } from './VerdictBadge';
 import { WalkPill } from './WalkPill';
+import { WaitPill } from './WaitPill';
 import { RideIcon } from './icons/RideIcon';
 import { isWalkOnRide } from '../utils/walkOn';
 import { rideWaitLabel, walkMinsTo } from '../grouping';
@@ -45,15 +46,23 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
+  // Waits (incl. Walk On / No posted wait) get the white pill; Down / Closed /
+  // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
-    <View style={styles.walkOnCluster} testID="badge-walk-on">
+    <WaitPill style={styles.waitShrink} testID="badge-walk-on">
       <Footprints size={13} color={colors.go} />
       <Text style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
-    </View>
+    </WaitPill>
   ) : isOperating && ride.currentWait !== null ? (
-    <Text numberOfLines={1} style={styles.statusText}>{`${ride.currentWait} min wait`}</Text>
+    <WaitPill style={styles.waitShrink}>
+      <Text numberOfLines={1} style={styles.statusText}>{`${ride.currentWait} min wait`}</Text>
+    </WaitPill>
   ) : isDown ? (
     <Text style={[styles.statusText, styles.downText]}>Down</Text>
+  ) : isOperating ? (
+    <WaitPill style={styles.waitShrink}>
+      <Text numberOfLines={1} style={[styles.statusText, styles.mutedText]}>{rideWaitLabel(ride)}</Text>
+    </WaitPill>
   ) : (
     <Text style={[styles.statusText, styles.mutedText]}>{rideWaitLabel(ride)}</Text>
   );
@@ -131,11 +140,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.textPrimary,
   },
-  walkOnCluster: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
+  waitShrink: { flexShrink: 1 },
   walkOnText: { color: colors.go },
   downText: { color: colors.star },
   mutedText: { color: colors.textSecondary, fontWeight: '500' },
