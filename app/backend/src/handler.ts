@@ -41,7 +41,7 @@ import { scoreVerdict } from './scoring/layer2';
 import { jumpEase } from './scoring/jumpEase';
 import type { Verdict, VerdictInfo } from './types';
 import { walkingMinutes } from './recommendations/walkingDistance';
-import { buildRecommendations } from './recommendations/handler';
+import { buildRecommendations, resolveBatchSize, MAX_BATCH_SIZE } from './recommendations/handler';
 import { personaCacheKey } from './recommendations/persona';
 import {
   AccessibilityNeed,
@@ -756,6 +756,7 @@ async function handleRecommendations(
     userLng?: unknown;
     persona?: unknown;
     excludeRideIds?: unknown;
+    count?: unknown;
   };
   try {
     body = JSON.parse(event.body ?? '{}');
@@ -787,6 +788,21 @@ async function handleRecommendations(
     ? body.excludeRideIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
 
+  // Optional count — how many recommendations to return. Omitted/null keeps
+  // the original default of 5, so existing clients are unaffected. Must be a
+  // positive integer; values above MAX_BATCH_SIZE are clamped to it.
+  let count: number | undefined;
+  if (body.count !== undefined && body.count !== null) {
+    if (typeof body.count !== 'number' || !Number.isInteger(body.count) || body.count < 1) {
+      return jsonResponse(
+        400,
+        errorBody('BAD_REQUEST', `count must be an integer between 1 and ${MAX_BATCH_SIZE}`)
+      );
+    }
+    count = body.count;
+  }
+  const batchSize = resolveBatchSize(count);
+
   // Optional ?at=<iso> for time-travel testing — same param as /v0/waits.
   // When set we bypass the recs cache to avoid mixing live/time-travel results.
   const atParam = event.queryStringParameters?.at;
@@ -799,10 +815,11 @@ async function handleRecommendations(
   }
 
   // Cache key: coarse GPS grid (4 decimal places ≈ 11 m precision) +
-  // persona + excludeRideIds so different users/batches don't collide.
+  // persona + excludeRideIds + batch size so different users/batches don't
+  // collide.
   const excludeKey =
     excludeRideIds.length === 0 ? '' : '__ex' + [...excludeRideIds].sort().join(',');
-  const cacheKey = `${park}__${userLat.toFixed(4)}_${userLng.toFixed(4)}__${personaCacheKey(persona)}${excludeKey}`;
+  const cacheKey = `${park}__${userLat.toFixed(4)}_${userLng.toFixed(4)}__${personaCacheKey(persona)}${excludeKey}__n${batchSize}`;
   if (!at) {
     const cached = recsCache.get(cacheKey);
     if (cached) {
@@ -811,7 +828,9 @@ async function handleRecommendations(
   }
 
   try {
-    const result = await buildRecommendations({ park, userLat, userLng, at, persona, excludeRideIds });
+    const result = await buildRecommendations({
+      park, userLat, userLng, at, persona, excludeRideIds, count: batchSize,
+    });
     if (!at) recsCache.set(cacheKey, result);
     return jsonResponse(200, result);
   } catch (err) {

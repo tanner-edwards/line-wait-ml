@@ -34,11 +34,23 @@ const DEFAULT_FALLBACK_ONE_LINER = 'Recommended based on current waits.';
 // const DEFAULT_FALLBACK_PARAGRAPH =
 //   "Our scoring system rates this ride positively given current waits, the typical line for this hour, and the projected trend over the next two hours.";
 
-/** Recommendations are batched: each call returns up to BATCH_SIZE picks.
+/** Recommendations are batched: each call returns up to `count` picks
+ *  (DEFAULT_BATCH_SIZE when the client doesn't ask for a specific amount).
  *  The client fires a second call with excludeRideIds when the user taps
  *  "show more" to fetch the next batch. Halves the LLM latency vs. asking
  *  for 10 upfront. */
-export const BATCH_SIZE = 5;
+export const DEFAULT_BATCH_SIZE = 5;
+/** Upper bound on a client-requested `count`. Keeps LLM output (and latency)
+ *  well inside bedrockClient's MAX_TOKENS cap. */
+export const MAX_BATCH_SIZE = 8;
+/** @deprecated Use DEFAULT_BATCH_SIZE. Kept so existing imports don't break. */
+export const BATCH_SIZE = DEFAULT_BATCH_SIZE;
+
+/** Clamp a requested batch size into [1, MAX_BATCH_SIZE]; undefined → default. */
+export function resolveBatchSize(count?: number): number {
+  if (count === undefined || !Number.isFinite(count)) return DEFAULT_BATCH_SIZE;
+  return Math.min(MAX_BATCH_SIZE, Math.max(1, Math.floor(count)));
+}
 
 export interface RecommendationsRequest {
   park: ParkSlug;
@@ -59,6 +71,9 @@ export interface RecommendationsRequest {
    *  by the "show more" flow so the second batch doesn't repeat picks from
    *  the first. */
   excludeRideIds?: string[];
+  /** Optional max number of recommendations to return. Defaults to
+   *  DEFAULT_BATCH_SIZE (5); clamped to [1, MAX_BATCH_SIZE]. */
+  count?: number;
 }
 
 /**
@@ -76,6 +91,7 @@ export async function buildRecommendations(
   // the passive 2.5-min parkCache. fetchPark's own freshBypassFloor (20s)
   // still protects against back-to-back bypasses if recs are hit rapidly.
   const park = await fetchPark(req.park, req.at, null, null, true);
+  const batchSize = resolveBatchSize(req.count);
 
   let metadataMap;
   try {
@@ -143,23 +159,23 @@ export async function buildRecommendations(
   // Build system prompt fresh per request so the persona block reflects the
   // calling user. When persona is null/empty, personaToText returns the
   // DEFAULT_PERSONA text and we get the same prompt v2 used.
-  const systemPrompt = buildSystemPrompt(personaToText(req.persona, metadataMap), BATCH_SIZE);
+  const systemPrompt = buildSystemPrompt(personaToText(req.persona, metadataMap), batchSize);
 
   let llmRecs: Recommendation[] | null = null;
   try {
-    const text = await invokeRecommendations(systemPrompt, buildUserMessage(ctx, BATCH_SIZE));
+    const text = await invokeRecommendations(systemPrompt, buildUserMessage(ctx, batchSize));
     // TEMP DEBUG (remove once Bedrock path is verified): log the raw model
     // response so we can tell whether a degraded result came from a parse
     // failure vs an empty rec list vs all-filtered IDs.
     console.log('[bedrock-raw]', JSON.stringify({ textLen: text.length, preview: text.slice(0, 400) }));
-    llmRecs = parseAndValidate(text, candidates);
+    llmRecs = parseAndValidate(text, candidates, batchSize);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
     console.warn('Bedrock call failed; falling back to deterministic recs', err);
   }
 
   if (llmRecs === null || llmRecs.length === 0) {
-    const recs = fallbackRecs(candidates);
+    const recs = fallbackRecs(candidates, batchSize);
     return {
       currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
       park: req.park,
@@ -253,12 +269,13 @@ function computeArrivalWait(
 }
 
 // Strict JSON validator. Rejects anything not matching the contract.
-// Filters out recs whose rideId isn't in the candidate set. Caps at BATCH_SIZE.
+// Filters out recs whose rideId isn't in the candidate set. Caps at batchSize.
 // arrivalWait is computed server-side via computeArrivalWait — the LLM value
 // is ignored to prevent naive currentWait+walkMinutes arithmetic.
 export function parseAndValidate(
   text: string,
-  candidates: RideForPrompt[]
+  candidates: RideForPrompt[],
+  batchSize: number = DEFAULT_BATCH_SIZE
 ): Recommendation[] | null {
   let parsed: unknown;
   try {
@@ -299,7 +316,7 @@ export function parseAndValidate(
         candidate.ride.historicalAverage ?? null,
       ),
     });
-    if (valid.length >= BATCH_SIZE) break;
+    if (valid.length >= batchSize) break;
   }
   return valid;
 }
@@ -314,10 +331,13 @@ function stripCodeFences(text: string): string {
 
 /**
  * Deterministic fallback when Bedrock fails or returns garbage.
- * Sorts candidates by score (descending), takes the top BATCH_SIZE, and
+ * Sorts candidates by score (descending), takes the top batchSize, and
  * assigns a generic one-liner.
  */
-export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
+export function fallbackRecs(
+  candidates: RideForPrompt[],
+  batchSize: number = DEFAULT_BATCH_SIZE
+): Recommendation[] {
   // No LLM: rank by verdict (star > go > neutral > skip), then shorter walk.
   const RANK: Record<string, number> = { star: 3, go: 2, neutral: 1, skip: 0 };
   const rank = (r: RideForPrompt) => RANK[r.ride.verdict?.verdict ?? 'neutral'] ?? 1;
@@ -326,7 +346,7 @@ export function fallbackRecs(candidates: RideForPrompt[]): Recommendation[] {
     if (d !== 0) return d;
     return (a.walkMinutes ?? Infinity) - (b.walkMinutes ?? Infinity);
   });
-  return sorted.slice(0, BATCH_SIZE).map(({ ride, walkMinutes, walkYards }) => ({
+  return sorted.slice(0, batchSize).map(({ ride, walkMinutes, walkYards }) => ({
     rideId: ride.id,
     oneLiner: DEFAULT_FALLBACK_ONE_LINER,
     restrictionNote: null,

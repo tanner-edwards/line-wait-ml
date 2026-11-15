@@ -299,7 +299,7 @@ export interface RecommendationsResponse {
   park: ParkSlug;
   lastUpdated: string;        // ISO timestamp; matches the underlying live-data fetch
   degraded: boolean;          // true when Bedrock failed and we returned deterministic fallback
-  recommendations: Recommendation[]; // up to BATCH_SIZE entries per request
+  recommendations: Recommendation[]; // up to `count` (default 5, max 8) entries per request
   hasMore: boolean;           // true when more candidates exist beyond what's in `recommendations`
 }
 
