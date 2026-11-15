@@ -5,6 +5,9 @@
 // The initial length comes from the persona's tripDuration. The end date
 // follows the start date at that length until the user edits the end
 // themselves — after that, moving the start only clamps it.
+//
+// Editing an existing trip passes `initial` (its current dates) and `limits`
+// (utils/tripEdit): bounds the start, can lock it, and caps the end.
 
 import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -13,6 +16,7 @@ import { ChevronDown, ChevronUp } from 'lucide-react-native';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { TripDuration } from '../types';
 import { addDays, defaultTripDays, stripTime, toYMD } from '../utils/tripDefaults';
+import { TripEditLimits } from '../utils/tripEdit';
 
 export interface TripDateRange {
   tripStart: string; // YYYY-MM-DD
@@ -23,6 +27,10 @@ interface Props {
   onChange: (range: TripDateRange) => void;
   /** From persona; sets the initial trip length. Omitted → 3 days. */
   tripDuration?: TripDuration | null;
+  /** Existing trip's dates — editing instead of buying. */
+  initial?: TripDateRange;
+  /** Edit bounds for an existing trip. */
+  limits?: TripEditLimits;
 }
 
 const MAX_DAYS = 10;
@@ -32,21 +40,38 @@ function daysBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 86_400_000);
 }
 
+function fromYMD(ymd: string): Date {
+  return new Date(ymd + 'T00:00:00');
+}
+
 function formatDate(date: Date): string {
   return date.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
 type ActiveField = 'start' | 'end' | null;
 
-export function TripDatePicker({ onChange, tripDuration = null }: Props): React.ReactElement {
+export function TripDatePicker({ onChange, tripDuration = null, initial, limits }: Props): React.ReactElement {
   const today = stripTime(new Date());
-  const maxStart = addDays(today, MAX_START_DAYS_OUT);
+  const minStart = limits ? fromYMD(limits.minStart) : today;
+  const maxStart = limits ? fromYMD(limits.maxStart) : addDays(today, MAX_START_DAYS_OUT);
+  const endCap = limits?.endCap ? fromYMD(limits.endCap) : null;
+  const startLocked = limits?.startLocked ?? false;
   const lengthDays = defaultTripDays(tripDuration);
 
-  const [startDate, setStartDate] = useState(today);
-  const [endDate, setEndDate] = useState(addDays(today, lengthDays - 1));
-  const [endTouched, setEndTouched] = useState(false);
+  const [startDate, setStartDate] = useState(initial ? fromYMD(initial.tripStart) : today);
+  const [endDate, setEndDate] = useState(
+    initial ? fromYMD(initial.tripEnd) : addDays(today, lengthDays - 1)
+  );
+  const [endTouched, setEndTouched] = useState(!!initial);
   const [active, setActive] = useState<ActiveField>(null);
+
+  // 10 days from the start, and never past the post-access cap.
+  const maxEndFor = (start: Date) => {
+    const byLength = addDays(start, MAX_DAYS - 1);
+    return endCap && endCap < byLength ? endCap : byLength;
+  };
+  // Mid-trip the start is in the past, but the end can't be.
+  const minEndFor = (start: Date) => (start < today ? today : start);
 
   const toggle = (field: 'start' | 'end') =>
     setActive(prev => (prev === field ? null : field));
@@ -55,8 +80,8 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
     if (!selected) return;
     const next = stripTime(selected);
     let nextEnd = endTouched ? endDate : addDays(next, lengthDays - 1);
-    if (nextEnd < next) nextEnd = next;
-    if (daysBetween(next, nextEnd) > MAX_DAYS - 1) nextEnd = addDays(next, MAX_DAYS - 1);
+    if (nextEnd < minEndFor(next)) nextEnd = minEndFor(next);
+    if (nextEnd > maxEndFor(next)) nextEnd = maxEndFor(next);
     setStartDate(next);
     setEndDate(nextEnd);
     onChange({ tripStart: toYMD(next), tripEnd: toYMD(nextEnd) });
@@ -65,8 +90,8 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
   const handleEndChange = (_: unknown, selected?: Date) => {
     if (!selected) return;
     let next = stripTime(selected);
-    if (next < startDate) next = startDate;
-    if (daysBetween(startDate, next) > MAX_DAYS - 1) next = addDays(startDate, MAX_DAYS - 1);
+    if (next < minEndFor(startDate)) next = minEndFor(startDate);
+    if (next > maxEndFor(startDate)) next = maxEndFor(startDate);
     setEndTouched(true);
     setEndDate(next);
     onChange({ tripStart: toYMD(startDate), tripEnd: toYMD(next) });
@@ -76,18 +101,21 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
   const days = nights + 1;
   const summary = days === 1 ? '1 day' : `${days} days`;
   const atMax = days >= MAX_DAYS;
+  const atCap = !atMax && endCap !== null && endDate >= endCap;
 
   return (
     <View style={styles.container}>
       {/* Start date row */}
       <Pressable
-        style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
+        style={({ pressed }) => [styles.row, pressed && !startLocked && styles.rowPressed]}
         onPress={() => toggle('start')}
+        disabled={startLocked}
+        testID="trip-start-row"
       >
         <Text style={styles.label}>Start date</Text>
         <View style={styles.rowRight}>
-          <Text style={styles.value}>{formatDate(startDate)}</Text>
-          {active === 'start'
+          <Text style={[styles.value, startLocked && styles.valueLocked]}>{formatDate(startDate)}</Text>
+          {startLocked ? null : active === 'start'
             ? <ChevronUp size={15} color={colors.textTertiary} />
             : <ChevronDown size={15} color={colors.textTertiary} />}
         </View>
@@ -98,7 +126,7 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
           value={startDate}
           mode="date"
           display="spinner"
-          minimumDate={today}
+          minimumDate={minStart}
           maximumDate={maxStart}
           onChange={handleStartChange}
           style={styles.picker}
@@ -128,8 +156,8 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
           value={endDate}
           mode="date"
           display="spinner"
-          minimumDate={startDate}
-          maximumDate={addDays(startDate, MAX_DAYS - 1)}
+          minimumDate={minEndFor(startDate)}
+          maximumDate={maxEndFor(startDate)}
           onChange={handleEndChange}
           style={styles.picker}
           textColor={colors.textPrimary}
@@ -142,6 +170,9 @@ export function TripDatePicker({ onChange, tripDuration = null }: Props): React.
       <Text style={styles.summary}>{summary}</Text>
       {atMax && (
         <Text style={styles.maxError}>Trips are limited to 10 days</Text>
+      )}
+      {atCap && (
+        <Text style={styles.maxError}>Trips are limited to 10 days from your first day of access</Text>
       )}
     </View>
   );
@@ -172,6 +203,7 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontWeight: '600',
   },
+  valueLocked: { color: colors.textSecondary },
   picker: {
     width: '100%',
     height: 120,

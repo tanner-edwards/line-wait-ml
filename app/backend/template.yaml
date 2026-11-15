@@ -120,7 +120,7 @@ Resources:
       Cors:
         AllowOrigin: !Sub "'${CorsOrigin}'"
         AllowHeaders: "'x-api-key, content-type, authorization, x-app-version'"
-        AllowMethods: "'GET, POST, DELETE, OPTIONS'"
+        AllowMethods: "'GET, POST, PUT, DELETE, OPTIONS'"
 
   WaitsApiKey:
     Type: AWS::ApiGateway::ApiKey
@@ -333,6 +333,14 @@ Resources:
             RestApiId: !Ref WaitsApi
             Path: /v1/users/trip
             Method: get
+            Auth:
+              ApiKeyRequired: true
+        UserTripUpdate:
+          Type: Api
+          Properties:
+            RestApiId: !Ref WaitsApi
+            Path: /v1/users/trip
+            Method: put
             Auth:
               ApiKeyRequired: true
         Flags:

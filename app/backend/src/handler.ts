@@ -53,7 +53,7 @@ import {
   UserResponse,
   FeedbackRecord,
 } from './types';
-import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode, setAppleRefreshToken } from './users';
+import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode, setAppleRefreshToken, updateTripDates, TripEditError } from './users';
 import { exchangeAuthorizationCode } from './appleAuth';
 import { submitFeedback } from './feedback';
 import {
@@ -61,6 +61,7 @@ import {
   stripPremiumFromRide,
   verifyAuthClaims,
   invalidateEntitlement,
+  parkTodayString,
 } from './entitlement';
 import { purchaseTrip } from './tripPurchase';
 import { evaluateFlags, getAppVersion, isFlagEnabled } from './featureFlags';
@@ -465,7 +466,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'x-api-key, content-type, authorization, x-app-version',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   };
 }
 
@@ -514,6 +515,7 @@ type RouteKind =
   | { kind: 'user-delete' }
   | { kind: 'user-apple-auth' }
   | { kind: 'user-trip' }
+  | { kind: 'user-trip-update' }
   | { kind: 'user-trip-claim-free' }
   | { kind: 'user-trip-purchase' }
   | { kind: 'promo-validate' }
@@ -571,6 +573,9 @@ function routeFromPath(
     const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
     if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
   }
+  if (method === 'PUT' && path.endsWith('/v1/users/trip')) {
+    return { kind: 'user-trip-update' };
+  }
   if (method === 'DELETE' && path.endsWith('/v1/users/me')) {
     return { kind: 'user-delete' };
   }
@@ -625,6 +630,10 @@ export async function handler(
 
   if (route.kind === 'user-trip') {
     return handleUserTrip(event);
+  }
+
+  if (route.kind === 'user-trip-update') {
+    return handleUserTripUpdate(event);
   }
 
   if (route.kind === 'user-trip-claim-free') {
@@ -1232,6 +1241,38 @@ async function handleUserTrip(
     return jsonResponse(200, { trip });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
+// Moves the latest trip to new dates. Rules (and why) live in tripEdit.ts.
+async function handleUserTripUpdate(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: { tripStart?: unknown; tripEnd?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const tripStart = typeof body.tripStart === 'string' ? body.tripStart : null;
+  const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
+  if (!tripStart || !tripEnd) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'tripStart and tripEnd are required (YYYY-MM-DD)'));
+  }
+
+  try {
+    const trip = await updateTripDates(uid, tripStart, tripEnd, parkTodayString(new Date()));
+    invalidateEntitlement(uid); // new dates can open or close access
+    return jsonResponse(200, { trip });
+  } catch (err) {
+    if (err instanceof TripEditError) return jsonResponse(400, errorBody('BAD_REQUEST', err.message));
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message === 'No trip found') return jsonResponse(404, errorBody('NOT_FOUND', message));
     return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
   }
 }
