@@ -14,7 +14,6 @@ import { StateBlock } from '../components/StateBlock';
 import { colors, radius } from '../theme/tokens';
 import {
   ListItem,
-  SortBy,
   filterItemsByQuery,
   flattenForList,
   flattenSorted,
@@ -23,14 +22,12 @@ import {
 } from '../grouping';
 import { formatHHMM, olderLastUpdated } from '../timestamp';
 import { TimeTravelModal } from '../components/TimeTravelModal';
-import { SortMenu } from '../components/SortMenu';
 import { NotificationBellButton } from '../components/NotificationBellButton';
 import { ContentPanel, GradientHeader, gradientHeaderTextStyles } from '../components/GradientHeader';
 import { RideRow } from '../components/RideRow';
 import { SearchField } from '../components/SearchField';
 import { DiscoverChip, DiscoverChips } from '../components/DiscoverChips';
 import { LandOption, LandPickerSheet } from '../components/LandPickerSheet';
-import { ArrowUpDown } from 'lucide-react-native';
 import { useRides } from '../context/RideContext';
 import { useLocation } from '../context/LocationContext';
 import { useDailyContext } from '../context/DailyContextContext';
@@ -64,18 +61,16 @@ export function Home() {
 
   const [timeTravelLabel, setTimeTravelLabel] = useState<string | null>(null);
   const [showTimeTravelModal, setShowTimeTravelModal] = useState(false);
-  const [sortBy, setSortBy] = useState<SortBy | null>('opportunity');
-  const [showSortMenu, setShowSortMenu] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  // A chip and a sort-menu choice are mutually exclusive: while a chip is
-  // active, `sortBy` is ignored and the sort menu shows nothing checked.
-  const [chip, setChip] = useState<DiscoverChip | null>('nearby');
+  // Exactly one chip is active — it picks both the filter and the sort.
+  const [chip, setChip] = useState<DiscoverChip>('nearby');
   const [selectedLand, setSelectedLand] = useState<string | null>(null);
   const [showLandPicker, setShowLandPicker] = useState(false);
 
-  const handleSortSelect = useCallback((next: SortBy | null) => {
-    setSortBy(next);
-    setChip(null);
+  // By Land opens the picker; the chip only activates once a land is picked.
+  const handleChipSelect = useCallback((next: DiscoverChip) => {
+    if (next === 'land') setShowLandPicker(true);
+    else setChip(next);
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -136,9 +131,9 @@ export function Home() {
     ? filterRides(flattenSorted(scopedData, 'opportunity', locationCoords, persona), r => r.land === selectedLand)
     : chip === 'list'
     ? filterRides(flattenSorted(scopedData, 'opportunity', locationCoords, persona), r => mustDoSet.has(r.id))
-    : sortBy
-    ? flattenSorted(scopedData, sortBy, locationCoords, persona)
-    : flattenForList(scopedData);
+    : chip === 'az'
+    ? flattenForList(scopedData)
+    : flattenSorted(scopedData, chip, locationCoords, persona);
   const items = filterItemsByQuery(baseItems, searchQuery);
   const lastUpdate = lastRefreshedAt
     ? formatHHMM(lastRefreshedAt)
@@ -172,19 +167,7 @@ export function Home() {
             </Text>
           )
         }
-        right={
-          <>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setShowSortMenu(true)}
-              testID="sort-button"
-              style={styles.sortButton}
-            >
-              <ArrowUpDown size={20} color={sortBy && !chip ? colors.textInverse : 'rgba(255,255,255,0.65)'} />
-            </Pressable>
-            <NotificationBellButton />
-          </>
-        }
+        right={<NotificationBellButton />}
         bottom={
           <SearchField
             value={searchQuery}
@@ -200,9 +183,7 @@ export function Home() {
       <DiscoverChips
         active={chip}
         landLabel={selectedLand}
-        onNearby={() => setChip('nearby')}
-        onLand={() => setShowLandPicker(true)}
-        onList={() => setChip('list')}
+        onSelect={handleChipSelect}
       />
       {nearbyNeedsLocation ? (
         <NearbyLocationState
@@ -256,13 +237,6 @@ export function Home() {
       />
       )}
       </ContentPanel>
-      <SortMenu
-        visible={showSortMenu}
-        current={chip ? undefined : sortBy}
-        distanceAvailable={locationCoords !== null && locationStatus === 'ready'}
-        onSelect={handleSortSelect}
-        onClose={() => setShowSortMenu(false)}
-      />
       <LandPickerSheet
         visible={showLandPicker}
         lands={landOptions}
@@ -416,11 +390,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomColor: colors.border,
     borderBottomWidth: 1,
-  },
-  sortButton: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginRight: 4,
   },
   parkHeader: {
     backgroundColor: colors.bg,

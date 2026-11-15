@@ -2,7 +2,7 @@
 // it gets the pill). Used wherever we show "N min walk" — list rows, the ride
 // detail header, recommendation cards. Two visual modes:
 //
-//   - default (subtle): gray text. textSecondary, not tertiary — tertiary
+//   - default:          textPrimary, same as the wait — lighter grays
 //                       washed out in direct sun.
 //   - emphasized:       brand color, semibold.
 //                       For cards where the walk distance is a primary
@@ -25,7 +25,7 @@ export function WalkPill({
   testID,
 }: WalkPillProps): React.ReactElement {
   const label = `${minutes} min`;
-  const iconColor = emphasized ? colors.brand : colors.textSecondary;
+  const iconColor = emphasized ? colors.brand : colors.textPrimary;
   return (
     <View style={[styles.pill, emphasized && styles.pillEmphasized]} testID={testID}>
       <WalkIcon size={emphasized ? 13 : 12} color={iconColor} />
@@ -46,7 +46,7 @@ const styles = StyleSheet.create({
   },
   label: {
     ...typography.caption,
-    color: colors.textSecondary,
+    color: colors.textPrimary,
   },
   labelEmphasized: {
     color: colors.brand,

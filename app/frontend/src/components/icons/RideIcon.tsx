@@ -82,21 +82,26 @@ const SEASONAL_ICONS: Record<string, { nameIncludes: string; source: ImageSource
 // edge to edge — bigger art, same layout footprint.
 const ART_SCALE = 256 / 224;
 
+// Down / Closed / Refurbishment — fades the art to match the grayed ride name.
+const DIMMED_OPACITY = 0.4;
+
 interface Props {
   rideId: string;
   /** Live ride name — picks the seasonal variant when the overlay is running. */
   rideName?: string;
   size?: number;
+  /** Ride isn't operating — fade the art. */
+  dimmed?: boolean;
 }
 
-export function RideIcon({ rideId, rideName, size = 40 }: Props): React.ReactElement | null {
+export function RideIcon({ rideId, rideName, size = 40, dimmed = false }: Props): React.ReactElement | null {
   if (!SHOW_RIDE_ICONS) return null;
   const seasonal = SEASONAL_ICONS[rideId];
   const art = seasonal && rideName?.includes(seasonal.nameIncludes)
     ? seasonal.source
     : RIDE_ICONS[rideId];
   return (
-    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }} testID={`ride-icon-${rideId}`}>
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center', opacity: dimmed ? DIMMED_OPACITY : 1 }} testID={`ride-icon-${rideId}`}>
       {art ? (
         <Image source={art} style={{ width: size * ART_SCALE, height: size * ART_SCALE }} resizeMode="contain" />
       ) : (

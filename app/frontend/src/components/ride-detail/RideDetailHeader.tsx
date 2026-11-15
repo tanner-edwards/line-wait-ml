@@ -125,7 +125,7 @@ export function RideDetailHeader({
     <View>
       {/* Identity — icon │ name + location */}
       <View style={styles.identity}>
-        <RideIcon rideId={rideId} rideName={rideName} size={64} />
+        <RideIcon rideId={rideId} rideName={rideName} size={64} dimmed={!isOperating} />
         {SHOW_RIDE_ICONS ? <View style={styles.identityDivider} /> : null}
         <View style={styles.identityText}>
           <Text style={styles.rideName}>{rideName}</Text>

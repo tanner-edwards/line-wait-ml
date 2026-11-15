@@ -70,7 +70,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   return (
     <Pressable onPress={onPress} style={styles.pressable} testID={`ride-${ride.id}`}>
       <View style={styles.row}>
-        <RideIcon rideId={ride.id} rideName={ride.name} size={ICON_SIZE} />
+        <RideIcon rideId={ride.id} rideName={ride.name} size={ICON_SIZE} dimmed={!isOperating} />
         <View style={styles.content}>
           <View style={styles.nameRow}>
             <Text style={[styles.rideName, !isOperating && styles.rideNameDown]}>{ride.name}</Text>
