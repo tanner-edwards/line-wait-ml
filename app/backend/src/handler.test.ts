@@ -457,6 +457,21 @@ describe('handler — premium gating', () => {
     const body = JSON.parse(result.body) as ErrorResponse;
     expect(body.error).toBe('PAYMENT_REQUIRED');
   });
+
+  it.each([0, -1, 2.5, '5', true])(
+    'returns 400 on /v2/recommendations when count is %p',
+    async count => {
+      const result = await handler({
+        path: '/v2/recommendations',
+        httpMethod: 'POST',
+        headers: { 'x-api-key': 'test-api-key' },
+        body: JSON.stringify({ park: 'disneyland', userLat: 33.81, userLng: -117.92, count }),
+      } as unknown as import('aws-lambda').APIGatewayProxyEvent);
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body) as ErrorResponse;
+      expect(body.error).toBe('BAD_REQUEST');
+    }
+  );
 });
 
 // ----- Combined endpoint -----
