@@ -100,7 +100,7 @@ export function RecommendationCard({
     <View style={styles.rowMargin}>
       <SwipeToRetireRow onConfirm={onRetire} isFirst={isFirst} testID={`rec-swipe-${rec.rideId}`}>
         <Pressable onPress={onPress} testID={`rec-card-${rec.rideId}`}>
-          <Card style={isStar ? RARE_CARD_STYLE : undefined} testID={isStar ? `rec-rare-${rec.rideId}` : undefined}>
+          <Card style={isStar ? { ...styles.cardPadding, ...RARE_CARD_STYLE } : styles.cardPadding} testID={isStar ? `rec-rare-${rec.rideId}` : undefined}>
             <View style={styles.layout}>
               <RideIcon rideId={rec.rideId} rideName={ride.name} size={ICON_SIZE} />
               <View style={styles.content}>
@@ -171,13 +171,16 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     flexShrink: 1,
   },
-  // Single line: the card's padding leaves ~28pt less width than a Discover
-  // row, so wrapping pushed the walk pill onto its own line. Tighter gap than
-  // RideRow for the same reason.
+  // Narrower side padding than the base Card (14) — gives the meta row room
+  // so the badge, wait and walk pill fit on one line.
+  cardPadding: { paddingHorizontal: 10 },
+  // Single line: the card's padding leaves less width than a Discover row,
+  // so wrapping pushed the walk pill onto its own line. Slightly tighter gap
+  // than RideRow for the same reason.
   metaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    columnGap: spacing.sm,
+    columnGap: 10,
     marginTop: spacing.xs,
   },
   waitLabel: {
