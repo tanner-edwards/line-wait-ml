@@ -1,8 +1,8 @@
 // Solid call-to-action badge for rec cards and Discover rows. Takes a stance
 // in plain words — the verdict as an instruction, not a label:
 //
-//   star → ★ GO NOW      (gold)   wait this low doesn't happen often
-//   go   → ✓ GO FOR IT   (green)
+//   star → ★ RARE FIND   (gold)   wait this low doesn't happen often
+//   go   → ✓ GOOD CHOICE (green)
 //   skip → ⊗ DON'T GO    (red)
 //
 // Neutral renders nothing — the row stays quiet. Tiles keep the old
@@ -16,8 +16,8 @@ import { colors, fonts, radius } from '../theme/tokens';
 export type VerdictBadgeVariant = 'star' | 'go' | 'skip';
 
 const BADGE: Record<VerdictBadgeVariant, { label: string; bg: string }> = {
-  star: { label: 'GO NOW', bg: colors.star },
-  go: { label: 'GO FOR IT', bg: colors.go },
+  star: { label: 'RARE FIND', bg: colors.star },
+  go: { label: 'GOOD CHOICE', bg: colors.go },
   skip: { label: "DON'T GO", bg: colors.skip },
 };
 

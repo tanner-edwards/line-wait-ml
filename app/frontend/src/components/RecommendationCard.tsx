@@ -3,7 +3,7 @@
 // the full card width underneath:
 //
 // [Ride icon]  Ride name [⚠]                                 [›]
-//              [★ GO NOW]  N min wait               [🚶 N min]
+//              [★ RARE FIND]  N min wait            [🚶 N min]
 // AI one-liner, full width — what the ride is doing and why it's
 // recommended.
 //

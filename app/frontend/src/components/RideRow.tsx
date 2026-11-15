@@ -3,7 +3,7 @@
 // RecommendationCard, minus the AI copy:
 //
 // [Ride icon]  Ride name [🔔]                                       [›]
-//              [✓ GO FOR IT]  N min wait | Walk On | Down | Closed   [🚶 N min]
+//              [✓ GOOD CHOICE]  N min wait | Walk On | Down | Closed   [🚶 N min]
 //                                               (walk pill right-aligned)
 //              Down since 2:15 PM (20m ago)   (Down only)
 //

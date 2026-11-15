@@ -4,8 +4,8 @@ import { VerdictBadge } from './VerdictBadge';
 
 describe('VerdictBadge', () => {
   it.each([
-    ['star', 'GO NOW'],
-    ['go', 'GO FOR IT'],
+    ['star', 'RARE FIND'],
+    ['go', 'GOOD CHOICE'],
     ['skip', "DON'T GO"],
   ] as const)('%s reads "%s"', (variant, label) => {
     render(<VerdictBadge variant={variant} />);

@@ -19,7 +19,7 @@ import { colors } from '../../theme/tokens';
 import { formatBucketTimeSlot, formatHHMM } from '../../timestamp';
 
 const BRAND = colors.brand;
-const BRAND_DIM = 'rgba(10,107,90,0.40)'; // dimmed brand green for future/uncertain data
+const BRAND_DIM = 'rgba(6,75,54,0.40)'; // dimmed brand green for future/uncertain data
 const BASELINE_COLOR = '#d0d0d0'; // historical average overlay
 const RED = colors.skip;
 

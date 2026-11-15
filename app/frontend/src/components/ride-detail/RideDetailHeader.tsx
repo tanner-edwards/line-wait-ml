@@ -40,7 +40,7 @@ type TrendDir = 'up' | 'down' | 'stable' | null;
 
 // Vertical dividers + the rule above Watch — darker than colors.border so
 // they read on both cream and white.
-const DIVIDER = 'rgba(10,107,90,0.28)';
+const DIVIDER = 'rgba(6,75,54,0.28)';
 
 const DIRECTION: Record<'up' | 'down' | 'stable', { label: string; Icon: typeof TrendingUp }> = {
   up: { label: 'Rising', Icon: TrendingUp },
