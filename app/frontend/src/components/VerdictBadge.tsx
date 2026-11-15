@@ -2,7 +2,7 @@
 // in plain words — the verdict as an instruction, not a label:
 //
 //   star → ★ RARE FIND   (gold)   wait this low doesn't happen often
-//   go   → ✓ GOOD CHOICE (green)
+//   go   → ✓ RIDE IT     (green)
 //   skip → ⊗ DON'T GO    (red)
 //
 // Neutral renders nothing — the row stays quiet. Tiles keep the old
@@ -17,7 +17,7 @@ export type VerdictBadgeVariant = 'star' | 'go' | 'skip';
 
 const BADGE: Record<VerdictBadgeVariant, { label: string; bg: string }> = {
   star: { label: 'RARE FIND', bg: colors.star },
-  go: { label: 'GOOD CHOICE', bg: colors.go },
+  go: { label: 'RIDE IT', bg: colors.go },
   skip: { label: "DON'T GO", bg: colors.skip },
 };
 

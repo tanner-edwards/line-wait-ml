@@ -9,12 +9,14 @@ jest.mock('@react-native-async-storage/async-storage', () =>
 const layout = (width: number) => ({ nativeEvent: { layout: { width, height: 20, x: 0, y: 0 } } });
 
 // Fires onLayout for the row, badge, measured label copy and pill.
-function measure(rowW: number, badgeW: number, labelW: number, pillW: number) {
+function measure(rowW: number, badgeW: number, labelW: number, pillW: number, shortW = 60) {
   const row = screen.getByTestId('rec-meta-r1');
   fireEvent(row, 'layout', layout(rowW));
   fireEvent(screen.getByTestId('rec-meta-badge-r1'), 'layout', layout(badgeW));
   fireEvent(screen.getByTestId('rec-meta-measure-r1', { includeHiddenElements: true }), 'layout', layout(labelW));
   fireEvent(screen.getByTestId('rec-meta-pill-r1'), 'layout', layout(pillW));
+  const short = screen.queryByTestId('rec-meta-measure-short-r1', { includeHiddenElements: true });
+  if (short) fireEvent(short, 'layout', layout(shortW));
 }
 
 describe('MetaRow wait label', () => {
@@ -30,6 +32,12 @@ describe('MetaRow wait label', () => {
     render(<MetaRow {...props} />);
     measure(263, 110, 80, 54);
     expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('120 min');
+  });
+
+  it('falls back to "120m" when "120 min" still will not fit', () => {
+    render(<MetaRow {...props} />);
+    measure(233, 110, 80, 54, 50); // 110 + 50 + 54 + 20 = 234
+    expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('120m');
   });
 
   it('leaves Walk On alone even when tight', () => {

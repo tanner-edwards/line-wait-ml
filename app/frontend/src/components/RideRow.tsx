@@ -3,7 +3,7 @@
 // RecommendationCard, minus the AI copy:
 //
 // [Ride icon]  Ride name [🔔]                                       [›]
-//              [✓ GOOD CHOICE]  N min wait | Walk On | Down | Closed   [🚶 N min]
+//              [✓ RIDE IT]  N min wait | Walk On | Down | Closed   [🚶 N min]
 //                                               (walk pill right-aligned)
 //              Down since 2:15 PM (20m ago)   (Down only)
 //
@@ -18,6 +18,7 @@ import { colors, spacing, typography } from '../theme/tokens';
 import { VerdictBadge } from './VerdictBadge';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
+import { fitWaitLabel, useMetaRowFit } from './metaRowFit';
 import { RideIcon } from './icons/RideIcon';
 import { isWalkOnRide } from '../utils/walkOn';
 import { rideWaitLabel, walkMinsTo } from '../grouping';
@@ -46,6 +47,12 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
+  // Only "N min wait" has short forms — "N min", then "Nm" — rather than
+  // ellipsizing.
+  const waitText = isOperating && !walkOn && ride.currentWait !== null ? `${ride.currentWait} min wait` : null;
+  const items = [badge, true, walkMins != null].filter(Boolean).length;
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(spacing.md, items);
+
   // Waits (incl. Walk On / No posted wait) get the white pill; Down / Closed /
   // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
@@ -55,7 +62,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
     </WaitPill>
   ) : isOperating && ride.currentWait !== null ? (
     <WaitPill style={styles.waitShrink}>
-      <Text numberOfLines={1} style={styles.statusText}>{`${ride.currentWait} min wait`}</Text>
+      <Text numberOfLines={1} style={styles.statusText} testID={`ride-wait-${ride.id}`}>
+        {waitText ? fitWaitLabel(waitText, fit) : waitText}
+      </Text>
     </WaitPill>
   ) : isDown ? (
     <Text style={[styles.statusText, styles.downText]}>Down</Text>
@@ -76,11 +85,26 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
             <Text style={[styles.rideName, !isOperating && styles.rideNameDown]}>{ride.name}</Text>
             {isWatching && hasActiveTrip ? <Bell size={12} color={colors.star} /> : null}
           </View>
-          <View style={styles.metaRow}>
-            {badge ? <VerdictBadge variant={badge} /> : null}
+          <View style={styles.metaRow} onLayout={onRow} testID={`ride-meta-${ride.id}`}>
+            {badge ? (
+              <View style={styles.noShrink} onLayout={onBadge} testID={`ride-meta-badge-${ride.id}`}>
+                <VerdictBadge variant={badge} />
+              </View>
+            ) : null}
             {status}
+            {waitText ? (
+              // Off-screen copies of the full and short pills, measured at natural width.
+              <>
+                <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`ride-meta-measure-${ride.id}`}>
+                  <WaitPill><Text style={styles.statusText}>{waitText}</Text></WaitPill>
+                </View>
+                <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`ride-meta-measure-short-${ride.id}`}>
+                  <WaitPill><Text style={styles.statusText}>{fitWaitLabel(waitText, 'short')}</Text></WaitPill>
+                </View>
+              </>
+            ) : null}
             {walkMins != null ? (
-              <View style={styles.walkEnd}>
+              <View style={styles.walkEnd} onLayout={onWalk} testID={`ride-meta-walk-${ride.id}`}>
                 <WalkPill minutes={walkMins} />
               </View>
             ) : null}
@@ -141,6 +165,8 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   waitShrink: { flexShrink: 1 },
+  noShrink: { flexShrink: 0 },
+  measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnText: { color: colors.go },
   downText: { color: colors.star },
   mutedText: { color: colors.textSecondary, fontWeight: '500' },

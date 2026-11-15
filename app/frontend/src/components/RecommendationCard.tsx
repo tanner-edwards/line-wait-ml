@@ -11,8 +11,8 @@
 // Neutral = no badge. Star ("rare opportunity") cards get a gold border +
 // glow. Tiles keep the old icon-only badge.
 
-import React, { useState } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import React from 'react';
+import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { AlertTriangle, ChevronRight } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
@@ -22,6 +22,7 @@ import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
+import { fitWaitLabel, hasShortForms, useMetaRowFit } from './metaRowFit';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 import { NO_POSTED_WAIT } from '../grouping';
@@ -135,12 +136,6 @@ export function RecommendationCard({
 
 const META_GAP = 10;
 
-/** "30 min wait" → "30 min" when the full label won't fit beside the badge and
- *  walk pill. Other labels (Walk On, No posted wait) have no short form. */
-function shortWaitLabel(label: string): string {
-  return label.endsWith(' min wait') ? label.slice(0, -' wait'.length) : label;
-}
-
 interface MetaRowProps {
   rideId: string;
   badge: React.ComponentProps<typeof VerdictBadge>['variant'] | null;
@@ -150,27 +145,19 @@ interface MetaRowProps {
 }
 
 /**
- * Badge · wait · walk pill on one line. Measures the row, the badge, the pill
- * and the full wait label (an invisible copy, so its natural width isn't
- * squeezed by the flex row); if the full label won't fit it drops "wait".
+ * Badge · wait · walk time on one line; shortens the wait label when it
+ * won't fit (see metaRowFit).
  */
 export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaRowProps): React.ReactElement {
-  const [rowW, setRowW] = useState(0);
-  const [badgeW, setBadgeW] = useState(0);
-  const [pillW, setPillW] = useState(0);
-  const [labelW, setLabelW] = useState(0);
-  const w = (set: (n: number) => void) => (e: LayoutChangeEvent) => set(e.nativeEvent.layout.width);
-
   const items = [badge, waitLabel, walkMinutes !== null].filter(Boolean).length;
-  const needed = badgeW + labelW + pillW + META_GAP * Math.max(items - 1, 0);
-  const tight = rowW > 0 && labelW > 0 && needed > rowW;
-  const shown = waitLabel && tight ? shortWaitLabel(waitLabel) : waitLabel;
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(META_GAP, items);
+  const shown = waitLabel ? fitWaitLabel(waitLabel, fit) : waitLabel;
   const labelStyle = [styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel];
 
   return (
-    <View style={styles.metaRow} onLayout={w(setRowW)} testID={`rec-meta-${rideId}`}>
+    <View style={styles.metaRow} onLayout={onRow} testID={`rec-meta-${rideId}`}>
       {badge ? (
-        <View style={styles.noShrink} onLayout={w(setBadgeW)} testID={`rec-meta-badge-${rideId}`}>
+        <View style={styles.noShrink} onLayout={onBadge} testID={`rec-meta-badge-${rideId}`}>
           <VerdictBadge variant={badge} />
         </View>
       ) : null}
@@ -180,13 +167,18 @@ export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaR
             <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
           </WaitPill>
           {/* Off-screen copy of the full-label pill, measured at natural width. */}
-          <View style={styles.measure} onLayout={w(setLabelW)} aria-hidden testID={`rec-meta-measure-${rideId}`}>
+          <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`rec-meta-measure-${rideId}`}>
             <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
           </View>
+          {hasShortForms(waitLabel) ? (
+            <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`rec-meta-measure-short-${rideId}`}>
+              <WaitPill><Text style={labelStyle}>{fitWaitLabel(waitLabel, 'short')}</Text></WaitPill>
+            </View>
+          ) : null}
         </>
       ) : null}
       {walkMinutes !== null ? (
-        <View style={styles.walkEnd} onLayout={w(setPillW)} testID={`rec-meta-pill-${rideId}`}>
+        <View style={styles.walkEnd} onLayout={onWalk} testID={`rec-meta-pill-${rideId}`}>
           <WalkPill minutes={walkMinutes} testID={`rec-walk-${rideId}`} />
         </View>
       ) : null}
