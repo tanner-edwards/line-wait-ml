@@ -112,7 +112,7 @@ const CAPTION_RULES = `<caption_rules>
 7. Name another ride only as the obvious comparison: a wanted ride, the anchor, or the clear shorter rival.
 8. A skip-verdict pick opens by saying the day is busy and this is the least bad move, then why it beat the rest.
 9. Exception: a wanted skip-verdict pick opens with "you wanted this and it won't get shorter today" instead. Never claim the whole park is busy unless field is bad.
-10. A restricted pick names who it affects. Height: mention rider swap when there are two adults. Pregnancy: one person sits out.
+10. A restricted pick names who it affects. Height: offer rider swap as an option ("if you have two adults"), never as a fact. Pregnancy: one person sits out.
 11. A reopened pick says the real line may be longer than posted.
 12. For the anchor ride, don't assume whether the guest has ridden it.
 13. Describe a ride only when it supports the call.
@@ -150,6 +150,7 @@ Respond with this JSON and nothing else. No markdown fences, no commentary.
 {"recommendations":[{"rideId":"${example}","oneLiner":"<caption>","restrictionNote":null}]}
 - ${idRule}
 - Array order is rank, best first. Up to ${batchSize} entries.
+- Before writing each caption, check it sends the guest there now. If the honest caption would say come back later, drop that ride instead.
 </output>`;
 }
 

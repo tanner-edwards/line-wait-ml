@@ -27,7 +27,7 @@ const NY = 'America/New_York';
 function reasons(over: Partial<VerdictReasons> = {}): VerdictReasons {
   return {
     primary: 'none', current: 0, typical: null, todayP30: null, todayP80: null,
-    p10: null, p90: null, beatableSoon: false, betterWindowWait: null,
+    p10: null, p90: null, beatableSoon: true, betterWindowWait: null,
     betterWindowInMin: null, star: false, ...over,
   };
 }
@@ -287,6 +287,8 @@ describe('formatWindow', () => {
   it('is null without a window', () => {
     expect(formatWindow(null, onePM30, LA)).toBeNull();
     expect(formatWindow(reasons(), onePM30, LA)).toBeNull();
+    // A window the engine does not rate beatableSoon is noise, not evidence.
+    expect(formatWindow(reasons({ betterWindowWait: 9, betterWindowInMin: 570, beatableSoon: false }), onePM30, LA)).toBeNull();
     expect(formatWindow(reasons({ betterWindowWait: 40 }), onePM30, LA)).toBeNull();
     expect(formatWindow(reasons({ betterWindowInMin: 40 }), onePM30, LA)).toBeNull();
   });

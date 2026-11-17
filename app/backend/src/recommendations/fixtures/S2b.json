@@ -1,7 +1,7 @@
 {
   "id": "S2b",
-  "title": "S2 variant B: Rise at a third of usual, unwanted",
-  "tests": "a far-below headliner leads even unwanted; \"rarely this short\" is allowed only on far-below",
+  "title": "S2 variant B: Rise at a third of usual, unwanted; party fit still outranks the window",
+  "tests": "a far-below restricted headliner is surfaced with its note, and \"rarely this short\" is allowed, but party fit and the stroller walk keep it off rank 1",
   "persona": "as S2, no wanted rides",
   "context": {
     "park": "Disneyland",
@@ -147,6 +147,13 @@
   ],
   "assert": {
     "rank1": [
+      "c23af6ba-8515-406a-8a48-d0818ba0bfc9",
+      "cc980e8e-192f-48b6-848c-27784084e54b"
+    ],
+    "notRank1": [
+      "34b1d70f-11c4-42df-935e-d5582c9f1a8e"
+    ],
+    "mustInclude": [
       "34b1d70f-11c4-42df-935e-d5582c9f1a8e"
     ],
     "perRide": {

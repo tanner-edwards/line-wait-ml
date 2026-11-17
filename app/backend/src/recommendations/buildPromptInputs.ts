@@ -264,6 +264,11 @@ export function formatWindow(
   if (!reasons) return null;
   const { betterWindowWait: w, betterWindowInMin: inMin } = reasons;
   if (w == null || inMin == null) return null;
+  // Only a window the engine rates as a meaningful, reachable improvement
+  // (beatableSoon: reachability-decayed saving >= 10 min) is evidence. A
+  // 6-minute dip at 8 PM on a 15-minute ride is noise, and in live runs it
+  // tempted the model into "circle back later" captions on tail picks.
+  if (!reasons.beatableSoon) return null;
   const step = WINDOW_ROUND_MIN * 60_000;
   const at = new Date(Math.round((now.getTime() + inMin * 60_000) / step) * step);
   return { wait: Math.round(w), at: formatClock(at, timeZone) };
