@@ -13,7 +13,7 @@
 //   8. parse + validate JSON response (codes mapped back to UUIDs)
 //   9. on any failure → deterministic fallback (verdict tier, then walk)
 
-import { fetchPark } from '../handler';
+import { fetchPark, parkCacheIsFreshEnough } from '../handler';
 import {
   ParkData,
   ParkSlug,
@@ -107,6 +107,8 @@ export interface RecommendationInputs {
   codeMap: Map<string, RideForPrompt>;
   lines: RideLine[];
   requestContext: RequestContext;
+  /** ms spent on the park fetch and side loads, for the [recs-timing] log. */
+  loadMs: number;
   parkHours: ParkHours | null;
   now: Date;
 }
@@ -114,23 +116,27 @@ export interface RecommendationInputs {
 export async function prepareRecommendationInputs(
   req: RecommendationsRequest
 ): Promise<RecommendationInputs> {
-  // Every recommendations call already costs an LLM invocation and is gated
-  // by the frontend's own focus/GPS/staleness checks — so it's always worth
-  // paying for the freshest wait-time data too, not whatever's sitting in
-  // the passive 2.5-min parkCache. fetchPark's own freshBypassFloor (20s)
-  // still protects against back-to-back bypasses if recs are hit rapidly.
-  const park = await fetchPark(req.park, req.at, null, null, true);
   const batchSize = resolveBatchSize(req.count);
   const now = req.at ?? new Date();
   const tz = parkTimeZone(req.park);
 
-  let metadataMap: Map<string, RideMetadata>;
-  try {
-    metadataMap = await ensureRideMetadataLoaded();
-  } catch (err) {
-    console.warn('ride_metadata load failed; serving without walk distances', err);
-    metadataMap = new Map();
-  }
+  // Every load starts at once. The park fetch forces fresh data only when the
+  // cached park is older than FRESH_ENOUGH_MS (the waits tab usually filled it
+  // seconds earlier; a forced refetch cost 2-4 s per call in production). Hours, reopens, weather
+  // and metadata do not depend on the park, so they no longer wait for it.
+  // Each side load is best-effort: a failure degrades the prompt, never the request.
+  const t0 = Date.now();
+  const [park, metadataMap, parkHours, reopens, weather] = await Promise.all([
+    fetchPark(req.park, req.at, null, null, !parkCacheIsFreshEnough(req.park)),
+    ensureRideMetadataLoaded().catch((err): Map<string, RideMetadata> => {
+      console.warn('ride_metadata load failed; serving without walk distances', err);
+      return new Map();
+    }),
+    getParkHours(req.park, now).catch(() => null),
+    loadRecentReopens(now).catch(() => new Map<string, number>()),
+    loadWeatherLine(req.park, now).catch(() => null),
+  ]);
+  const loadMs = Date.now() - t0;
 
   // Nearest ride to the user's GPS position: the "Near X" header ride and the
   // anchor line in the prompt. It stays in the candidate pool (spec 6.10).
@@ -154,27 +160,20 @@ export async function prepareRecommendationInputs(
       };
     });
 
-  const empty = (parkHours: ParkHours | null): RecommendationInputs => ({
+  const empty = (): RecommendationInputs => ({
     park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
     candidates: [], codeMap: new Map(), lines: [],
     requestContext: buildRequestContext({ parkSlug: req.park, now, parkHours, lines: [], weather: null, batchSize }),
-    parkHours, now,
+    parkHours, now, loadMs,
   });
 
-  // Park closed, all rides already shown, etc. → skip the side loads.
-  if (operating.length === 0) return empty(null);
-
-  // Side loads, each best-effort: a failure degrades the prompt, never the request.
-  const [parkHours, reopens, weather] = await Promise.all([
-    getParkHours(req.park, now).catch(() => null),
-    loadRecentReopens(now).catch(() => new Map<string, number>()),
-    loadWeatherLine(req.park, now).catch(() => null),
-  ]);
+  // Park closed, all rides already shown, etc. → nothing to recommend.
+  if (operating.length === 0) return empty();
 
   // Rides the guest cannot walk to before close leave the pool (spec 6.7).
   const untilClose = minutesUntilClose(parkHours, now, tz);
   const reachable = operating.filter(c => reachableBeforeClose(c.walkMinutes, untilClose));
-  if (reachable.length === 0) return empty(parkHours);
+  if (reachable.length === 0) return empty();
 
   const codeMap = assignCodes(reachable);
   const lines = buildRideLines(codeMap, {
@@ -189,7 +188,7 @@ export async function prepareRecommendationInputs(
   return {
     park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
     candidates: [...codeMap.values()],
-    codeMap, lines, requestContext, parkHours, now,
+    codeMap, lines, requestContext, parkHours, now, loadMs,
   };
 }
 
@@ -202,6 +201,7 @@ export async function prepareRecommendationInputs(
 export async function buildRecommendations(
   req: RecommendationsRequest
 ): Promise<RecommendationsResponse> {
+  const tStart = Date.now();
   const inputs = await prepareRecommendationInputs(req);
   const { park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity, candidates, codeMap } = inputs;
   const currentRide = shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest);
@@ -228,6 +228,8 @@ export async function buildRecommendations(
   let llmRecs: Recommendation[] | null = null;
   try {
     const { text, usage, stopReason, elapsedMs } = await invokeRecommendations(systemPrompt, userMessage);
+    // Stage timing: where a slow /v2/recommendations spends its time.
+    console.log('[recs-timing]', JSON.stringify({ loadMs: inputs.loadMs, bedrockMs: elapsedMs, totalMs: Date.now() - tStart }));
     // TEMP DEBUG (remove once Bedrock path is verified): log the raw model
     // response so we can tell whether a degraded result came from a parse
     // failure vs an empty rec list vs all-filtered IDs.

@@ -40,7 +40,8 @@
         20
       ],
       "window": null,
-      "isAnchor": true
+      "isAnchor": true,
+      "trend": "flat"
     },
     {
       "code": "r2",
@@ -68,7 +69,8 @@
         "wait": 40,
         "at": "5:00 PM"
       },
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "falling"
     },
     {
       "code": "r3",
@@ -93,7 +95,8 @@
         20
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r4",
@@ -118,7 +121,8 @@
         25
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     }
   ],
   "assert": {

@@ -64,7 +64,7 @@ const DCA_CENTER = { lat: 33.8058, lng: -117.9218 };
 // the tab doesn't burn a request.
 const GPS_CHANGE_THRESHOLD_M = 100;
 const STALE_MS = 5 * 60 * 1000;
-const FETCH_DEBOUNCE_MS = 1000;
+const FETCH_DEBOUNCE_MS = 500;
 // Full cards up top, the rest of the first batch as "More to Consider" tiles
 // (capped). Tile count follows whatever the backend batch returns.
 const TOP_PICK_COUNT = 3;
@@ -198,7 +198,7 @@ export function Recommendations(): React.ReactElement {
   // changed, park scope changed, or debug time travel changed since the last
   // fetch. Loading shows immediately so the tab doesn't feel unresponsive; the
   // actual (costly) API
-  // call is debounced 1s so a quick accidental tap doesn't spend a request.
+  // call is debounced 500ms so a quick accidental tap doesn't spend a request.
   //
   // TODO: needs test coverage (focus/re-focus, each of the four trigger
   // conditions individually, debounce-cancel-on-blur-before-1s, and that

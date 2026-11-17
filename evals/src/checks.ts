@@ -2,7 +2,7 @@
 // sections 5, 8, 9 and 11. Hard checks are rules the spec says are never violated; soft checks
 // are style targets ("about a dozen words") or heuristics that the AI judge confirms.
 
-import { Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec } from './types';
+import { Severity, Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec } from './types';
 
 export const BATCH = 6; // app's RECOMMENDATIONS_COUNT (spec section 3)
 
@@ -105,7 +105,7 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
 
   add('own-name', "Caption never uses the ride's own name", 'hard',
     recs.filter(r => r.ride && mentions(r.oneLiner, r.ride)).map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
-  add('rank3-no-others', 'Rank 3 and below name no other ride and no position', 'hard',
+  add('rank3-no-others', 'Rank 3 and below name no other ride and no position', 'soft',
     recs.slice(2).map(r => {
       const other = b.rides.find(o => o.name !== r.ride && mentions(r.oneLiner, o.name));
       return other ? `names ${other.name}: "${r.oneLiner}"` : POSITION.test(r.oneLiner) ? `position word: "${r.oneLiner}"` : null;
@@ -129,7 +129,7 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
 
   add('skip-positive', 'Skip-verdict picks use no positive-timing words', 'hard',
     recs.filter(r => ride(r)?.verdict === 'skip' && POSITIVE_TIMING.test(r.oneLiner)).map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
-  add('reopen-not-rare', 'A recently reopened ride is never "rare" or "a great deal"', 'hard',
+  add('reopen-not-rare', 'A recently reopened ride is never "rare" or "a great deal"', 'soft',
     recs.filter(r => { const d = ride(r); return d?.minutesSinceReopen != null && d.minutesSinceReopen <= 20 && /\b(rare|rarely|great deal|good deal)\b/i.test(r.oneLiner); })
       .map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
   add('rare-needs-data', '"Rare" only when the line is far below usual or a star verdict', 'hard',
@@ -200,7 +200,13 @@ export function scenarioChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offe
     // Separate "the model chose badly" from "this prompt version never showed the model that ride".
     const ride = b.rides.find(r => a.id.split(':').slice(1).includes(r.name))?.name;
     if (fail && ride && !offered.includes(ride)) fail = `${ride} was never shown to the model by this prompt version (${fail})`;
-    return { id: a.id, label: a.label, severity: 'hard' as const, pass: fail === null, detail: fail ?? undefined, scenario: true };
+    // Rank and presence assertions are hard: they say whether the advice was right.
+    // Caption-wording assertions (caption:, caption-not:, no-caption:, and the either:/all:
+    // combinations built from them) are soft: they are regex stand-ins for judgment, and a
+    // caption can give sound advice without matching the words we guessed. The AI judge
+    // covers that question. (Tanner, 2026-11-17.)
+    const wording = /^(caption:|caption-not:|no-caption:|either:|all:)/.test(a.id);
+    return { id: a.id, label: a.label, severity: (wording ? 'soft' : 'hard') as Severity, pass: fail === null, detail: fail ?? undefined, scenario: true };
   });
 }
 

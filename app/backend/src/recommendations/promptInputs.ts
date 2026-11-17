@@ -53,6 +53,9 @@ export interface RideLine {
   reopenedMinAgo: number | null;
   /** t+0, t+30, t+60, t+90, t+120 from historicalAverage, rounded. Length 5. */
   buckets: (number | null)[];
+  /** Server-computed read of buckets vs wait: falling / rising when a future bucket is
+   *  TREND_MIN_DELTA or more below / above the wait; flat otherwise; null without data. */
+  trend: 'falling' | 'flat' | 'rising' | null;
   /** Best reachable lower window from verdict.reasons, as a clock time. */
   window: { wait: number; at: string } | null;
   /** The ride nearest the guest (the "Near X" header ride). */
@@ -92,6 +95,12 @@ export const BAD_FIELD_ABOVE_FRACTION = 0.5;
 
 /** Reopen events older than this are not reported to the model. */
 export const REOPEN_WINDOW_MIN = 60;
+
+/** Buckets must move this many minutes from the wait to count as falling or rising. */
+export const TREND_MIN_DELTA = 10;
+
+/** Windows farther out than this are not shown to the model (layer2's EASE_WINDOW_MAX). */
+export const WINDOW_MAX_MIN = 180;
 
 /** Window clock times are rounded to this many minutes. */
 export const WINDOW_ROUND_MIN = 5;

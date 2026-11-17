@@ -40,7 +40,8 @@
         15
       ],
       "window": null,
-      "isAnchor": true
+      "isAnchor": true,
+      "trend": "flat"
     },
     {
       "code": "r2",
@@ -65,7 +66,8 @@
         40
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "rising"
     },
     {
       "code": "r3",
@@ -90,7 +92,8 @@
         25
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r4",
@@ -115,7 +118,8 @@
         30
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     }
   ],
   "assert": {

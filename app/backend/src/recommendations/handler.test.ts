@@ -19,7 +19,7 @@ import * as bedrockClient from './bedrockClient';
 // Mock the dependencies that hit external services so the test stays offline.
 jest.mock('../handler', () => {
   const actual = jest.requireActual<typeof import('../handler')>('../handler');
-  return { ...actual, fetchPark: jest.fn() };
+  return { ...actual, fetchPark: jest.fn(), parkCacheIsFreshEnough: jest.fn(() => false) };
 });
 jest.mock('./rideMetadata', () => {
   const actual = jest.requireActual<typeof import('./rideMetadata')>('./rideMetadata');
@@ -34,6 +34,7 @@ jest.mock('./bedrockClient', () => {
 });
 
 const mockFetchPark = mainHandler.fetchPark as jest.MockedFunction<typeof mainHandler.fetchPark>;
+const mockFreshEnough = mainHandler.parkCacheIsFreshEnough as jest.MockedFunction<typeof mainHandler.parkCacheIsFreshEnough>;
 const mockEnsureMeta = rideMetadataModule.ensureRideMetadataLoaded as jest.MockedFunction<typeof rideMetadataModule.ensureRideMetadataLoaded>;
 const mockInvoke = bedrockClient.invokeRecommendations as jest.MockedFunction<typeof bedrockClient.invokeRecommendations>;
 const mockHours = parkHoursModule.getParkHours as jest.MockedFunction<typeof parkHoursModule.getParkHours>;
@@ -387,15 +388,28 @@ describe('buildRecommendations — happy path', () => {
     expect(res.lastUpdated).toBe('2026-05-22T18:00:00Z');
   });
 
-  it('always requests fresh wait-time data from fetchPark, not the passive cache', async () => {
+  it('forces fresh wait-time data when the cached park is not fresh enough', async () => {
     const rides = [makeRide('curr', 'Current Ride', null)];
     mockFetchPark.mockResolvedValue(makeParkData(rides));
     mockEnsureMeta.mockResolvedValue(currMeta());
     mockInvoke.mockResolvedValue(bedrockOk(JSON.stringify({ recommendations: [] })));
+    mockFreshEnough.mockReturnValueOnce(false);
 
     await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
 
     expect(mockFetchPark).toHaveBeenCalledWith('disneyland', undefined, null, null, true);
+  });
+
+  it('reuses the cached park when it is under FRESH_ENOUGH_MS old (the waits tab just filled it)', async () => {
+    const rides = [makeRide('curr', 'Current Ride', null)];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+    mockInvoke.mockResolvedValue(bedrockOk(JSON.stringify({ recommendations: [] })));
+    mockFreshEnough.mockReturnValueOnce(true);
+
+    await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
+
+    expect(mockFetchPark).toHaveBeenCalledWith('disneyland', undefined, null, null, false);
   });
 
   it('keeps the nearest ride as a candidate and marks it as the anchor', async () => {

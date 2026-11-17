@@ -40,7 +40,8 @@
         55
       ],
       "window": null,
-      "isAnchor": true
+      "isAnchor": true,
+      "trend": "flat"
     },
     {
       "code": "r2",
@@ -68,7 +69,8 @@
         "wait": 95,
         "at": "8:00 PM"
       },
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "falling"
     },
     {
       "code": "r3",
@@ -93,7 +95,8 @@
         72
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r4",
@@ -118,7 +121,8 @@
         75
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r5",
@@ -143,7 +147,8 @@
         25
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r6",
@@ -168,7 +173,8 @@
         60
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     },
     {
       "code": "r7",
@@ -193,7 +199,8 @@
         50
       ],
       "window": null,
-      "isAnchor": false
+      "isAnchor": false,
+      "trend": "flat"
     }
   ],
   "assert": {

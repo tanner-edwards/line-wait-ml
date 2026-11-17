@@ -94,6 +94,19 @@ const parkCache = new TTLCache<ParkSlug, ParkData>(CACHE_TTL_MS);
 // regular parkCache entry it just wrote until the floor clears.
 const FRESH_BYPASS_FLOOR_MS = 20_000;
 const freshBypassFloor = new TTLCache<ParkSlug, true>(FRESH_BYPASS_FLOOR_MS);
+// A cached park younger than this is fresh enough even for a forceFresh caller.
+// /v2/recommendations forced a live refetch on every call, but the waits tab had
+// usually filled the cache seconds earlier; the refetch cost 2-4 s of the 12 s
+// the app showed (CloudWatch, 2026-11-17). One collector cycle is 10 min, so
+// 60 s cannot serve a materially older snapshot.
+export const FRESH_ENOUGH_MS = 60_000;
+const parkFetchedAt = new Map<ParkSlug, number>();
+/** True when the cached park for this slug is younger than FRESH_ENOUGH_MS. Callers that
+ *  would otherwise force a refetch (the recs handler) use this to skip it; `?fresh=true`
+ *  on /v0/waits keeps its unconditional bypass. */
+export function parkCacheIsFreshEnough(parkSlug: ParkSlug): boolean {
+  return parkCache.get(parkSlug) !== undefined && Date.now() - (parkFetchedAt.get(parkSlug) ?? 0) < FRESH_ENOUGH_MS;
+}
 
 // Recommendations cache: same response for the same (park, currentRideId)
 // within a 5-minute window. Catches rapid re-taps and back-button navigation
@@ -457,7 +470,7 @@ export async function fetchPark(
   });
 
   const data = shapeParkData(parkSlug, rides, now.toISOString());
-  if (!referenceDate) parkCache.set(parkSlug, data);
+  if (!referenceDate) { parkCache.set(parkSlug, data); parkFetchedAt.set(parkSlug, Date.now()); }
   return data;
 }
 

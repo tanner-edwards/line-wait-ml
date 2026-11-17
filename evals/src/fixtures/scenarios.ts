@@ -119,7 +119,7 @@ export const FIXTURES: Fixture[] = [
   },
   {
     id: 'S2B', title: 'Toddler, Rise of the Resistance at a third of usual (not wanted)',
-    tests: 'A far-below window on a restricted ride can still lead; "rarely this short" is allowed because it is far below usual.',
+    tests: 'A far-below restricted headliner is surfaced with its note and "rarely this short" is allowed, but party fit (spec 8 rule 3) and the stroller walk keep it off rank 1. Corrected 2026-11-17: the draft had Rise at rank 1, which contradicted the ranking order.',
     park: 'disneyland', localTime: 'Saturday 11:00 AM', nowMin: SAT(11, 0), hours: DL_HOURS,
     persona: { tripDuration: null, youngestAge: 3, ridePreferences: [], mustDoRideIds: [], accessibilityNeeds: ['stroller'] },
     anchor: { name: 'Mad Tea Party', wait: 15, usual: 15, verdict: 'neutral', reason: 'none', walk: 0 },
@@ -131,16 +131,19 @@ export const FIXTURES: Fixture[] = [
       { name: 'Storybook Land Canal Boats', wait: 15, usual: 25, verdict: 'neutral', reason: 'none', walk: 5 },
     ],
     filled: ['Same as S2, with Rise of the Resistance at 25 and not wanted'],
-    asserts: [A.rank1('Star Wars: Rise of the Resistance')],
-    expectation: 'Rise of the Resistance is rank 1 even though it is not wanted. "Rarely this short" is allowed. Its restriction note says the toddler is under the minimum.',
+    asserts: [
+      A.either('rank 1 is Peter Pan or Dumbo', A.rank1("Peter Pan's Flight"), A.rank1('Dumbo the Flying Elephant')),
+      A.notRank1('Star Wars: Rise of the Resistance'),
+    ],
+    expectation: 'Peter Pan or Dumbo is rank 1. Rise of the Resistance may be listed but is not rank 1: the toddler cannot ride it and it is a 14-minute walk with a stroller, and the guest did not ask for it. "Rarely this short" is allowed on Rise. Its restriction note says the toddler is under the minimum.',
     ideal: [
-      { ride: 'Star Wars: Rise of the Resistance', caption: "A third of its usual line and it's rarely this short; plan a rider swap.", note: 'Your toddler is under the 40-inch minimum.' },
       { ride: "Peter Pan's Flight", caption: 'Half its usual line, and an easy ride for your toddler.' },
       { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line, and toddlers love it.' },
+      { ride: 'Star Wars: Rise of the Resistance', caption: "Rarely this short, but your toddler sits out; rider swap if you have two adults.", note: 'Your toddler is under the 40-inch minimum.' },
     ],
     bad: [
+      { ride: 'Star Wars: Rise of the Resistance', caption: "A third of its usual line and it's rarely this short; plan a rider swap.", note: 'Your toddler is under the 40-inch minimum.' },
       { ride: "Peter Pan's Flight", caption: 'Half its usual line, and an easy ride for your toddler.' },
-      { ride: 'Star Wars: Rise of the Resistance', caption: 'A third of its usual line.', note: 'Your toddler is under the 40-inch minimum.' },
     ],
   },
   // ------------------------------------------------------------------ S3
@@ -301,7 +304,7 @@ export const FIXTURES: Fixture[] = [
       { ride: 'Matterhorn Bobsleds', caption: 'A steady line, and a safe fallback if Space Mountain jumps.' },
       { ride: 'Big Thunder Mountain Railroad', caption: "A bit under its usual line, and it's holding steady." },
     ],
-    bad: [{ ride: 'Space Mountain', caption: 'A rare chance at a great deal right next door.' }],
+    bad: [{ ride: 'Big Thunder Mountain Railroad', caption: 'A bit under its usual line, and holding steady.' }], // wrong ride leads; "rare" on a reopened ride is only a soft flag now
   },
   {
     id: 'S7v', title: 'Reopened ride next door (5 minutes ago)',
@@ -316,17 +319,16 @@ export const FIXTURES: Fixture[] = [
     ],
     filled: ['Same as S7 with minutesSinceReopen 5. The reopen threshold is still being tuned (spec 6.6): report separately.'],
     asserts: [
-      A.rank1('Matterhorn Bobsleds'),
-      A.rank('Space Mountain', 2),
-      A.captionIf('Space Mountain', /(check|real line|actual line|posted)/i, 'says to check the real line'),
+      A.present('Space Mountain'),
+      A.captionIf('Space Mountain', /(check|real line|actual line|posted|lag|settle|just reopened)/i, 'warns the posted wait has not settled'),
     ],
-    expectation: 'Matterhorn is rank 1; Space Mountain is rank 2 with a "check the real line" caption.',
+    expectation: 'Space Mountain is one minute away and posting 15, so it may lead or sit second; either way its caption warns the posted wait has not settled since it just reopened. Matterhorn is the steady alternative. (Tanner, 2026-11-17: a 5-minute line next door is worth checking; across the park it would not be.)',
     ideal: [
       { ride: 'Matterhorn Bobsleds', caption: "A steady line, and a safe pick while Space Mountain's wait settles." },
       { ride: 'Space Mountain', caption: 'Just reopened, so check the real line before you commit.' },
       { ride: 'Big Thunder Mountain Railroad', caption: "A bit under its usual line, and it's holding steady." },
     ],
-    bad: [{ ride: 'Space Mountain', caption: 'A great deal right next door, go now.' }],
+    bad: [{ ride: 'Matterhorn Bobsleds', caption: 'A steady line and a short walk, go now.' }], // omits the just-reopened ride entirely
   },
   // ------------------------------------------------------------------ S8
   {
@@ -382,7 +384,7 @@ export const FIXTURES: Fixture[] = [
       { ride: 'Pirates of the Caribbean', caption: 'A short walk, and its line is right at normal.' },
       { ride: 'Indiana Jones Adventure', caption: 'A bit under its usual line if you want a thrill.' },
     ],
-    bad: [{ ride: 'Haunted Mansion', caption: "You haven't ridden this yet, and it's half the usual line." }],
+    bad: [{ ride: 'Haunted Mansion', caption: "Haunted Mansion is half its usual line, you haven't ridden this yet." }], // own name is a hard check; the hasn't-ridden wording is soft
     badIsCodeOnly: true, // no judge question covers this; the scenario's code assertion does
   },
 ];

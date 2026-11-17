@@ -22,6 +22,7 @@ import { buildSystemPrompt as specSystem, buildUserMessage as specUser } from '.
 import { personaToText as specPersonaToText } from '../../app/backend/src/recommendations/persona';
 import { assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { IdStyle } from '../../app/backend/src/recommendations/promptInputs';
+import { cleanCopy } from '../../app/backend/src/recommendations/handler';
 
 export interface Rendered {
   system: string;
@@ -129,9 +130,11 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
     system: specSystem(specPersonaToText(b.persona, metadataMap(b)), BATCH, { idStyle }).join('\n\n'),
     user: specUser(ctx, lines, { idStyle }),
     offered: lines.map(l => l.name),
+    // The Lambda's parser runs cleanCopy (dashes to commas, "!" to ".") on every
+    // caption before the app sees it, so the harness grades the shipped text.
     decode: idStyle === 'code'
-      ? raw => decodeCodeName(raw, codes)
-      : raw => raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: x.oneLiner, restrictionNote: x.restrictionNote })),
+      ? raw => decodeCodeName(raw.map(x => ({ ...x, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? x.restrictionNote : cleanCopy(x.restrictionNote) })), codes)
+      : raw => raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? null : cleanCopy(x.restrictionNote) })),
   };
 }
 

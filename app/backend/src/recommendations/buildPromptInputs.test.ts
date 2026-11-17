@@ -342,21 +342,22 @@ describe('buildRideLines + buildRequestContext', () => {
         code: 'r1', rideId: 'uuid-buzz', name: 'Buzz Lightyear Astro Blasters',
         wait: 25, arrive: 25, usual: 30, ofUsual: 'below', vsUsual: -5, walk: 1,
         verdict: 'neutral', reason: 'none', wanted: false, restricted: [],
-        reopenedMinAgo: null, buckets: [null, null, null, null, null],
-        window: { wait: 15, at: '8:00 PM' }, isAnchor: true,
+        reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
+        // 390 min out is beyond WINDOW_MAX_MIN, so the window is withheld from the model.
+        window: null, isAnchor: true,
       },
       {
         code: 'r2', rideId: 'uuid-space', name: 'Space Mountain',
         wait: 15, arrive: 16, usual: 45, ofUsual: 'far-below', vsUsual: -30, walk: 3,
         verdict: 'star', reason: 'rare-low', wanted: false, restricted: ['toddler'],
-        reopenedMinAgo: 20, buckets: [15, 25, 35, 38, 40],
+        reopenedMinAgo: 20, buckets: [15, 25, 35, 38, 40], trend: 'rising',
         window: null, isAnchor: false,
       },
       {
         code: 'r3', rideId: 'uuid-mh', name: 'Matterhorn Bobsleds',
         wait: 25, arrive: 25, usual: null, ofUsual: null, vsUsual: null, walk: 8,
         verdict: 'neutral', reason: 'none', wanted: true, restricted: [],
-        reopenedMinAgo: null, buckets: [null, null, null, null, null],
+        reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
         window: null, isAnchor: false,
       },
     ]);

@@ -25,8 +25,7 @@ import {
   Restriction,
   RideForPrompt,
   RideLine,
-  WINDOW_ROUND_MIN,
-} from './promptInputs';
+  WINDOW_ROUND_MIN, TREND_MIN_DELTA, WINDOW_MAX_MIN } from './promptInputs';
 
 // ── Time zones ──
 
@@ -284,6 +283,16 @@ export function bucketsFor(ride: Ride): (number | null)[] {
   });
 }
 
+/** falling / flat / rising from the future buckets (t+30..t+120) against the wait. */
+export function trendFor(wait: number | null, buckets: (number | null)[]): RideLine['trend'] {
+  if (wait == null) return null;
+  const future = buckets.slice(1).filter((b): b is number => b != null);
+  if (future.length === 0) return null;
+  if (Math.min(...future) <= wait - TREND_MIN_DELTA) return 'falling';
+  if (Math.max(...future) >= wait + TREND_MIN_DELTA) return 'rising';
+  return 'flat';
+}
+
 // ── Assembly ──
 
 export interface RideLineInputs {
@@ -324,7 +333,12 @@ export function buildRideLines(
       restricted: restrictedFor(ride, inputs.persona),
       reopenedMinAgo: inputs.reopens.get(ride.id) ?? null,
       buckets: bucketsFor(ride),
-      window: formatWindow(reasons, inputs.now, inputs.timeZone),
+      trend: trendFor(wait, bucketsFor(ride)),
+      // Beyond WINDOW_MAX_MIN a window has no present-tense use and only baits
+      // come-back-later copy (seen live on Radiator Springs, 4.5 h out).
+      window: reasons?.betterWindowInMin != null && reasons.betterWindowInMin > WINDOW_MAX_MIN
+        ? null
+        : formatWindow(reasons, inputs.now, inputs.timeZone),
       isAnchor: inputs.anchorRideId !== null && ride.id === inputs.anchorRideId,
     });
   }
