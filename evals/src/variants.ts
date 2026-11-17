@@ -17,6 +17,11 @@ import { personaToText as v1PersonaToText } from './prompts/v1/persona';
 import { buildSystemPrompt as v1System, buildUserMessage as v1User, PromptContext as V1Context } from './prompts/v1/promptBuilder';
 import { BuiltFixture, DerivedRide, ResolvedRec } from './types';
 import { BATCH } from './checks';
+// The spec rewrite (2026-11-17): the live backend's prompt and input builders.
+import { buildSystemPrompt as specSystem, buildUserMessage as specUser } from '../../app/backend/src/recommendations/promptBuilder';
+import { personaToText as specPersonaToText } from '../../app/backend/src/recommendations/persona';
+import { assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
+import { IdStyle } from '../../app/backend/src/recommendations/promptInputs';
 
 export interface Rendered {
   system: string;
@@ -89,7 +94,60 @@ export function decodeCodeName(raw: ParsedRec[], codes: Map<string, string>): Re
   });
 }
 
-export const VARIANTS: Record<string, Variant> = { v1 };
+/** A Date for the fixture's weekday + nowMin in the park's zone. Fixtures name a weekday
+ *  ("Saturday 1:30 PM"); any date with that weekday will do. Uses November 2026 (PST, UTC-8). */
+function fixtureNow(b: BuiltFixture): Date {
+  const weekday = b.fx.localTime.split(' ')[0];
+  const tz = parkTimeZone(b.fx.park);
+  for (let d = 15; d < 22; d++) {
+    const midnightUtc = Date.UTC(2026, 10, d, 8, 0, 0); // 00:00 PST
+    const probe = new Date(midnightUtc + 12 * 60 * 60_000);
+    const name = new Intl.DateTimeFormat('en-US', { timeZone: tz, weekday: 'long' }).format(probe);
+    if (name === weekday) return new Date(midnightUtc + b.fx.nowMin * 60_000);
+  }
+  throw new Error(`fixture ${b.fx.id}: cannot place weekday "${weekday}"`);
+}
+
+/** The spec rewrite, rendered exactly as app/backend builds it from the same fixture. */
+function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
+  const anchor = b.rides.find(r => r.isAnchor)!;
+  const now = fixtureNow(b);
+  const candidates = b.rides
+    .filter(r => r.reachableBeforeClose)
+    .map(r => ({ ride: toBackendRide(r), walkMinutes: r.walk, walkYards: r.walk * 90 }));
+  const codeMap = assignCodes(candidates);
+  const reopens = new Map<string, number>();
+  for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
+  const lines = buildRideLines(codeMap, {
+    persona: b.persona, reopens, anchorRideId: anchor.id, now, timeZone: parkTimeZone(b.fx.park),
+  });
+  const weather = b.fx.weather ? `${b.fx.weather.tempF}F, feels like ${b.fx.weather.feelsF}, ${b.fx.weather.conditions}` : null;
+  const ctx = buildRequestContext({ parkSlug: b.fx.park, now, parkHours: b.fx.hours, lines, weather, batchSize: BATCH });
+  const codes = new Map(lines.map(l => [l.code, l.name]));
+  const ids = byId(b);
+  return {
+    system: specSystem(specPersonaToText(b.persona, metadataMap(b)), BATCH, { idStyle }).join('\n\n'),
+    user: specUser(ctx, lines, { idStyle }),
+    offered: lines.map(l => l.name),
+    decode: idStyle === 'code'
+      ? raw => decodeCodeName(raw, codes)
+      : raw => raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: x.oneLiner, restrictionNote: x.restrictionNote })),
+  };
+}
+
+const specCodes: Variant = {
+  id: 'spec-codes',
+  description: 'Spec rewrite (2026-11-17): new prompt and inputs, model outputs "r3 Ride Name".',
+  render: b => renderSpec(b, 'code'),
+};
+
+const specUuid: Variant = {
+  id: 'spec-uuid',
+  description: 'Spec rewrite (2026-11-17): same prompt and inputs, model outputs UUIDs.',
+  render: b => renderSpec(b, 'uuid'),
+};
+
+export const VARIANTS: Record<string, Variant> = { v1, 'spec-codes': specCodes, 'spec-uuid': specUuid };
 
 export function getVariant(id: string): Variant {
   const v = VARIANTS[id];
