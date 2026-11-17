@@ -755,3 +755,26 @@ describe('cleanCopy', () => {
     expect(cleanCopy('Lines are long everywhere today, so this is the least bad move.')).toBe('Lines are long everywhere today, so this is the least bad move.');
   });
 });
+
+describe('guardRankOne', () => {
+  const { guardRankOne } = jest.requireActual<typeof import('./handler')>('./handler');
+  const line = (rideId: string, restricted: string[], wanted = false) =>
+    ({ rideId, name: rideId, restricted, wanted } as unknown as import('./promptInputs').RideLine);
+  const recs = [{ rideId: 'indy' }, { rideId: 'pirates' }, { rideId: 'thunder' }];
+
+  it('promotes the first pick everyone can ride when a restricted, unwanted ride leads', () => {
+    const lines = [line('indy', ['pregnancy']), line('pirates', []), line('thunder', ['pregnancy'])];
+    expect(guardRankOne(recs, lines)!.map(r => r.rideId)).toEqual(['pirates', 'indy', 'thunder']);
+  });
+
+  it('leaves the order alone when rank 1 is unrestricted or wanted', () => {
+    expect(guardRankOne(recs, [line('indy', []), line('pirates', [])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+    expect(guardRankOne(recs, [line('indy', ['pregnancy'], true), line('pirates', [])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+  });
+
+  it('leaves the order alone when every pick is restricted, and passes null and short lists through', () => {
+    expect(guardRankOne(recs, [line('indy', ['toddler']), line('pirates', ['toddler']), line('thunder', ['toddler'])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+    expect(guardRankOne(null, [])).toBeNull();
+    expect(guardRankOne([recs[0]], [line('indy', ['toddler'])])).toEqual([recs[0]]);
+  });
+});

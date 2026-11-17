@@ -241,7 +241,7 @@ export async function buildRecommendations(
       elapsedMs,
       preview: text.slice(0, 400),
     }));
-    llmRecs = parseAndValidate(text, codeMap, candidates, batchSize);
+    llmRecs = guardRankOne(parseAndValidate(text, codeMap, candidates, batchSize), inputs.lines);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
     console.warn('Bedrock call failed; falling back to deterministic recs', err);
@@ -389,6 +389,23 @@ export function parseAndValidate(
     if (valid.length >= batchSize) break;
   }
   return valid;
+}
+
+// Deterministic guard for hard rule 11 (spec section 8): rank 1 is never a ride
+// someone in the party cannot ride unless the guest wanted it. Haiku 4.5 puts
+// the biggest deal first regardless of the rule (S1: a star-verdict Indiana
+// Jones with a pregnant guest led 5 of 5 runs), so the server promotes the
+// first pick everyone can ride. Captions are untouched; order is the only
+// change, and only when the model broke the rule.
+export function guardRankOne<T extends { rideId: string }>(recs: T[] | null, lines: RideLine[]): T[] | null {
+  if (!recs || recs.length < 2) return recs;
+  const byId = new Map(lines.map(l => [l.rideId, l]));
+  const blocked = (r: T) => { const l = byId.get(r.rideId); return !!l && l.restricted.length > 0 && !l.wanted; };
+  if (!blocked(recs[0])) return recs;
+  const i = recs.findIndex(r => !blocked(r));
+  if (i < 0) return recs;
+  console.log('[rank-guard]', JSON.stringify({ demoted: recs[0].rideId, promoted: recs[i].rideId }));
+  return [recs[i], ...recs.slice(0, i), ...recs.slice(i + 1)];
 }
 
 // Deterministic guard for two copy rules Haiku breaks even when told not to

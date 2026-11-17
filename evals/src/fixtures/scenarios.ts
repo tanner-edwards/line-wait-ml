@@ -1,3 +1,6 @@
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { EVALS_ROOT } from '../args';
 // Scenarios from the spec "AI Recommendation Expectations" (2026-11-16), section 11.
 // Values the spec states are used as-is. Every value the spec does NOT state is listed in that
 // fixture's `filled` array so Tanner can confirm or correct it (never adjusted silently).
@@ -35,8 +38,10 @@ export const FIXTURES: Fixture[] = [
     ],
     weather: { tempF: 75, feelsF: 75, conditions: 'clear' },
     filled: [BUZZ_NOTE, 'Walk times: Indy 9, Pirates 10, Jungle Cruise 9, Haunted Mansion 11, Big Thunder 12', 'Big Thunder usual 35', 'Party as persona: youngestAge 18 (two adults), ride preference thrills', 'Hours 8:00 AM to 11:00 PM', 'Weather 75F clear', 'Forecasts flat at the current wait'],
-    asserts: [A.rank1('Pirates of the Caribbean'), A.notRank1('Indiana Jones Adventure')],
-    expectation: 'Rank 1 is Pirates. Indiana Jones is not rank 1. Indiana Jones and Big Thunder carry a pregnancy restriction note if ranked at all. The rank 1 caption may name Indiana Jones as the answered objection.',
+    // Pirates and Jungle Cruise tie on the ranking rules (both far-below, 15 under usual, flat);
+    // the shorter walk breaks the tie, so either may lead (2026-11-17).
+    asserts: [A.rank1Of('Pirates of the Caribbean', 'Jungle Cruise'), A.notRank1('Indiana Jones Adventure')],
+    expectation: 'Rank 1 is Pirates or Jungle Cruise. Indiana Jones is not rank 1. Indiana Jones and Big Thunder carry a pregnancy restriction note if ranked at all. The rank 1 caption may name Indiana Jones as the answered objection.',
     ideal: [
       { ride: 'Pirates of the Caribbean', caption: 'Half its usual line, and nobody in your group has to sit it out.' },
       { ride: 'Jungle Cruise', caption: 'Gentle, and a shorter line than it usually has.' },
@@ -389,8 +394,14 @@ export const FIXTURES: Fixture[] = [
   },
 ];
 
-export const fixtureById = (id: string) => {
+export const fixtureById = (id: string): Fixture => {
   const f = FIXTURES.find(x => x.id === id);
-  if (!f) throw new Error(`Unknown fixture ${id}. Available: ${FIXTURES.map(x => x.id).join(', ')}`);
-  return f;
+  if (f) return f;
+  // Live snapshots (`npm run live`) are saved as JSON under evals/live/<id>.json. They carry
+  // no scripted assertions: the hard code checks and the AI judge are the whole test.
+  if (id.startsWith('LIVE-')) {
+    const path = join(EVALS_ROOT, 'live', `${id}.json`);
+    if (existsSync(path)) return { ...(JSON.parse(readFileSync(path, 'utf8')) as Omit<Fixture, 'asserts'>), asserts: [] };
+  }
+  throw new Error(`Unknown fixture ${id}. Available: ${FIXTURES.map(x => x.id).join(', ')}, or a LIVE-* id saved under evals/live/`);
 };
