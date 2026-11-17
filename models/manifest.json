@@ -1,7 +1,7 @@
 {
-  "trained_through": "2026-10-25",
-  "exported_at": "2026-10-26T13:17:30.111052+00:00",
-  "git_sha": "00e1d2d",
+  "trained_through": "2026-11-16",
+  "exported_at": "2026-11-17T03:28:02.081172+00:00",
+  "git_sha": "926a3bc",
   "recipe": "C",
   "trajectory_target": "delta",
   "trajectory_features": [
@@ -62,10 +62,10 @@
     210,
     240
   ],
-  "frame_rows": 997127,
+  "frame_rows": 1117257,
   "frame_range": [
     "2026-05-02",
-    "2026-10-25"
+    "2026-11-16"
   ],
   "classifiers": {
     "p_fall_30": {

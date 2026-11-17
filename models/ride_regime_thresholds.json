@@ -9,6 +9,10 @@
     "p25": 5.0,
     "p75": 10.0
   },
+  "\"it's a small world\" Holiday": {
+    "p25": 10.0,
+    "p75": 35.0
+  },
   "Adventureland Treehouse inspired by Walt Disney\u2019s Swiss Family Robinson": {
     "p25": 0.0,
     "p75": 0.0
@@ -53,6 +57,22 @@
     "p25": 5.0,
     "p75": 10.0
   },
+  "Disneyland Railroad - Mickey's Toontown": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Disneyland Railroad - New Orleans Square": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Disneyland Railroad - Tomorrowland": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
+  "Disneyland Railroad Main Street, U.S.A. Station": {
+    "p25": 5.0,
+    "p75": 10.0
+  },
   "Dumbo the Flying Elephant": {
     "p25": 15.0,
     "p75": 25.0
@@ -79,7 +99,7 @@
   },
   "Guardians of the Galaxy - Mission: BREAKOUT!": {
     "p25": 35.0,
-    "p75": 70.0
+    "p75": 65.0
   },
   "Guardians of the Galaxy - Monsters After Dark": {
     "p25": 45.0,
@@ -119,7 +139,7 @@
   },
   "Jungle Cruise": {
     "p25": 10.0,
-    "p75": 25.0
+    "p75": 20.0
   },
   "King Arthur Carrousel": {
     "p25": 5.0,
@@ -128,6 +148,10 @@
   "Luigi's Honkin' Haul-O-Ween": {
     "p25": 10.0,
     "p75": 25.0
+  },
+  "Luigi's Joy to the Whirl": {
+    "p25": 10.0,
+    "p75": 15.0
   },
   "Luigi's Rollickin' Roadsters": {
     "p25": 10.0,
@@ -144,6 +168,10 @@
   "Mater's Graveyard JamBOOree": {
     "p25": 5.0,
     "p75": 20.0
+  },
+  "Mater's Jingle Jamboree": {
+    "p25": 5.0,
+    "p75": 5.0
   },
   "Mater's Junkyard Jamboree": {
     "p25": 5.0,
@@ -251,11 +279,11 @@
   },
   "The Many Adventures of Winnie the Pooh": {
     "p25": 5.0,
-    "p75": 10.0
+    "p75": 15.0
   },
   "Tiana's Bayou Adventure": {
     "p25": 10.0,
-    "p75": 50.0
+    "p75": 45.0
   },
   "Toy Story Midway Mania!": {
     "p25": 35.0,
@@ -266,20 +294,24 @@
     "p75": 45.0
   },
   "Walt Disney's Enchanted Tiki Room": {
-    "p25": 3.75,
-    "p75": 5.0
+    "p25": 5.0,
+    "p75": 10.0
   },
   "07952343-3498-404b-8337-734de9a185c1": {
     "p25": 5.0,
     "p75": 5.0
+  },
+  "0d4e2297-5a79-43b4-b705-1d0bff828c6d": {
+    "p25": 5.0,
+    "p75": 10.0
   },
   "0de1413a-73ee-46cf-af2e-c491cc7c7d3b": {
     "p25": 20.0,
     "p75": 35.0
   },
   "106c1e5a-a5e7-42d7-96ab-bc100d8faf71": {
-    "p25": 3.75,
-    "p75": 5.0
+    "p25": 5.0,
+    "p75": 10.0
   },
   "10a5fc6f-5ad3-414b-9bdd-e6bae097b6ad": {
     "p25": 5.0,
@@ -287,7 +319,7 @@
   },
   "1b83fda8-d60e-48e4-9a3d-90ddcbcd1001": {
     "p25": 10.0,
-    "p75": 25.0
+    "p75": 20.0
   },
   "1d24dd7a-372b-4195-8ad0-ba9679d72b08": {
     "p25": 5.0,
@@ -347,7 +379,7 @@
   },
   "52a8ef64-d54c-4974-883f-027c3026e3f1": {
     "p25": 5.0,
-    "p75": 10.0
+    "p75": 15.0
   },
   "56d0bd6d-5106-4420-8f60-0005475c04c3": {
     "p25": 5.0,
@@ -368,6 +400,10 @@
   "64d44aaa-6857-4693-b24b-bcff6c6dcfa1": {
     "p25": 5.0,
     "p75": 20.0
+  },
+  "6a672487-2718-473e-869c-d1a36f54e28c": {
+    "p25": 5.0,
+    "p75": 10.0
   },
   "6c225598-91c9-44a3-95e2-7c423475db61": {
     "p25": 10.0,
@@ -392,6 +428,10 @@
   "7a09a2f0-e226-4f3e-86f8-2598ab67ec44": {
     "p25": 10.0,
     "p75": 30.0
+  },
+  "7f19e65c-6b39-493b-88b3-de3a6537150d": {
+    "p25": 5.0,
+    "p75": 10.0
   },
   "82aeb29b-504a-416f-b13f-f41fa5b766aa": {
     "p25": 10.0,
@@ -431,7 +471,7 @@
   },
   "a9076acd-7630-4bad-a8da-e6bd689ddcac": {
     "p25": 10.0,
-    "p75": 50.0
+    "p75": 45.0
   },
   "b1d285a7-2444-4a7c-b7bb-d2d4d6428a85": {
     "p25": 5.0,
@@ -443,7 +483,7 @@
   },
   "b7678dab-5544-48d5-8fdc-c1a0127cfbcd": {
     "p25": 35.0,
-    "p75": 70.0
+    "p75": 65.0
   },
   "c23af6ba-8515-406a-8a48-d0818ba0bfc9": {
     "p25": 25.0,
@@ -480,6 +520,10 @@
   "cd670bff-81d1-4f34-8676-7bafdf49220a": {
     "p25": 15.0,
     "p75": 40.0
+  },
+  "d252b408-1411-4822-a070-bee8a0ee6480": {
+    "p25": 5.0,
+    "p75": 10.0
   },
   "e0cfed11-96d7-40f3-907f-5cfed172592a": {
     "p25": 5.0,
