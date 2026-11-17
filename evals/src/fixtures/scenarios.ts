@@ -172,7 +172,7 @@ export const FIXTURES: Fixture[] = [
     expectation: 'No caption uses "rare", "great deal" or "best window". Ranks 1 and 2 are Pirates (wanted) and Big Thunder (closest), in either order. Space Mountain ranks below both.',
     ideal: [
       { ride: 'Big Thunder Mountain Railroad', caption: 'The shortest walk, and lines everywhere are a bit under usual.' },
-      { ride: 'Pirates of the Caribbean', caption: 'This was on your list, and its line is a bit under usual.' },
+      { ride: 'Pirates of the Caribbean', caption: 'A bit under normal and a short walk. Head over.' },
       { ride: 'Space Mountain', caption: 'A popular thrill ride with a line a bit under usual.' },
     ],
     bad: [{ ride: 'Space Mountain', caption: 'A rare chance at a great deal on a headliner.' }],

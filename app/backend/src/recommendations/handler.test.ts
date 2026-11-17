@@ -819,3 +819,15 @@ describe('guardSkipLast', () => {
     expect(guardSkipLast(null, lines, true)).toBeNull();
   });
 });
+
+describe('cleanCopy wanted phrasing', () => {
+  const { cleanCopy } = jest.requireActual<typeof import('./handler')>('./handler');
+  it('rewrites "you wanted this one" as "one you had your eye on", keeping sentence case', () => {
+    expect(cleanCopy("You wanted this one. It's about normal, so now works.")).toBe("One you had your eye on. It's about normal, so now works.");
+    expect(cleanCopy('At its daily best, and you still want this one.')).toBe('At its daily best, and one you had your eye on.');
+    expect(cleanCopy('You wanted this ride, and the line is staying long.')).toBe('One you had your eye on, and the line is staying long.');
+  });
+  it('leaves other copy alone', () => {
+    expect(cleanCopy('One you had your eye on, and it won\'t get shorter today.')).toBe('One you had your eye on, and it won\'t get shorter today.');
+  });
+});

@@ -435,6 +435,9 @@ export function guardSkipLast<T extends { rideId: string }>(recs: T[] | null, li
 export function cleanCopy(text: string): string {
   return text
     .replace(/\s*[\u2014\u2013]\s*/g, ', ')
+    // "You wanted this one" reads as blame (Tanner, 2026-11-17); Haiku keeps
+    // writing it despite the hard rule, so it becomes "one you had your eye on".
+    .replace(/\b(y)ou (?:still )?want(?:ed)? this(?: one| ride)?\b/gi, (_m, y: string) => `${y === 'Y' ? 'O' : 'o'}ne you had your eye on`)
     .replace(/!+/g, '.')
     .replace(/,\s*,/g, ',')
     .replace(/\s{2,}/g, ' ')
