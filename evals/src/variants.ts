@@ -20,9 +20,9 @@ import { BATCH } from './checks';
 // The spec rewrite (2026-11-17): the live backend's prompt and input builders.
 import { buildSystemPrompt as specSystem, buildUserMessage as specUser } from '../../app/backend/src/recommendations/promptBuilder';
 import { personaToText as specPersonaToText } from '../../app/backend/src/recommendations/persona';
-import { assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
+import { applySkipGate, assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { IdStyle } from '../../app/backend/src/recommendations/promptInputs';
-import { cleanCopy, guardRankOne } from '../../app/backend/src/recommendations/handler';
+import { cleanCopy, guardRankOne, guardSkipLast } from '../../app/backend/src/recommendations/handler';
 
 export interface Rendered {
   system: string;
@@ -116,7 +116,9 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
   const candidates = b.rides
     .filter(r => r.reachableBeforeClose)
     .map(r => ({ ride: toBackendRide(r), walkMinutes: r.walk, walkYards: r.walk * 90 }));
-  const codeMap = assignCodes(candidates);
+  // The Lambda's skip gate: unwanted skip rides leave the pool unless the day is bad.
+  const { pool, gated: skipGated } = applySkipGate(candidates, b.persona);
+  const codeMap = assignCodes(pool);
   const reopens = new Map<string, number>();
   for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
   const lines = buildRideLines(codeMap, {
@@ -139,7 +141,7 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
         : raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? null : cleanCopy(x.restrictionNote) }));
       const idByName = new Map(lines.map(l => [l.name, l.rideId]));
       const keyed = resolved.map(r => ({ ...r, rideId: (r.ride && idByName.get(r.ride)) ?? `?${r.rawId}` }));
-      return (guardRankOne(keyed, lines) ?? keyed).map(({ rideId: _drop, ...rest }: typeof keyed[number]) => rest);
+      return (guardSkipLast(guardRankOne(keyed, lines), lines, skipGated) ?? keyed).map(({ rideId: _drop, ...rest }: typeof keyed[number]) => rest);
     },
   };
 }

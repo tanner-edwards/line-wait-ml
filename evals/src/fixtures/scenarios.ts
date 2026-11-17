@@ -216,14 +216,19 @@ export const FIXTURES: Fixture[] = [
       { name: 'Big Thunder Mountain Railroad', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
     ],
     filled: [BUZZ_NOTE, 'Party: two adults, kids 9 and 12 (youngestAge 9)', 'Space forecast 55, 57, 58, 60, 58, 57; others flat'],
-    asserts: [A.either('Space leads saying it won\'t get shorter, or Matterhorn leads and names Space as the tradeoff',
-      A.all('Space leads', A.rank1('Space Mountain'), A.captionIf('Space Mountain', WONT_SHORTER, "says it won't get shorter")),
-      A.all('Matterhorn leads', A.rank1('Matterhorn Bobsleds'), A.captionIf('Matterhorn Bobsleds', /Space/, 'names Space Mountain')))],
-    expectation: 'Either Space Mountain leads with "won\'t get shorter today" framing, or Matterhorn leads and its caption names Space Mountain as the tradeoff.',
+    // Skip gate (2026-11-17): under 80% of this pool is skip, so Space Mountain stays only
+    // because it is wanted, and the server ranks it after every non-skip pick.
+    asserts: [
+      A.rank1Of('Matterhorn Bobsleds', 'Big Thunder Mountain Railroad'),
+      A.notRank1('Space Mountain'),
+      A.captionIf('Space Mountain', WONT_SHORTER, "says it won't get shorter"),
+      A.either('Space is last or absent', A.absent('Space Mountain'), A.last('Space Mountain')),
+    ],
+    expectation: 'Matterhorn or Big Thunder leads. Space Mountain, if listed, is last and its caption says it won\'t get shorter today.',
     ideal: [
-      { ride: 'Space Mountain', caption: "You still want this one, and it won't get shorter today." },
       { ride: 'Matterhorn Bobsleds', caption: 'About 15 minutes shorter than usual, a good one to add.' },
       { ride: 'Big Thunder Mountain Railroad', caption: 'A bit under its usual line, if you want another thrill.' },
+      { ride: 'Space Mountain', caption: "You still want this one, and it won't get shorter today." },
     ],
     bad: [
       { ride: 'Big Thunder Mountain Railroad', caption: 'A bit under its usual line.' },

@@ -56,7 +56,7 @@ const POSITIVE_TIMING = /\b(great time|good time|good deal|great deal|rare|rarel
 const PARTY_FACTOR = /(pregnan|expecting|sit (this|it) out|sits (this|it) out|one of you|rider swap|swap|height|tall enough|too short|under \d+ ?(in|inches)|toddler|little one|kid|child)/i;
 const POSITION = /\b(first|second|(?<!\b(?:a|one) )third|top (pick|choice|spot)|number one|#1|ranked)\b/i;
 // Spec: every pick is for right now; captions never order the picks into a route.
-const ROUTE = /\b(go next|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on the way|on your way|before you (head|move) on)\b/i;
+const ROUTE = /\b(go next|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on the way|on your way)\b/i;
 const COME_BACK = /\b(come back|swing back|head back|return (later|tonight|this)|later tonight|later today|wait until|after dinner)\b/i;
 const BUSY_OPENING = /(busy|long (lines?|everywhere|wait)|lines are long|least bad|crowded|packed|every(thing|where)|won't get (any )?shorter|wanted|still want|tough day|holiday)/i;
 
@@ -174,6 +174,10 @@ export const A = {
     run: recs => (rides.includes(nameAt(recs, 1) ?? "") ? null : `rank 1 is ${nameAt(recs, 1) ?? "nothing"}`) }),
   notRank1: (ride: string): Assert => ({ id: `not-rank1:${ride}`, label: `${ride} is not rank 1`,
     run: recs => (nameAt(recs, 1) === ride ? `${ride} is rank 1` : null) }),
+  absent: (ride: string): Assert => ({ id: `absent:${ride}`, label: `${ride} is not recommended`,
+    run: recs => (rankOf(recs, ride) ? `${ride} is rank ${rankOf(recs, ride)}` : null) }),
+  last: (ride: string): Assert => ({ id: `last:${ride}`, label: `${ride} is the last pick`,
+    run: recs => (rankOf(recs, ride) === recs.length ? null : `${ride} is rank ${rankOf(recs, ride) ?? 'none'} of ${recs.length}`) }),
   present: (ride: string): Assert => ({ id: `present:${ride}`, label: `${ride} is recommended`,
     run: recs => (rankOf(recs, ride) ? null : `${ride} missing`) }),
   below: (ride: string, others: string[]): Assert => ({ id: `below:${ride}`, label: `${ride} ranks below ${others.join(' and ')}`,

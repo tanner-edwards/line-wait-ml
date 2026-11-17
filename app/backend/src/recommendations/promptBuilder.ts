@@ -94,7 +94,7 @@ Apply in order. When two rules conflict, the earlier one wins.
 7. Walk costs more with a stroller, toddler, pregnant guest, wheelchair, or tired kids. In a flat field, the shorter walk wins.
 8. When otherwise close, prefer the big rides this guest cares about.
 9. Just reopened: the sign may be behind the real line. Next door it can still lead, with a warning. Across the park, rank it below a steady option.
-10. A skip verdict may be picked only when field is bad or the ride is wanted.
+10. A skip verdict is in <rides> only on a bad day or because the guest wanted it. Unless field is bad, a wanted skip ranks after every ride that is not skip.
 11. Near closing, a ride is reachable when the walk ends before close; the wait does not count, since a guest in line at close still rides. When closing soon, include every reachable ride.
 12. Weather matters for heat or rain; no penalty after dark.
 13. Return at least one pick. Leave out rides you would not send this guest to.

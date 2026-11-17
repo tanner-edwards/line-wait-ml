@@ -24,6 +24,7 @@ import {
   RequestContext,
   Restriction,
   RideForPrompt,
+  SKIP_POOL_FRACTION,
   RideLine,
   WINDOW_ROUND_MIN, TREND_MIN_DELTA, WINDOW_MAX_MIN } from './promptInputs';
 
@@ -124,6 +125,25 @@ export function minutesUntilClose(
  * Assign r1..rN nearest-first (walk ascending, unknown walk last, ties by
  * name). The returned Map iterates in code order.
  */
+/**
+ * Skip gate (spec 6.11 amendment, 2026-11-17). When fewer than SKIP_POOL_FRACTION of
+ * the pool is skip, unwanted skip-verdict rides leave it; wanted ones stay. When
+ * skips are SKIP_POOL_FRACTION or more of the pool, everything stays (a bad day:
+ * the model opens those captions with the busy framing). `gated` tells the
+ * handler whether to push wanted skips to the end of the ranked list.
+ */
+export function applySkipGate(
+  pool: RideForPrompt[],
+  persona: { mustDoRideIds?: string[] } | null | undefined,
+): { pool: RideForPrompt[]; gated: boolean } {
+  if (pool.length === 0) return { pool, gated: false };
+  const isSkip = (c: RideForPrompt) => c.ride.verdict?.verdict === 'skip';
+  const skips = pool.filter(isSkip).length;
+  if (skips / pool.length >= SKIP_POOL_FRACTION) return { pool, gated: false };
+  const wanted = new Set(persona?.mustDoRideIds ?? []);
+  return { pool: pool.filter(c => !isSkip(c) || wanted.has(c.ride.id)), gated: true };
+}
+
 export function assignCodes(candidates: RideForPrompt[]): Map<string, RideForPrompt> {
   const sorted = [...candidates].sort((a, b) => {
     const wa = a.walkMinutes ?? Infinity;
