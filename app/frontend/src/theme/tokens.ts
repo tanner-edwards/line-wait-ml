@@ -6,15 +6,16 @@
 // neutrals stay blue-gray lavender (still works across the warm palette).
 
 export const colors = {
-  // Brand — deep forest teal for buttons, dots, watching state
-  brand:             '#0A6B5A',
-  brandPressed:      '#085647',
+  // Brand — the header/go forest green, for buttons, dots, watching state.
+  // (Was a lighter teal #0A6B5A; unified with the header Nov 2026.)
+  brand:             '#064B36',
+  brandPressed:      '#043B2A',
   // Header gradient — flat solid (both stops same value)
-  gradientFrom:      '#3D7C65',
-  gradientTo:        '#3D7C65',
+  gradientFrom:      '#064B36',
+  gradientTo:        '#064B36',
 
   // Surfaces
-  bg:                '#F2EDE0',  // cream, behind white cards
+  bg:                '#FCF7F1',  // cream, behind white cards (lightened to match the redesign mockups)
   surface:           '#FFFFFF',
 
   // Text — forest-toned grays
@@ -25,14 +26,14 @@ export const colors = {
   textInverseMuted:  'rgba(255,255,255,0.55)',
 
   // Status — verdict colors (badges, alerts, range bar fills)
-  go:                '#3D7C65',  // unified with header — single green
-  goBg:              'rgba(61,124,101,0.10)',
-  goBorder:          'rgba(61,124,101,0.25)',
+  go:                '#064B36',  // unified with header — single green
+  goBg:              'rgba(6,75,54,0.10)',
+  goBorder:          'rgba(6,75,54,0.25)',
 
   // Opportunity card (State 7 hero sub-card) — same RGB family as go,
   // but distinct opacity steps so it reads as "quieter than a badge".
-  opportunityCardBg:     'rgba(61,124,101,0.07)',
-  opportunityCardBorder: 'rgba(61,124,101,0.22)',
+  opportunityCardBg:     'rgba(6,75,54,0.07)',
+  opportunityCardBorder: 'rgba(6,75,54,0.22)',
   opportunityCardText:   '#2D6B54',
 
   skip:              '#B83A2A',  // brick red, complements green + gold
@@ -58,19 +59,19 @@ export const colors = {
   barNeutralPast:    '#BDC0CE',
   barPeak:           '#B83A2A',
   barPeakPast:       'rgba(184,58,42,0.28)',
-  barTrough:         '#3D7C65',
-  barTroughPast:     'rgba(61,124,101,0.32)',
+  barTrough:         '#064B36',
+  barTroughPast:     'rgba(6,75,54,0.32)',
 
   // Borders — teal-tinted at low opacity
-  border:            'rgba(10,107,90,0.09)',
-  borderStrong:      'rgba(10,107,90,0.20)',
+  border:            'rgba(6,75,54,0.09)',
+  borderStrong:      'rgba(6,75,54,0.20)',
 } as const;
 
 // Swipe-to-retire ("Rode it") action — slate blue, picked after on-device
 // comparison (none of the locked palette colors above were a clean fit:
 // green is overused, brick red is SKIP, amber gold is the star badge).
 export const retiredAction = '#5C7A99';
-export const retiredActionText = '#F2EDE0';
+export const retiredActionText = '#FCF7F1';
 
 export const fonts = {
   display:          'Lora_700Bold',
@@ -90,9 +91,9 @@ export const typography = {
   },
   cardTitle: {
     fontFamily: 'Lora_600SemiBold',
-    fontSize: 17,
+    fontSize: 18,
     fontWeight: '600' as const,
-    letterSpacing: -0.17,
+    letterSpacing: -0.18,
   },
   waitNumber: {
     fontFamily: 'Outfit_700Bold',
@@ -149,14 +150,14 @@ export const radius = {
 // per the migration spec — only the color shifts.
 export const shadows = {
   card: {
-    shadowColor:   '#0A6B5A',
+    shadowColor:   '#064B36',
     shadowOffset:  { width: 0, height: 2 },
     shadowRadius:  10,
     shadowOpacity: 0.06,
     elevation:     2,
   },
   sheet: {
-    shadowColor:   '#0A6B5A',
+    shadowColor:   '#064B36',
     shadowOffset:  { width: 0, height: -4 },
     shadowRadius:  24,
     shadowOpacity: 0.14,

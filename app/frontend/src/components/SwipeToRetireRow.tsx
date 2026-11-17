@@ -2,9 +2,9 @@
 // "Rode it" action panel on the right; confirming it marks the ride retired
 // for the rest of the trip (see DeviceContext.retireRide).
 //
-// Two discoverability requirements from the spec, both always-on (not
-// gesture-dependent): a persistent colored edge hint at rest, and a
-// one-time peek animation on the very first card ever shown.
+// Discoverability is a one-time peek animation on the very first card ever
+// shown. The card sits flush at rest — the old persistent colored edge hint
+// read as a mystery stripe and was removed in the UX redesign.
 
 import React, { useEffect } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
@@ -21,7 +21,7 @@ import { RodeItCheckmark } from './RodeItCheckmark';
 import { fonts, radius, retiredAction, retiredActionText, spacing } from '../theme/tokens';
 import { getSwipeHintShown, setSwipeHintShown } from '../utils/swipeHintStorage';
 
-const EDGE_HINT_WIDTH = 6;
+const REST_X = 0;
 const ACTION_WIDTH = 100;
 const PEEK_WIDTH = 60;
 const OPEN_THRESHOLD = -(ACTION_WIDTH / 2);
@@ -40,8 +40,8 @@ export function SwipeToRetireRow({
   isFirst,
   testID,
 }: SwipeToRetireRowProps): React.ReactElement {
-  const translateX = useSharedValue(-EDGE_HINT_WIDTH);
-  const startX = useSharedValue(-EDGE_HINT_WIDTH);
+  const translateX = useSharedValue(REST_X);
+  const startX = useSharedValue(REST_X);
   const opacity = useSharedValue(1);
 
   useEffect(() => {
@@ -51,7 +51,7 @@ export function SwipeToRetireRow({
       if (shown || cancelled) return;
       translateX.value = withSequence(
         withTiming(-PEEK_WIDTH, { duration: 260 }),
-        withTiming(-EDGE_HINT_WIDTH, { duration: 260 })
+        withTiming(REST_X, { duration: 260 })
       );
       void setSwipeHintShown();
     });
@@ -75,15 +75,21 @@ export function SwipeToRetireRow({
     })
     .onUpdate(e => {
       const next = startX.value + e.translationX;
-      translateX.value = Math.min(-EDGE_HINT_WIDTH, Math.max(-ACTION_WIDTH, next));
+      translateX.value = Math.min(REST_X, Math.max(-ACTION_WIDTH, next));
     })
     .onEnd(e => {
       const shouldOpen = translateX.value < OPEN_THRESHOLD || e.velocityX < -500;
-      translateX.value = withSpring(shouldOpen ? -ACTION_WIDTH : -EDGE_HINT_WIDTH, {
+      translateX.value = withSpring(shouldOpen ? -ACTION_WIDTH : REST_X, {
         damping: 20,
         stiffness: 220,
       });
     });
+
+  // Hide the action panel at rest so no blue bleeds around the card's
+  // rounded corners; it appears as soon as the card moves.
+  const actionStyle = useAnimatedStyle(() => ({
+    opacity: translateX.value < REST_X ? 1 : 0,
+  }));
 
   const frontStyle = useAnimatedStyle(() => ({
     transform: [{ translateX: translateX.value }],
@@ -92,7 +98,7 @@ export function SwipeToRetireRow({
 
   return (
     <View style={styles.wrapper} testID={testID}>
-      <View style={styles.actionBackground}>
+      <Animated.View style={[styles.actionBackground, actionStyle]}>
         <Pressable
           style={styles.actionPanel}
           onPress={handleConfirm}
@@ -101,7 +107,7 @@ export function SwipeToRetireRow({
           <RodeItCheckmark size={26} color={retiredActionText} />
           <Text style={styles.actionLabel}>Rode it</Text>
         </Pressable>
-      </View>
+      </Animated.View>
       <GestureDetector gesture={panGesture}>
         <Animated.View style={frontStyle}>{children}</Animated.View>
       </GestureDetector>

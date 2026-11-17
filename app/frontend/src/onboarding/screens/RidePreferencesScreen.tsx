@@ -1,7 +1,7 @@
 import React from 'react';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { Baby, Castle, Compass, Drama, LucideIcon, Orbit, Zap } from 'lucide-react-native';
+import { Baby, Castle, Compass, LucideIcon, Orbit, Zap } from 'lucide-react-native';
 import { RideCategory } from '../../types';
 import { useOnboardingDraft } from '../OnboardingDraftContext';
 import { OnboardingScreenShell } from './OnboardingScreenShell';
@@ -14,6 +14,12 @@ export const RIDE_CATEGORY_OPTIONS: {
   subtitle: string;
   icon: LucideIcon;
 }[] = [
+  {
+    value: 'first-time',
+    title: 'First time',
+    subtitle: 'Show me everything iconic',
+    icon: Compass,
+  },
   {
     value: 'thrills',
     title: 'Thrills',
@@ -37,18 +43,6 @@ export const RIDE_CATEGORY_OPTIONS: {
     title: 'Kid favorites',
     subtitle: 'Dumbo, Casey Jr., Little Mermaid, King Arthur Carousel',
     icon: Baby,
-  },
-  {
-    value: 'shows-characters',
-    title: 'Shows & characters',
-    subtitle: 'Fantasmic!, parades, World of Color, character meets',
-    icon: Drama,
-  },
-  {
-    value: 'first-time',
-    title: 'First time',
-    subtitle: 'Show me everything iconic',
-    icon: Compass,
   },
 ];
 

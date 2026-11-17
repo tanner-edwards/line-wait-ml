@@ -3,6 +3,7 @@ import {
   fallbackRecs,
   findNearestRide,
   parseAndValidate,
+  resolveBatchSize,
 } from './handler';
 import { Ride, ParkData, RideMetadata, HistoricalBucket } from '../types';
 import * as mainHandler from '../handler';
@@ -177,6 +178,14 @@ describe('parseAndValidate', () => {
     }), candidates);
     expect(recs).toHaveLength(5);
   });
+
+  it('caps the list at a custom batch size when provided', () => {
+    const text = JSON.stringify({
+      recommendations: Array.from({ length: 15 }, () => ({ rideId: 'r1', oneLiner: 'a' })),
+    });
+    expect(parseAndValidate(text, candidates, 8)).toHaveLength(8);
+    expect(parseAndValidate(text, candidates, 2)).toHaveLength(2);
+  });
 });
 
 describe('fallbackRecs', () => {
@@ -198,6 +207,14 @@ describe('fallbackRecs', () => {
       ({ ride: makeRide(`r${i}`, `R${i}`, 10, i), walkMinutes: i, walkYards: i * 80 })
     );
     expect(fallbackRecs(candidates)).toHaveLength(5);
+  });
+
+  it('caps at a custom batch size when provided', () => {
+    const candidates = Array.from({ length: 15 }, (_, i) =>
+      ({ ride: makeRide(`r${i}`, `R${i}`, 10, i), walkMinutes: i, walkYards: i * 80 })
+    );
+    expect(fallbackRecs(candidates, 8)).toHaveLength(8);
+    expect(fallbackRecs(candidates, 3)).toHaveLength(3);
   });
 
   it('handles candidates without a verdict (treats as neutral)', () => {
@@ -447,5 +464,65 @@ describe('buildRecommendations — persona injection', () => {
     });
     const [systemPrompt] = mockInvoke.mock.calls[0];
     expect(systemPrompt).toContain('Club 32 Generic Guest');
+  });
+});
+
+describe('resolveBatchSize', () => {
+  it('defaults to 5 when no count is given', () => {
+    expect(resolveBatchSize()).toBe(5);
+    expect(resolveBatchSize(undefined)).toBe(5);
+  });
+
+  it('passes through counts within 1..8', () => {
+    expect(resolveBatchSize(1)).toBe(1);
+    expect(resolveBatchSize(8)).toBe(8);
+  });
+
+  it('clamps out-of-range counts to [1, 8]', () => {
+    expect(resolveBatchSize(20)).toBe(8);
+    expect(resolveBatchSize(0)).toBe(1);
+  });
+});
+
+describe('buildRecommendations — count', () => {
+  function setupBigPark() {
+    const rides = [
+      makeRide('curr', 'Current', null),
+      ...Array.from({ length: 12 }, (_, i) => makeRide(`r${i}`, `R${i}`, 10, 5)),
+    ];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+  }
+
+  it('asks the LLM for 5 by default', async () => {
+    setupBigPark();
+    mockInvoke.mockResolvedValue(JSON.stringify({ recommendations: [] }));
+    await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
+    const [, userMessage] = mockInvoke.mock.calls[0];
+    expect(userMessage).toContain('up to 5 recommendations');
+  });
+
+  it('asks the LLM for the requested count and returns that many', async () => {
+    setupBigPark();
+    mockInvoke.mockResolvedValue(JSON.stringify({
+      recommendations: Array.from({ length: 12 }, (_, i) => ({ rideId: `r${i}`, oneLiner: 'ok' })),
+    }));
+    const res = await buildRecommendations({
+      park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG, count: 8,
+    });
+    const [, userMessage] = mockInvoke.mock.calls[0];
+    expect(userMessage).toContain('up to 8 recommendations');
+    expect(res.recommendations).toHaveLength(8);
+    expect(res.hasMore).toBe(true);
+  });
+
+  it('applies the requested count to the degraded fallback too', async () => {
+    setupBigPark();
+    mockInvoke.mockRejectedValue(new Error('Bedrock down'));
+    const res = await buildRecommendations({
+      park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG, count: 7,
+    });
+    expect(res.degraded).toBe(true);
+    expect(res.recommendations).toHaveLength(7);
   });
 });

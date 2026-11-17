@@ -58,6 +58,8 @@ Example:
 freeTrip: { enabled: true, minAppVersion: "1.1.0" }
 ```
 
+**The flag must be a map, not a bare boolean.** In the Firebase Console, set the field type to **map** and add `enabled` (boolean) inside it. A bare `freeTrip: true` is accepted as shorthand for `{ enabled: true }` only on backends deployed after 2026-11-09; before that it read as *off*, which is what broke the free trial in early November 2026.
+
 How the backend decides (`app/backend/src/featureFlags.ts`):
 - The app sends its version in the `x-app-version` header. With the header, a flag is on when `enabled` is `true` AND the version is at least `minAppVersion`.
 - **No header** (builds released before 1.1.0): only `enabled` counts and `minAppVersion` is ignored, so old App Store builds keep working.

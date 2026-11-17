@@ -27,6 +27,7 @@ import {
 } from '../legal';
 import { PaywallScreen } from './PaywallScreen';
 import { FeedbackScreen } from './FeedbackScreen';
+import { EditTripScreen } from './EditTripScreen';
 import { usePersona } from '../context/PersonaContext';
 import { useDailyContext } from '../context/DailyContextContext';
 import { useDebugMode } from '../context/DebugModeContext';
@@ -67,7 +68,6 @@ const RIDE_CATEGORY_LABELS: Record<RideCategory, string> = {
   classics: 'Classics',
   immersive: 'Immersive',
   'kid-favorites': 'Kid favorites',
-  'shows-characters': 'Shows & characters',
   'first-time': 'First time',
 };
 
@@ -90,6 +90,12 @@ const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov
 function formatTripDate(ymd: string): string {
   const [, m, d] = ymd.split('-').map(Number);
   return `${MONTHS[m - 1]} ${d}`;
+}
+
+function tripHasEnded(tripEndYmd: string): boolean {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return new Date(tripEndYmd + 'T00:00:00') < today;
 }
 
 function daysLeftText(tripEndYmd: string): string {
@@ -123,6 +129,7 @@ export function Profile(): React.ReactElement {
   const [parkPickerOpen, setParkPickerOpen] = useState(false);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [editTripOpen, setEditTripOpen] = useState(false);
   const [retiredRidesOpen, setRetiredRidesOpen] = useState(false);
 
   if (!persona) {
@@ -284,11 +291,22 @@ export function Profile(): React.ReactElement {
                 />
               );
             }
+            const dates = `${formatTripDate(trip.tripStart)} – ${formatTripDate(trip.tripEnd)}`;
+            // Not active but not over yet → bought ahead; dates can still move.
+            if (!hasActiveTrip && !tripHasEnded(trip.tripEnd)) {
+              return (
+                <TapEditRow
+                  label="Upcoming trip"
+                  value={`${dates} · Edit dates`}
+                  onPress={() => setEditTripOpen(true)}
+                />
+              );
+            }
             if (!hasActiveTrip) {
               return (
                 <TapEditRow
                   label="Trip expired"
-                  value={`${formatTripDate(trip.tripStart)} – ${formatTripDate(trip.tripEnd)} · Get new trip`}
+                  value={`${dates} · Get new trip`}
                   onPress={() => setPaywallOpen(true)}
                 />
               );
@@ -296,8 +314,8 @@ export function Profile(): React.ReactElement {
             return (
               <TapEditRow
                 label="Active trip"
-                value={`${formatTripDate(trip.tripStart)} – ${formatTripDate(trip.tripEnd)} · ${daysLeftText(trip.tripEnd)}`}
-                onPress={() => undefined}
+                value={`${dates} · ${daysLeftText(trip.tripEnd)}`}
+                onPress={() => setEditTripOpen(true)}
               />
             );
           })()}
@@ -311,7 +329,7 @@ export function Profile(): React.ReactElement {
             onPress={() => {
               Alert.alert(
                 'Delete account',
-                "This removes your account, trip history, and device records, and revokes Club 32's access to your Apple ID. We keep only an anonymous marker recording that a free trip was already claimed. This cannot be undone.",
+                "This removes your account, trip history, and device records, and revokes Club 32's access to your Apple ID. We keep only an anonymous marker recording that free access was already claimed. This cannot be undone.",
                 [
                   { text: 'Cancel', style: 'cancel' },
                   {
@@ -445,6 +463,14 @@ export function Profile(): React.ReactElement {
         onRequestClose={() => setFeedbackOpen(false)}
       >
         <FeedbackScreen onClose={() => setFeedbackOpen(false)} />
+      </Modal>
+      <Modal
+        visible={editTripOpen && !!trip}
+        animationType="slide"
+        presentationStyle="formSheet"
+        onRequestClose={() => setEditTripOpen(false)}
+      >
+        {trip ? <EditTripScreen trip={trip} onClose={() => setEditTripOpen(false)} /> : null}
       </Modal>
     </SafeAreaView>
   );

@@ -28,7 +28,7 @@ interface FlagConfig {
   enabled?: unknown;
   minAppVersion?: unknown;
 }
-type FlagsDoc = Partial<Record<string, FlagConfig>>;
+type FlagsDoc = Partial<Record<string, FlagConfig | boolean>>;
 
 // Same staleness bound as the entitlement cache — a console edit is live
 // within a minute.
@@ -73,7 +73,11 @@ export function compareVersions(a: number[], b: number[]): number {
   return 0;
 }
 
-function evaluate(config: FlagConfig | undefined, appVersion: string | null): boolean {
+function evaluate(raw: FlagConfig | boolean | undefined, appVersion: string | null): boolean {
+  // A bare boolean (`freeTrip: true`) is the shape a hand edit in the console
+  // tends to produce. Treat it as `{ enabled: <bool> }` rather than silently
+  // turning the flag off — that mistake took the free trip down in Nov 2026.
+  const config: FlagConfig | undefined = typeof raw === 'boolean' ? { enabled: raw } : raw;
   if (!config || config.enabled !== true) return false;
   if (appVersion === null) return true;
   const app = parseVersion(appVersion);

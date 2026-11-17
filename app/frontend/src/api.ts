@@ -81,6 +81,11 @@ export async function fetchWaits(
   return (await res.json()) as CombinedResponse;
 }
 
+// Recs per /v2/recommendations call. The Recommendations screen fills 3 top
+// cards + 3 tiles from the first batch; Show more fetches the same size.
+// Backend default is 5, max 8 (values above are clamped).
+const RECOMMENDATIONS_COUNT = 6;
+
 interface FetchRecommendationsInput {
   park: ParkSlug;
   /** User's GPS coordinates (or debug-mode fake coordinates). */
@@ -97,6 +102,9 @@ interface FetchRecommendationsInput {
   /** Firebase ID token. Recommendations is a premium, entitlement-gated
    *  endpoint — the backend returns 402 without a valid entitled token. */
   idToken?: string | null;
+  /** Debug time travel (ISO) — sent as ?at=, same as /v0/waits. The backend
+   *  skips its recs cache when set. */
+  at?: string;
 }
 
 export async function fetchRecommendations({
@@ -107,12 +115,13 @@ export async function fetchRecommendations({
   excludeRideIds,
   signal,
   idToken,
+  at,
 }: FetchRecommendationsInput): Promise<RecommendationsResponse> {
   if (!BASE_URL || !API_KEY) {
     throw new ApiError(null, 'API base URL or key not configured');
   }
 
-  const body: Record<string, unknown> = { park, userLat, userLng };
+  const body: Record<string, unknown> = { park, userLat, userLng, count: RECOMMENDATIONS_COUNT };
   if (persona) body.persona = persona;
   if (excludeRideIds && excludeRideIds.length > 0) body.excludeRideIds = excludeRideIds;
 
@@ -124,7 +133,8 @@ export async function fetchRecommendations({
 
   let res: Response;
   try {
-    res = await fetch(`${BASE_URL}/v2/recommendations`, {
+    const qs = at ? `?at=${encodeURIComponent(at)}` : '';
+    res = await fetch(`${BASE_URL}/v2/recommendations${qs}`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),
@@ -302,6 +312,16 @@ export async function claimFreeTrip(
   return (body as { trip: TripRecord }).trip;
 }
 
+// Moves the latest trip to new dates. The server enforces the edit rules
+// (utils/tripEdit.ts mirrors them) and rejects with a user-facing message.
+export async function updateTripDates(
+  idToken: string,
+  input: { tripStart: string; tripEnd: string }
+): Promise<TripRecord> {
+  const body = await authedPostJson('/v1/users/trip', idToken, input, 'PUT');
+  return (body as { trip: TripRecord }).trip;
+}
+
 // Read-only check — validates the code server-side without claiming it.
 // Throws ApiError with the rejection reason if invalid.
 export async function checkPromoCode(idToken: string, code: string): Promise<void> {
@@ -434,12 +454,17 @@ async function postJson(path: string, body: object): Promise<unknown> {
   }
 }
 
-async function authedPostJson(path: string, idToken: string, body: object): Promise<unknown> {
+async function authedPostJson(
+  path: string,
+  idToken: string,
+  body: object,
+  method: 'POST' | 'PUT' = 'POST'
+): Promise<unknown> {
   if (!BASE_URL || !API_KEY) throw new ApiError(null, 'API not configured');
   let res: Response;
   try {
     res = await fetch(`${BASE_URL}${path}`, {
-      method: 'POST',
+      method,
       headers: {
         ...baseHeaders(),
         'content-type': 'application/json',

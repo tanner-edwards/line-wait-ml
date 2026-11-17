@@ -17,7 +17,7 @@ const STORAGE_KEY = 'club32:persona';
 
 const TRIP_DURATIONS: readonly TripDuration[] = ['1-day', '2-days', '3-4-days', '5-plus-days'];
 const RIDE_CATEGORIES: readonly RideCategory[] = [
-  'thrills', 'classics', 'immersive', 'kid-favorites', 'shows-characters', 'first-time',
+  'thrills', 'classics', 'immersive', 'kid-favorites', 'first-time',
 ];
 const ACCESSIBILITY_NEEDS: readonly AccessibilityNeed[] = [
   'stroller', 'wheelchair', 'pregnant', 'sensory', 'none',

@@ -41,7 +41,7 @@ import { scoreVerdict } from './scoring/layer2';
 import { jumpEase } from './scoring/jumpEase';
 import type { Verdict, VerdictInfo } from './types';
 import { walkingMinutes } from './recommendations/walkingDistance';
-import { buildRecommendations } from './recommendations/handler';
+import { buildRecommendations, resolveBatchSize, MAX_BATCH_SIZE } from './recommendations/handler';
 import { personaCacheKey } from './recommendations/persona';
 import {
   AccessibilityNeed,
@@ -53,7 +53,7 @@ import {
   UserResponse,
   FeedbackRecord,
 } from './types';
-import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode, setAppleRefreshToken } from './users';
+import { upsertUser, getUser, getTrip, deleteUserData, claimFreeTrip, validatePromoCode, checkPromoCode, setAppleRefreshToken, updateTripDates, TripEditError } from './users';
 import { exchangeAuthorizationCode } from './appleAuth';
 import { submitFeedback } from './feedback';
 import {
@@ -61,6 +61,7 @@ import {
   stripPremiumFromRide,
   verifyAuthClaims,
   invalidateEntitlement,
+  parkTodayString,
 } from './entitlement';
 import { purchaseTrip } from './tripPurchase';
 import { evaluateFlags, getAppVersion, isFlagEnabled } from './featureFlags';
@@ -255,7 +256,6 @@ export function resolveCategories(meta: RideMetadata | null): RideCategory[] {
   const thrill = meta.thrillLevel ?? null;
   if (thrill != null && thrill >= 4) cats.add('thrills');
   if (thrill != null && thrill <= 2 && meta.heightMinIn == null) cats.add('kid-favorites');
-  if (meta.hasShowtime) cats.add('shows-characters');
   for (const tag of meta.categories ?? []) {
     if (tag === 'classic') cats.add('classics');
     else if (tag === 'immersive') cats.add('immersive');
@@ -466,7 +466,7 @@ function corsHeaders(): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Headers': 'x-api-key, content-type, authorization, x-app-version',
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   };
 }
 
@@ -515,6 +515,7 @@ type RouteKind =
   | { kind: 'user-delete' }
   | { kind: 'user-apple-auth' }
   | { kind: 'user-trip' }
+  | { kind: 'user-trip-update' }
   | { kind: 'user-trip-claim-free' }
   | { kind: 'user-trip-purchase' }
   | { kind: 'promo-validate' }
@@ -572,6 +573,9 @@ function routeFromPath(
     const notifListMatch = path.match(/\/v1\/devices\/([^/]+)\/notifications$/);
     if (notifListMatch) return { kind: 'device-notifications-list', deviceId: notifListMatch[1] };
   }
+  if (method === 'PUT' && path.endsWith('/v1/users/trip')) {
+    return { kind: 'user-trip-update' };
+  }
   if (method === 'DELETE' && path.endsWith('/v1/users/me')) {
     return { kind: 'user-delete' };
   }
@@ -626,6 +630,10 @@ export async function handler(
 
   if (route.kind === 'user-trip') {
     return handleUserTrip(event);
+  }
+
+  if (route.kind === 'user-trip-update') {
+    return handleUserTripUpdate(event);
   }
 
   if (route.kind === 'user-trip-claim-free') {
@@ -757,6 +765,7 @@ async function handleRecommendations(
     userLng?: unknown;
     persona?: unknown;
     excludeRideIds?: unknown;
+    count?: unknown;
   };
   try {
     body = JSON.parse(event.body ?? '{}');
@@ -788,6 +797,21 @@ async function handleRecommendations(
     ? body.excludeRideIds.filter((x): x is string => typeof x === 'string' && x.length > 0)
     : [];
 
+  // Optional count — how many recommendations to return. Omitted/null keeps
+  // the original default of 5, so existing clients are unaffected. Must be a
+  // positive integer; values above MAX_BATCH_SIZE are clamped to it.
+  let count: number | undefined;
+  if (body.count !== undefined && body.count !== null) {
+    if (typeof body.count !== 'number' || !Number.isInteger(body.count) || body.count < 1) {
+      return jsonResponse(
+        400,
+        errorBody('BAD_REQUEST', `count must be an integer between 1 and ${MAX_BATCH_SIZE}`)
+      );
+    }
+    count = body.count;
+  }
+  const batchSize = resolveBatchSize(count);
+
   // Optional ?at=<iso> for time-travel testing — same param as /v0/waits.
   // When set we bypass the recs cache to avoid mixing live/time-travel results.
   const atParam = event.queryStringParameters?.at;
@@ -800,10 +824,11 @@ async function handleRecommendations(
   }
 
   // Cache key: coarse GPS grid (4 decimal places ≈ 11 m precision) +
-  // persona + excludeRideIds so different users/batches don't collide.
+  // persona + excludeRideIds + batch size so different users/batches don't
+  // collide.
   const excludeKey =
     excludeRideIds.length === 0 ? '' : '__ex' + [...excludeRideIds].sort().join(',');
-  const cacheKey = `${park}__${userLat.toFixed(4)}_${userLng.toFixed(4)}__${personaCacheKey(persona)}${excludeKey}`;
+  const cacheKey = `${park}__${userLat.toFixed(4)}_${userLng.toFixed(4)}__${personaCacheKey(persona)}${excludeKey}__n${batchSize}`;
   if (!at) {
     const cached = recsCache.get(cacheKey);
     if (cached) {
@@ -812,7 +837,9 @@ async function handleRecommendations(
   }
 
   try {
-    const result = await buildRecommendations({ park, userLat, userLng, at, persona, excludeRideIds });
+    const result = await buildRecommendations({
+      park, userLat, userLng, at, persona, excludeRideIds, count: batchSize,
+    });
     if (!at) recsCache.set(cacheKey, result);
     return jsonResponse(200, result);
   } catch (err) {
@@ -824,7 +851,7 @@ async function handleRecommendations(
 
 const TRIP_DURATIONS: readonly TripDuration[] = ['1-day', '2-days', '3-4-days', '5-plus-days'];
 const RIDE_CATEGORIES: readonly RideCategory[] = [
-  'thrills', 'classics', 'immersive', 'kid-favorites', 'shows-characters', 'first-time',
+  'thrills', 'classics', 'immersive', 'kid-favorites', 'first-time',
 ];
 const ACCESSIBILITY_NEEDS: readonly AccessibilityNeed[] = [
   'stroller', 'wheelchair', 'pregnant', 'sensory', 'none',
@@ -1218,6 +1245,38 @@ async function handleUserTrip(
   }
 }
 
+// Moves the latest trip to new dates. Rules (and why) live in tripEdit.ts.
+async function handleUserTripUpdate(
+  event: APIGatewayProxyEvent
+): Promise<APIGatewayProxyResult> {
+  const uid = await verifyAuth(event);
+  if (!uid) return jsonResponse(401, errorBody('UNAUTHORIZED', 'Valid Firebase ID token required'));
+
+  let body: { tripStart?: unknown; tripEnd?: unknown };
+  try {
+    body = JSON.parse(event.body ?? '{}');
+  } catch {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'Body must be JSON'));
+  }
+
+  const tripStart = typeof body.tripStart === 'string' ? body.tripStart : null;
+  const tripEnd = typeof body.tripEnd === 'string' ? body.tripEnd : null;
+  if (!tripStart || !tripEnd) {
+    return jsonResponse(400, errorBody('BAD_REQUEST', 'tripStart and tripEnd are required (YYYY-MM-DD)'));
+  }
+
+  try {
+    const trip = await updateTripDates(uid, tripStart, tripEnd, parkTodayString(new Date()));
+    invalidateEntitlement(uid); // new dates can open or close access
+    return jsonResponse(200, { trip });
+  } catch (err) {
+    if (err instanceof TripEditError) return jsonResponse(400, errorBody('BAD_REQUEST', err.message));
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    if (message === 'No trip found') return jsonResponse(404, errorBody('NOT_FOUND', message));
+    return jsonResponse(500, errorBody('INTERNAL_ERROR', message));
+  }
+}
+
 const FEEDBACK_RATING_FIELDS = [
   'predictionTrust', 'clarity', 'usability', 'outcomeImpact', 'repeatIntent',
 ] as const;
@@ -1297,7 +1356,7 @@ async function handleClaimFreeTrip(
   if (!(await isFlagEnabled('freeTrip', getAppVersion(event)))) {
     return jsonResponse(
       403,
-      errorBody('FEATURE_DISABLED', "Free trips aren't available right now. Tap Skip to continue.")
+      errorBody('FEATURE_DISABLED', "Free access isn't available right now. Tap Skip to continue.")
     );
   }
 

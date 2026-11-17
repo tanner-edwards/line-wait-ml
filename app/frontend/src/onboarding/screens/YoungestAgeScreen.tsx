@@ -16,11 +16,11 @@ interface AgeBracket {
 }
 
 const BRACKETS: AgeBracket[] = [
-  { value: 2,  title: 'Toddler (under 3)',  subtitle: 'Lots of breaks, height limits on most thrills' },
-  { value: 5,  title: 'Young kid (3–6)',    subtitle: 'Many thrills off-limits, classic dark rides shine' },
-  { value: 10, title: 'Older kid (7–12)',   subtitle: 'Most attractions open up' },
+  { value: 2,  title: 'Toddler (under 3)',  subtitle: 'Gentle pace, plenty of breaks; rider swap for the big rides' },
+  { value: 5,  title: 'Young kid (3–6)',    subtitle: 'Dark rides and shows together; thrills via rider swap' },
+  { value: 10, title: 'Older kid (7–12)',   subtitle: 'Nearly everything is open to the whole group' },
   { value: 15, title: 'Teen (13–17)',       subtitle: 'Everything is in play' },
-  { value: 18, title: 'All adults (18+)',   subtitle: 'No height restrictions to worry about' },
+  { value: 18, title: 'All adults (18+)',   subtitle: 'Nothing to plan around' },
 ];
 
 export function YoungestAgeScreen(): React.ReactElement {
@@ -44,7 +44,7 @@ export function YoungestAgeScreen(): React.ReactElement {
       step={1}
       total={5}
       title="Youngest in your group?"
-      subtitle="Drives ride eligibility, pace, and what counts as a scary ride."
+      subtitle="We plan the pace around them. Everyone else still gets their thrills."
       bottomLabel="Skip"
       onBottomPress={skip}
     >

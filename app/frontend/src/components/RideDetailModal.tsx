@@ -257,8 +257,7 @@ function DetailBody({
 
   return (
     <BottomSheetScrollView contentContainerStyle={styles.body}>
-      <Tile>
-        <RideDetailHeader
+      <RideDetailHeader
           rideName={ride.name}
           parkName={parkName}
           land={ride.land}
@@ -267,6 +266,7 @@ function DetailBody({
           anchorWait={anchorWait}
           showWalkOn={showWalkOn}
           badge={badge}
+          whyText={whyText}
           walkMins={walkMins}
           isWatching={isWatching}
           rideId={ride.id}
@@ -278,16 +278,16 @@ function DetailBody({
           postReopenWaitDrop={ride.closureProfile?.postReopenWaitDrop ?? false}
           downDurationMs={notifDurationMs}
           waitAtClose={null}
-        />
+        >
         {restrictionNote ? (
           <View style={styles.restrictionBanner}>
             <AlertTriangle size={13} color={colors.star} style={styles.restrictionIcon} />
             <Text style={styles.restrictionText}>{restrictionNote}</Text>
           </View>
         ) : null}
-      </Tile>
+      </RideDetailHeader>
 
-      <ReasonCard oneLiner={oneLiner} whyText={whyText} badge={badge} />
+      <ReasonCard oneLiner={oneLiner} />
 
       {/* Closure tile — shown for DOWN rides only, outside the paywall gate
           so free users still see "Down since X". */}

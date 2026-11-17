@@ -299,7 +299,7 @@ export interface RecommendationsResponse {
   park: ParkSlug;
   lastUpdated: string;        // ISO timestamp; matches the underlying live-data fetch
   degraded: boolean;          // true when Bedrock failed and we returned deterministic fallback
-  recommendations: Recommendation[]; // up to BATCH_SIZE entries per request
+  recommendations: Recommendation[]; // up to `count` (default 5, max 8) entries per request
   hasMore: boolean;           // true when more candidates exist beyond what's in `recommendations`
 }
 
@@ -312,7 +312,6 @@ export type RideCategory =
   | 'classics'
   | 'immersive'
   | 'kid-favorites'
-  | 'shows-characters'
   | 'first-time';
 
 export type AccessibilityNeed =
@@ -376,6 +375,9 @@ export interface TripRecord {
   source: 'iap' | 'promo' | 'free';
   promoCode?: string;
   transactionId?: string; // Apple transaction ID (IAP only)
+  /** Travel day access first opened on — set by the first date edit made
+   *  once access is open; caps later edits (see tripEdit.ts). */
+  accessOpenedOn?: string; // YYYY-MM-DD
 }
 
 // Returned by POST /v1/users and GET /v1/users/me

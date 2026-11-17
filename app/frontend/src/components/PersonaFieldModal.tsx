@@ -20,7 +20,7 @@ import {
 import { colors } from '../theme/tokens';
 import { usePersona } from '../context/PersonaContext';
 import { useRides } from '../context/RideContext';
-import { RowButton } from './RowButton';
+import { ROW_BUTTON_GAP, ROW_BUTTON_MIN_HEIGHT, RowButton } from './RowButton';
 import { SearchField } from './SearchField';
 import { RIDE_CATEGORY_OPTIONS } from '../onboarding/screens/RidePreferencesScreen';
 import { ACCESSIBILITY_OPTIONS } from '../onboarding/screens/AccessibilityNeedsScreen';
@@ -35,11 +35,11 @@ const TRIP_DURATION_OPTIONS: { value: TripDuration; title: string; subtitle?: st
 ];
 
 const AGE_OPTIONS: { value: number; title: string; subtitle: string }[] = [
-  { value: 2,  title: 'Toddler (under 3)',  subtitle: 'Lots of breaks, height limits on most thrills' },
-  { value: 5,  title: 'Young kid (3–6)',    subtitle: 'Many thrills off-limits, classic dark rides shine' },
-  { value: 10, title: 'Older kid (7–12)',   subtitle: 'Most attractions open up' },
+  { value: 2,  title: 'Toddler (under 3)',  subtitle: 'Gentle pace, plenty of breaks; rider swap for the big rides' },
+  { value: 5,  title: 'Young kid (3–6)',    subtitle: 'Dark rides and shows together; thrills via rider swap' },
+  { value: 10, title: 'Older kid (7–12)',   subtitle: 'Nearly everything is open to the whole group' },
   { value: 15, title: 'Teen (13–17)',       subtitle: 'Everything is in play' },
-  { value: 18, title: 'All adults (18+)',   subtitle: 'No height restrictions to worry about' },
+  { value: 18, title: 'All adults (18+)',   subtitle: 'Nothing to plan around' },
 ];
 
 export type PersonaField =
@@ -55,7 +55,7 @@ interface Props {
 }
 
 const TITLES: Record<PersonaField, string> = {
-  tripDuration: 'How long is your visit?',
+  tripDuration: 'How long is your Disneyland visit?',
   youngestAge: 'Youngest in your group?',
   ridePreferences: 'What rides do you love?',
   mustDoRideIds: 'Must-do rides',
@@ -262,20 +262,20 @@ function MustDoField({
 
   return (
     <>
-      {pickedRides.length > 0 && (
-        <>
-          <SectionHeader title={`Your picks (${pickedRides.length})`} />
-          {pickedRides.map(ride => (
-            <RowButton
-              key={ride.id}
-              title={ride.name}
-              selected
-              onPress={() => toggle(ride.id)}
-            />
-          ))}
-          <View style={styles.modalDivider} />
-        </>
+      <SectionHeader title={`Your picks (${pickedRides.length})`} />
+      {pickedRides.length === 0 ? (
+        <View style={styles.emptySlot} />
+      ) : (
+        pickedRides.map(ride => (
+          <RowButton
+            key={ride.id}
+            title={ride.name}
+            selected
+            onPress={() => toggle(ride.id)}
+          />
+        ))
       )}
+      <View style={styles.modalDivider} />
       <SectionHeader title={q ? 'Matches' : pickedRides.length > 0 ? 'More to add' : 'All rides'} />
       {suggested.length === 0 ? (
         <Text style={styles.emptyText}>
@@ -339,6 +339,10 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: colors.border,
     marginVertical: 12,
+  },
+  emptySlot: {
+    minHeight: ROW_BUTTON_MIN_HEIGHT,
+    marginBottom: ROW_BUTTON_GAP,
   },
   emptyText: {
     fontSize: 14,

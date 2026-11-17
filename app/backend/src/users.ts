@@ -7,6 +7,7 @@ import * as admin from 'firebase-admin';
 import { getFirestore } from './firestoreClient';
 import { revokeRefreshToken } from './appleAuth';
 import { PromoCode, TripRecord, UserRecord, UserResponse } from './types';
+import { tripEditLimits, validateTripEdit } from './tripEdit';
 
 export async function upsertUser(
   uid: string,
@@ -38,6 +39,40 @@ export async function getUser(uid: string): Promise<UserRecord | null> {
   const db = getFirestore();
   const snap = await db.collection('users').doc(uid).get();
   return snap.exists ? (snap.data() as UserRecord) : null;
+}
+
+/** A date edit the rules reject — the message is shown to the user. */
+export class TripEditError extends Error {}
+
+/**
+ * Moves the user's latest trip to new dates. Reads and writes in one
+ * transaction so the rules check against the stored trip, not a stale copy.
+ * Throws 'No trip found' or the validateTripEdit rejection message.
+ */
+export async function updateTripDates(
+  uid: string,
+  tripStart: string,
+  tripEnd: string,
+  today: string
+): Promise<TripRecord> {
+  const db = getFirestore();
+  const latest = db.collection('trips')
+    .where('uid', '==', uid)
+    .orderBy('purchasedAt', 'desc')
+    .limit(1);
+  return db.runTransaction(async tx => {
+    const snap = await tx.get(latest);
+    if (snap.empty) throw new Error('No trip found');
+    const ref = snap.docs[0].ref;
+    const trip = snap.docs[0].data() as TripRecord;
+    const rejection = validateTripEdit(trip, tripStart, tripEnd, today);
+    if (rejection) throw new TripEditError(rejection);
+    const anchor = tripEditLimits(trip, today)?.anchor;
+    const update: Partial<TripRecord> = { tripStart, tripEnd };
+    if (anchor) update.accessOpenedOn = anchor;
+    tx.update(ref, update);
+    return { ...trip, ...update };
+  });
 }
 
 export async function getTrip(uid: string): Promise<TripRecord | null> {

@@ -33,6 +33,8 @@ import { PRIVACY_POLICY_URL, TERMS_URL } from '../legal';
 import { TripDatePicker, TripDateRange } from '../components/TripDatePicker';
 import { useAuth } from '../context/AuthContext';
 import { useTrip } from '../context/TripContext';
+import { usePersona } from '../context/PersonaContext';
+import { defaultTripRange, withDerivedTripDuration } from '../utils/tripDefaults';
 import { colors, radius, shadows, spacing, typography } from '../theme/tokens';
 
 interface PaywallScreenProps {
@@ -61,19 +63,11 @@ const BENEFITS = [
 export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactElement {
   const { getIdToken, refetchUser } = useAuth();
   const { refetchTrip } = useTrip();
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const toYMD = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  const defaultEnd = new Date(today);
-  defaultEnd.setDate(today.getDate() + 2);
+  const { persona, setPersona } = usePersona();
 
   const scrollRef = useRef<ScrollView>(null);
-  const rangeRef = useRef<TripDateRange>({
-    tripStart: toYMD(today),
-    tripEnd: toYMD(defaultEnd),
-  });
+  // Seeded from the persona's trip length; the picker lets the user adjust.
+  const rangeRef = useRef<TripDateRange>(defaultTripRange(persona?.tripDuration));
 
   // Never render a price we didn't get from StoreKit. A hardcoded fallback
   // goes stale the moment the price changes in App Store Connect — and is
@@ -99,13 +93,15 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
       const token = await getIdTokenRef.current();
       if (!token) throw new Error('Not signed in');
       await purchaseTrip(token, { receiptData, ...rangeRef.current });
+      const filled = withDerivedTripDuration(persona, rangeRef.current);
+      if (filled) void setPersona(filled);
       await Promise.all([refetchUser(), refetchTrip()]);
       onClose();
     } catch (err) {
       setPurchaseError(err instanceof Error ? err.message : 'Purchase could not be verified. Contact support.');
       setPurchasing(false);
     }
-  }, [refetchUser, refetchTrip, onClose]);
+  }, [refetchUser, refetchTrip, onClose, persona, setPersona]);
 
   useEffect(() => {
     if (Platform.OS !== 'ios') {
@@ -175,6 +171,8 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         const token = await getIdToken();
         if (!token) throw new Error('Not signed in');
         await validatePromoCode(token, { code: validatedPromo, ...rangeRef.current });
+        const filled = withDerivedTripDuration(persona, rangeRef.current);
+        if (filled) void setPersona(filled);
         await Promise.all([refetchUser(), refetchTrip()]);
         onClose();
       } catch (err) {
@@ -242,7 +240,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
 
       <ScrollView ref={scrollRef} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         <Text style={styles.eyebrow}>Club 32 Access</Text>
-        <Text style={styles.headline}>Unlock your trip</Text>
+        <Text style={styles.headline}>Unlock access for your trip</Text>
         <Text style={styles.sub}>
           One-time activation for your upcoming visit. Covers up to 10 days of park time.
         </Text>
@@ -257,7 +255,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
         </View>
 
         <View style={styles.pickerCard}>
-          <TripDatePicker onChange={range => { rangeRef.current = range; }} />
+          <TripDatePicker tripDuration={persona?.tripDuration} onChange={range => { rangeRef.current = range; }} />
         </View>
 
         <View style={styles.priceCard}>
@@ -286,7 +284,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
           {purchasing
             ? <ActivityIndicator color={colors.textInverse} />
             : <Text style={styles.purchaseBtnText}>
-                {validatedPromo ? 'Activate free trip' : 'Activate trip access'}
+                {validatedPromo ? 'Activate free access' : 'Activate access'}
               </Text>}
         </TouchableOpacity>
 
@@ -297,7 +295,7 @@ export function PaywallScreen({ onClose }: PaywallScreenProps): React.ReactEleme
           {validatedPromo ? (
             <View style={styles.promoApplied}>
               <Check size={14} color={colors.go} />
-              <Text style={styles.promoAppliedText}>Code applied — trip is free</Text>
+              <Text style={styles.promoAppliedText}>Code applied — your access is free</Text>
               <TouchableOpacity onPress={() => { setValidatedPromo(null); setPromoCode(''); }}>
                 <Text style={styles.promoRemove}>Remove</Text>
               </TouchableOpacity>
