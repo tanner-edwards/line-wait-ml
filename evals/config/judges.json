@@ -1,0 +1,6 @@
+{
+  "_comment": "Bedrock models that judge answers by default. Only keep a judge that scores high on `npm run judge-check`. Results with judge rules v2: Llama 3.3 70B 27/27 (100%). Sonnet 4.6 15/27: caught all 13 bad answers but failed 12 of 14 good ones, mostly on subjective 'strongest reason' and 'voice' calls plus some rule misreads (e.g. rejected the spec's own 'you wanted this and it won't get shorter' wording), so it is not a default. Use it for a stricter second opinion on copy: --judges us.meta.llama3-3-70b-instruct-v1:0,us.anthropic.claude-sonnet-4-6. Qwen3 32B 21/28, removed. Sonnet 5 and 5.5 are AccessDenied for this account.",
+  "judges": [
+    "us.meta.llama3-3-70b-instruct-v1:0"
+  ]
+}
