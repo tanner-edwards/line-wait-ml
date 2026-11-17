@@ -197,6 +197,9 @@ export function scenarioChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offe
     let fail: string | null;
     if (a.id.startsWith('offered:')) fail = offered.includes(a.id.slice(8)) ? null : `not in the prompt (this prompt version removes it)`;
     else fail = recs ? a.run(recs, b) : 'no parseable answer';
+    // Separate "the model chose badly" from "this prompt version never showed the model that ride".
+    const ride = b.rides.find(r => a.id.split(':').slice(1).includes(r.name))?.name;
+    if (fail && ride && !offered.includes(ride)) fail = `${ride} was never shown to the model by this prompt version (${fail})`;
     return { id: a.id, label: a.label, severity: 'hard' as const, pass: fail === null, detail: fail ?? undefined, scenario: true };
   });
 }

@@ -52,7 +52,7 @@ for (const f of [...new Set(d.records.map(r => r.fixture))]) {
   const g = grade(rec, b);
   n++;
   L.push('---', '', `## Scenario ${f}: ${b.fx.title}`, '', `What it tests: ${b.fx.tests}`, '', `What the spec expects: ${b.fx.expectation}`, '');
-  L.push('### Situation the model was given', '', '```text', ...situationLines(b), '```', '');
+  L.push('### Situation the model was given', '', '```text', ...situationLines(b, rec.offered), '```', '');
   const hidden = b.rides.filter(r => !(rec.offered ?? []).includes(r.name)).map(r => r.name);
   if (rec.offered?.length && hidden.length) L.push(`**Note:** this prompt version (${rec.variant}) never showed the model these rides, so it could not pick them: ${hidden.join(', ')}. Judge the answer on the rides it was given; the missing rides are a known limitation of this version, already counted by the automatic checks.`, '');
   L.push('### The answer (rank order)', '');

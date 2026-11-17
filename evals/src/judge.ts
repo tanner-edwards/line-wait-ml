@@ -9,16 +9,16 @@ import { converse } from './llm';
 import { extractJson } from './parse';
 import { BuiltFixture, ResolvedRec } from './types';
 
-export const JUDGE_VERSION = 'spec-2026-11-16-v2'; // v2: go/skip/star only banned as labels; party-tied descriptions allowed
+export const JUDGE_VERSION = 'spec-2026-11-16-v3'; // v2: go/skip/star only as labels; party-tied descriptions ok. v3: judge only rides shown to the model; mechanical copy rules left to code; correct rounded math is grounded; restrictions only as marked in the data
 
 export const CRITERIA = [
-  { id: 'grounded', label: 'Claims match the data', q: 'Every claim about a line (shorter or longer than usual, rising, falling, holding, "rarely this short", any time or number) matches the ride data. No invented numbers or ride facts.' },
+  { id: 'grounded', label: 'Claims match the data', q: 'Every factual claim (shorter or longer than usual, rising, falling, holding, "rarely this short", any time or number, any fact about a ride such as its type) matches the data or is true of the real ride. Correctly rounded arithmetic from the data counts as grounded. This question is about facts only, not style.' },
   { id: 'present-tense', label: 'Every pick is a do-it-now move', q: "Every pick is something to walk to now. No pick's own caption tells the guest to come back later; a later drop appears only as a reason on a different pick." },
   { id: 'skip-framing', label: 'Skip picks framed honestly', q: 'Each picked ride whose verdict is skip opens (first clause) with busy-day or least-bad framing, or for a wanted ride "you wanted this and it won\'t get shorter". No positive-timing words. Answer "na" if no skip-verdict ride was picked.', na: true },
-  { id: 'restrictions', label: 'Restrictions handled honestly', q: 'A picked ride restricted for this party is never presented as a clean fit: the caption or note names who it affects (rider swap for height with two adults; one person sits out for pregnancy). Answer "na" if no restricted ride was picked.', na: true },
+  { id: 'restrictions', label: 'Restrictions handled honestly', q: 'A picked ride whose "restricted for" column is not "none" is never presented as a clean fit: the caption or note names who it affects (rider swap for height; one person sits out for pregnancy). Only the data decides which rides are restricted. Answer "na" if no restricted ride was picked.', na: true },
   { id: 'strongest-reason', label: 'Leads with the strongest reason', q: 'Each caption leads with the single strongest reason this ride earned its spot now and adds something the card (name, wait, walk) does not already show.' },
   { id: 'voice', label: 'Voice', q: 'Confident, warm and plain, like a friend who knows the park. No hype, hedging or filler.' },
-  { id: 'ranking', label: 'Ranking fits the spec', q: "The order follows the ranking rules and this scenario's expectation." },
+  { id: 'ranking', label: 'Ranking fits the spec', q: "The order follows the ranking rules and this scenario's expectation, judged only among the rides that were shown to the model." },
 ] as const;
 export type CriterionId = (typeof CRITERIA)[number]['id'];
 
@@ -46,7 +46,8 @@ export function describeParty(b: BuiltFixture): string {
 }
 
 /** The situation as a readable table: the facts the judge (and the HTML report) use. */
-export function situationLines(b: BuiltFixture): string[] {
+/** `offered`: the rides this prompt version actually showed the model (omit = all of them). */
+export function situationLines(b: BuiltFixture, offered?: string[]): string[] {
   const L = [
     `Park: ${b.fx.park === 'disneyland' ? 'Disneyland' : 'Disney California Adventure'}. Time: ${b.fx.localTime}. Closes: ${b.fx.hours ? b.fx.hours.close : 'unknown'}${b.minutesUntilClose != null ? ` (${b.minutesUntilClose} min from now)` : ''}. Field: ${b.field}.`,
     `Guest is standing at: ${b.rides.find(r => r.isAnchor)!.name}.`,
@@ -54,9 +55,11 @@ export function situationLines(b: BuiltFixture): string[] {
     '',
     'Ride | wait | usual | vs usual | walk | verdict | wanted | restricted for | notes | forecast',
   ];
+  const hidden = offered ? b.rides.filter(r => !offered.includes(r.name)).map(r => r.name) : [];
+  if (hidden.length) L.splice(3, 0, `NOT SHOWN TO THE MODEL (removed by this prompt version, so it could not pick them; do not penalize the answer for leaving them out): ${hidden.join(', ')}.`);
   for (const r of b.rides) {
     const fc = r.buckets.slice(1, 4).map((w, i) => `${w} at ${clock(b.fx.nowMin + 30 * (i + 1))}`).join(', ');
-    const notes = [r.isAnchor ? 'guest is here' : '', r.minutesSinceReopen != null ? `reopened ${r.minutesSinceReopen} min ago` : '', r.window ? `best later: ${r.window.wait} at ${clock(b.fx.nowMin + r.window.inMin)}` : '', r.reachableBeforeClose ? '' : 'cannot reach before close'].filter(Boolean).join('; ');
+    const notes = [hidden.includes(r.name) ? 'NOT shown to the model' : '', r.isAnchor ? 'guest is here' : '', r.minutesSinceReopen != null ? `reopened ${r.minutesSinceReopen} min ago` : '', r.window ? `best later: ${r.window.wait} at ${clock(b.fx.nowMin + r.window.inMin)}` : '', r.reachableBeforeClose ? '' : 'cannot reach before close'].filter(Boolean).join('; ');
     L.push(`${r.name} | ${r.wait} | ${r.usual ?? '?'} | ${r.ofUsual ?? '?'} (${r.vsUsual != null && r.vsUsual > 0 ? '+' : ''}${r.vsUsual ?? '?'}) | ${r.walk} min | ${r.verdict} | ${r.wanted ? 'yes' : 'no'} | ${r.restrictedFor.join(', ') || 'none'} | ${notes || '-'} | ${fc}`);
   }
   return L;
@@ -71,15 +74,19 @@ ${rules()}
 
 For each question below, decide pass or fail for the WHOLE answer, with a one-line reason that quotes the ride or caption at fault. Be strict and specific. Do not reward length or enthusiasm. Use "na" only where a question allows it.
 
+Two things are handled elsewhere, so do not use them to decide any question:
+- Mechanical copy rules (em dashes, percentages, exclamation marks, the ride's own name, app vocabulary) are checked by code.
+- Rides marked "NOT shown to the model" could not be picked. If the scenario expectation names such a ride, ignore that part of the expectation.
+
 Questions:
 ${CRITERIA.map(c => `- ${c.id}: ${c.q}`).join('\n')}
 
 Reply with ONLY a JSON object: {${CRITERIA.map(c => `"${c.id}":{"pass":true|false${'na' in c ? '|"na"' : ''},"why":"..."}`).join(',')}}`;
 
-export async function judgeAnswer(judge: string, b: BuiltFixture, recs: ResolvedRec[], run: number): Promise<Judgement | JudgeFailure> {
+export async function judgeAnswer(judge: string, b: BuiltFixture, recs: ResolvedRec[], run: number, offered?: string[]): Promise<Judgement | JudgeFailure> {
   const user = [
     `## Scenario ${b.fx.id}: ${b.fx.title}`,
-    ...situationLines(b),
+    ...situationLines(b, offered),
     '', `What the spec expects here: ${b.fx.expectation}`,
     '', '## The answer (rank order)',
     ...recs.map((r, i) => `${i + 1}. ${r.ride ?? `UNKNOWN RIDE (${r.rawId})`}: "${r.oneLiner}"${r.restrictionNote ? ` [restriction note: ${r.restrictionNote}]` : ''}`),
