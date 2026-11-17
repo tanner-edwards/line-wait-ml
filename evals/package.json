@@ -7,7 +7,8 @@
     "eval": "tsx src/eval.ts",
     "dry-run": "tsx src/dry-run.ts",
     "judge-check": "tsx src/judge-check.ts",
-    "typecheck": "tsc --noEmit -p ."
+    "typecheck": "tsc --noEmit -p .",
+    "review-pack": "tsx src/review-pack.ts"
   },
   "dependencies": {
     "@aws-sdk/client-bedrock-runtime": "^3.1053.0"
