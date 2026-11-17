@@ -69,27 +69,19 @@ describe('personaToText', () => {
     expect(out).toContain('thrill rides');
   });
 
-  it('looks up must-do ride names from metadata', () => {
+  it('no longer emits a must-do sentence (wanted travels on the ride line)', () => {
     const out = personaToText(
-      { ...emptyPersona(), mustDoRideIds: ['ride-rise', 'ride-indy'] },
+      { ...emptyPersona(), tripDuration: '1-day', mustDoRideIds: ['ride-rise', 'ride-indy'] },
       META
     );
-    expect(out).toContain('Rise of the Resistance');
-    expect(out).toContain('Indiana Jones Adventure');
-    expect(out).toMatch(/hair-on-fire/i);
+    expect(out).not.toMatch(/must-do rides this trip/i);
+    expect(out).not.toContain('Rise of the Resistance');
+    expect(out).not.toContain('Indiana Jones Adventure');
+    expect(out).not.toMatch(/hair-on-fire/i);
   });
 
-  it('skips must-do entries whose IDs are unknown', () => {
-    const out = personaToText(
-      { ...emptyPersona(), mustDoRideIds: ['ride-rise', 'ride-bogus'] },
-      META
-    );
-    expect(out).toContain('Rise of the Resistance');
-    expect(out).not.toContain('ride-bogus');
-  });
-
-  it('returns DEFAULT_PERSONA when must-do list is entirely unknown IDs', () => {
-    const out = personaToText({ ...emptyPersona(), mustDoRideIds: ['ride-bogus'] }, META);
+  it('returns DEFAULT_PERSONA when must-do rides are the only signal', () => {
+    const out = personaToText({ ...emptyPersona(), mustDoRideIds: ['ride-rise'] }, META);
     expect(out).toBe(DEFAULT_PERSONA);
   });
 
@@ -138,6 +130,16 @@ describe('personaCacheKey', () => {
       accessibilityNeeds: ['pregnant', 'stroller'],
     };
     expect(personaCacheKey(a)).toBe(personaCacheKey(b));
+  });
+
+  it('still varies with mustDoRideIds (and ignores their order)', () => {
+    const none = personaCacheKey(emptyPersona());
+    const rise = personaCacheKey({ ...emptyPersona(), mustDoRideIds: ['ride-rise'] });
+    const both = personaCacheKey({ ...emptyPersona(), mustDoRideIds: ['ride-rise', 'ride-indy'] });
+    const bothReordered = personaCacheKey({ ...emptyPersona(), mustDoRideIds: ['ride-indy', 'ride-rise'] });
+    expect(rise).not.toBe(none);
+    expect(both).not.toBe(rise);
+    expect(both).toBe(bothReordered);
   });
 
   it('returns different keys for different content', () => {

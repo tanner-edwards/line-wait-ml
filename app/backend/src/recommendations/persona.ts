@@ -65,9 +65,11 @@ function ageText(age: number): string {
   return `Youngest in the party is a teen (age ${age}). All attractions are height-accessible.`;
 }
 
+// `_rideMetadata` is unused since the must-do sentence moved to the ride
+// lines; kept so callers don't change.
 export function personaToText(
   persona: Persona | null | undefined,
-  rideMetadata: Map<string, RideMetadata>
+  _rideMetadata: Map<string, RideMetadata>
 ): string {
   if (!persona) return DEFAULT_PERSONA;
 
@@ -98,16 +100,9 @@ export function personaToText(
     }
   }
 
-  if (persona.mustDoRideIds.length > 0) {
-    const names = persona.mustDoRideIds
-      .map(id => rideMetadata.get(id)?.name)
-      .filter((n): n is string => typeof n === 'string' && n.length > 0);
-    if (names.length > 0) {
-      parts.push(
-        `Must-do rides this trip: ${names.join(', ')}. Any reasonably short wait on these is a hair-on-fire opportunity — rank them very high when the timing window is open.`
-      );
-    }
-  }
+  // Wanted rides (mustDoRideIds) are not described here: each ride line in
+  // the user message carries `wanted`, so there is one source in the prompt
+  // (spec 6.9). personaCacheKey still includes mustDoRideIds.
 
   for (const need of persona.accessibilityNeeds) {
     if (need !== 'none') {

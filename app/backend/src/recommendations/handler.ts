@@ -2,30 +2,46 @@
 //
 // Flow:
 //   1. fetchPark for the requested park (reuses Slice A's scored response)
-//   2. lookup ride_metadata for current ride + every candidate
-//   3. compute walking minutes from current → each candidate
-//   4. filter to operating rides, exclude current ride
-//   5. build prompt + invoke Bedrock
-//   6. parse + validate JSON response
-//   7. on any failure → deterministic fallback (top-10 by score, generic prose)
+//   2. lookup ride_metadata for the nearest ride + every candidate
+//   3. compute walking minutes from the guest to each candidate
+//   4. candidate pool: operating rides, minus excludeRideIds, minus rides the
+//      guest cannot reach before close. The nearest ride (the "Near X" anchor)
+//      and skip verdicts stay in the pool; the prompt owns those stories.
+//   5. load park hours, recent reopens, weather in parallel (best-effort)
+//   6. build RideLine[] + RequestContext (buildPromptInputs.ts), assign codes
+//   7. build prompt + invoke Bedrock
+//   8. parse + validate JSON response (codes mapped back to UUIDs)
+//   9. on any failure → deterministic fallback (verdict tier, then walk)
 
 import { fetchPark } from '../handler';
 import {
+  ParkData,
   ParkSlug,
-  PARKS,
   Persona,
   Ride,
   RideMetadata,
-  HistoricalAverage,
   Recommendation,
   RecommendationsResponse,
 } from '../types';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
 import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
 import { invokeRecommendations } from './bedrockClient';
-import { buildSystemPrompt, buildUserMessage, RideForPrompt } from './promptBuilder';
+import { buildSystemPrompt, buildUserMessage } from './promptBuilder';
 import { personaToText } from './persona';
-import { getParkHours } from './parkHours';
+import { getParkHours, ParkHours } from './parkHours';
+import { loadRecentReopens } from '../recentReopens';
+import { loadWeatherLine } from '../weather';
+import { RequestContext, RideForPrompt, RideLine } from './promptInputs';
+import {
+  assignCodes,
+  buildRequestContext,
+  buildRideLines,
+  computeArrivalWait,
+  minutesUntilClose,
+  normalizeRideName,
+  parkTimeZone,
+  reachableBeforeClose,
+} from './buildPromptInputs';
 
 const DEFAULT_FALLBACK_ONE_LINER = 'Recommended based on current waits.';
 // [DROPPED] Paragraph fallback string. Removed alongside the LLM paragraph
@@ -74,15 +90,30 @@ export interface RecommendationsRequest {
   count?: number;
 }
 
-/**
- * Build a RecommendationsResponse for the given (park, currentRideId).
- * Always returns a 200-shaped response — Bedrock failure flips `degraded`
- * to true and falls back to deterministic top-N. The caller wraps this in
- * the API Gateway response envelope.
- */
-export async function buildRecommendations(
+type NearestRide = { id: string; name: string; lat: number; lng: number };
+
+/** Everything the prompt needs, built before any Bedrock call. Exported so
+ *  scripts/dump-prompt-inputs.ts runs the exact same path. */
+export interface RecommendationInputs {
+  park: ParkData;
+  metadataMap: Map<string, RideMetadata>;
+  batchSize: number;
+  nearest: NearestRide | null;
+  currentRideId: string;
+  currentRideEntity: Ride | undefined;
+  /** Candidate pool in code order (r1 first). Empty → nothing to recommend. */
+  candidates: RideForPrompt[];
+  /** code → candidate, for mapping model output back to UUIDs. */
+  codeMap: Map<string, RideForPrompt>;
+  lines: RideLine[];
+  requestContext: RequestContext;
+  parkHours: ParkHours | null;
+  now: Date;
+}
+
+export async function prepareRecommendationInputs(
   req: RecommendationsRequest
-): Promise<RecommendationsResponse> {
+): Promise<RecommendationInputs> {
   // Every recommendations call already costs an LLM invocation and is gated
   // by the frontend's own focus/GPS/staleness checks — so it's always worth
   // paying for the freshest wait-time data too, not whatever's sitting in
@@ -90,8 +121,10 @@ export async function buildRecommendations(
   // still protects against back-to-back bypasses if recs are hit rapidly.
   const park = await fetchPark(req.park, req.at, null, null, true);
   const batchSize = resolveBatchSize(req.count);
+  const now = req.at ?? new Date();
+  const tz = parkTimeZone(req.park);
 
-  let metadataMap;
+  let metadataMap: Map<string, RideMetadata>;
   try {
     metadataMap = await ensureRideMetadataLoaded();
   } catch (err) {
@@ -99,23 +132,19 @@ export async function buildRecommendations(
     metadataMap = new Map();
   }
 
-  // Derive the nearest ride to the user's GPS position — used as the LLM
-  // "current ride" anchor and excluded from the candidate pool.
+  // Nearest ride to the user's GPS position: the "Near X" header ride and the
+  // anchor line in the prompt. It stays in the candidate pool (spec 6.10).
   const nearest = findNearestRide(req.userLat, req.userLng, metadataMap, park.rides);
   const currentRideId = nearest?.id ?? '';
   const currentRideEntity = park.rides.find(r => r.id === currentRideId);
   const userCoords = { lat: req.userLat, lng: req.userLng };
 
-  // Candidate set: operating rides in the same park, excluding the nearest
-  // ride AND any ride IDs the client says it already has from a prior batch.
-  // A 'skip' verdict is excluded here too — a ride we're telling the user to
-  // avoid right now shouldn't also appear as a recommendation, even when it
-  // has a genuine future-window story (e.g. "at ceiling now, drops in 2.5h").
-  // That "wait and come back" narrative belongs in the ride's own detail
-  // view, not in a list presented as "go here now."
-  const excluded = new Set([currentRideId, ...(req.excludeRideIds ?? [])].filter(Boolean));
-  const candidates: RideForPrompt[] = park.rides
-    .filter(r => r.status === 'OPERATING' && !excluded.has(r.id) && r.verdict?.verdict !== 'skip')
+  // Operating rides minus the ones the client already has from a prior batch.
+  // Skip verdicts stay in: the prompt decides when a skip ride is still the
+  // right move (bad field, wanted ride) and how to say so (spec 6.11).
+  const excluded = new Set((req.excludeRideIds ?? []).filter(Boolean));
+  const operating: RideForPrompt[] = park.rides
+    .filter(r => r.status === 'OPERATING' && !excluded.has(r.id))
     .map(ride => {
       const otherMeta = lookupRideMetadata(metadataMap, ride.id);
       return {
@@ -125,11 +154,63 @@ export async function buildRecommendations(
       };
     });
 
-  // Empty candidate pool (park closed, all rides already shown, etc.) →
-  // return an empty list. Not degraded, just no rides to recommend.
+  const empty = (parkHours: ParkHours | null): RecommendationInputs => ({
+    park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
+    candidates: [], codeMap: new Map(), lines: [],
+    requestContext: buildRequestContext({ parkSlug: req.park, now, parkHours, lines: [], weather: null, batchSize }),
+    parkHours, now,
+  });
+
+  // Park closed, all rides already shown, etc. → skip the side loads.
+  if (operating.length === 0) return empty(null);
+
+  // Side loads, each best-effort: a failure degrades the prompt, never the request.
+  const [parkHours, reopens, weather] = await Promise.all([
+    getParkHours(req.park, now).catch(() => null),
+    loadRecentReopens(now).catch(() => new Map<string, number>()),
+    loadWeatherLine(req.park, now).catch(() => null),
+  ]);
+
+  // Rides the guest cannot walk to before close leave the pool (spec 6.7).
+  const untilClose = minutesUntilClose(parkHours, now, tz);
+  const reachable = operating.filter(c => reachableBeforeClose(c.walkMinutes, untilClose));
+  if (reachable.length === 0) return empty(parkHours);
+
+  const codeMap = assignCodes(reachable);
+  const lines = buildRideLines(codeMap, {
+    persona: req.persona,
+    reopens,
+    anchorRideId: currentRideId || null,
+    now,
+    timeZone: tz,
+  });
+  const requestContext = buildRequestContext({ parkSlug: req.park, now, parkHours, lines, weather, batchSize });
+
+  return {
+    park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
+    candidates: [...codeMap.values()],
+    codeMap, lines, requestContext, parkHours, now,
+  };
+}
+
+/**
+ * Build a RecommendationsResponse for the given (park, currentRideId).
+ * Always returns a 200-shaped response — Bedrock failure flips `degraded`
+ * to true and falls back to deterministic top-N. The caller wraps this in
+ * the API Gateway response envelope.
+ */
+export async function buildRecommendations(
+  req: RecommendationsRequest
+): Promise<RecommendationsResponse> {
+  const inputs = await prepareRecommendationInputs(req);
+  const { park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity, candidates, codeMap } = inputs;
+  const currentRide = shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest);
+
+  // Empty candidate pool (park closed, all rides already shown, nothing
+  // reachable before close) → empty list. Not degraded, just nothing to recommend.
   if (candidates.length === 0) {
     return {
-      currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
+      currentRide,
       park: req.park,
       lastUpdated: park.lastUpdated,
       degraded: false,
@@ -138,35 +219,27 @@ export async function buildRecommendations(
     };
   }
 
-  // Park hours: best-effort. If /schedule fails we serve recs without the
-  // hours hint and the softened prompt handles "unknown" gracefully.
-  const parkHours = await getParkHours(req.park, req.at ?? new Date());
-
-  // Build the prompt context and try Bedrock.
-  const ctx = {
-    park: PARKS[req.park].name,
-    currentRide: {
-      id: currentRideId,
-      name: currentRideEntity?.name ?? nearest?.name ?? 'Unknown',
-    },
-    currentLocalTime: formatLocalTime(req.at ?? new Date()),
-    parkHours,
-    rides: candidates,
-  };
-
-  // Build system prompt fresh per request so the persona block reflects the
-  // calling user. When persona is null/empty, personaToText returns the
-  // DEFAULT_PERSONA text and we get the same prompt v2 used.
+  // Build system prompt fresh per request so the persona block (last block)
+  // reflects the calling user. When persona is null/empty, personaToText
+  // returns DEFAULT_PERSONA.
   const systemPrompt = buildSystemPrompt(personaToText(req.persona, metadataMap), batchSize);
+  const userMessage = buildUserMessage(inputs.requestContext, inputs.lines);
 
   let llmRecs: Recommendation[] | null = null;
   try {
-    const text = await invokeRecommendations(systemPrompt, buildUserMessage(ctx, batchSize));
+    const { text, usage, stopReason, elapsedMs } = await invokeRecommendations(systemPrompt, userMessage);
     // TEMP DEBUG (remove once Bedrock path is verified): log the raw model
     // response so we can tell whether a degraded result came from a parse
     // failure vs an empty rec list vs all-filtered IDs.
-    console.log('[bedrock-raw]', JSON.stringify({ textLen: text.length, preview: text.slice(0, 400) }));
-    llmRecs = parseAndValidate(text, candidates, batchSize);
+    console.log('[bedrock-raw]', JSON.stringify({
+      textLen: text.length,
+      outputTokens: usage.outputTokens,
+      inputTokens: usage.inputTokens,
+      stopReason,
+      elapsedMs,
+      preview: text.slice(0, 400),
+    }));
+    llmRecs = parseAndValidate(text, codeMap, candidates, batchSize);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
     console.warn('Bedrock call failed; falling back to deterministic recs', err);
@@ -175,7 +248,7 @@ export async function buildRecommendations(
   if (llmRecs === null || llmRecs.length === 0) {
     const recs = fallbackRecs(candidates, batchSize);
     return {
-      currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
+      currentRide,
       park: req.park,
       lastUpdated: park.lastUpdated,
       degraded: true,
@@ -185,7 +258,7 @@ export async function buildRecommendations(
   }
 
   return {
-    currentRide: shapeCurrentRide(req.park, currentRideId, currentRideEntity, nearest),
+    currentRide,
     park: req.park,
     lastUpdated: park.lastUpdated,
     degraded: false,
@@ -231,47 +304,42 @@ function shapeCurrentRide(
   };
 }
 
-// LA wall-clock time formatted as "Friday 11:32 AM" for the LLM context.
-function formatLocalTime(date: Date): string {
-  return new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/Los_Angeles',
-    weekday: 'long',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  }).format(date);
-}
+const CODE_RE = /^(r\d+)\b\s*[:.\-]?\s*(.*)$/is;
 
 /**
- * Deterministically estimate the wait a guest will encounter when they
- * physically arrive at the queue. Uses the slope of the first two historical
- * buckets (t+0 → t+30) to project how much the wait changes over the walk.
- * Falls back to currentWait when bucket data is absent (flat assumption).
- * Replaces the LLM's self-reported arrivalWait, which was unreliable
- * (Claude was computing currentWait + walkMinutes rather than using trends).
+ * Map one model `rideId` to a pool candidate, or null to drop the entry.
+ * Accepted forms:
+ *   - a bare UUID present in the pool (UUID-output prompt variant);
+ *   - "<code> <name>" (spec 5): the name must match the code's ride after
+ *     normalizeRideName on both sides;
+ *   - a bare code.
+ * The exact-UUID check runs first so a pool id can never be misread as a code.
  */
-function computeArrivalWait(
-  currentWait: number | null,
-  walkMinutes: number | null,
-  ha: HistoricalAverage | null,
-): number | null {
-  if (currentWait === null) return null;
-  if (walkMinutes === null) return currentWait;
-  const b0 = ha?.buckets[0]; // t+0
-  const b1 = ha?.buckets[1]; // t+30
-  if (b0?.wait != null && b1?.wait != null && b0.sampleCount > 0 && b1.sampleCount > 0) {
-    const slopePerMin = (b1.wait - b0.wait) / 30;
-    return Math.max(0, Math.round(currentWait + slopePerMin * walkMinutes));
-  }
-  return currentWait;
+export function resolveRideRef(
+  raw: string,
+  codeMap: Map<string, RideForPrompt>,
+  byId: Map<string, RideForPrompt>,
+): RideForPrompt | null {
+  const ref = raw.trim();
+  const direct = byId.get(ref);
+  if (direct) return direct;
+  const m = CODE_RE.exec(ref);
+  if (!m) return null;
+  const candidate = codeMap.get(m[1].toLowerCase());
+  if (!candidate) return null;
+  const name = m[2].trim();
+  if (name === '') return candidate;
+  return normalizeRideName(name) === normalizeRideName(candidate.ride.name) ? candidate : null;
 }
 
 // Strict JSON validator. Rejects anything not matching the contract.
-// Filters out recs whose rideId isn't in the candidate set. Caps at batchSize.
-// arrivalWait is computed server-side via computeArrivalWait — the LLM value
-// is ignored to prevent naive currentWait+walkMinutes arithmetic.
+// Maps each rideId (code plus name, bare code, or pool UUID) back to a pool
+// ride; drops unknown codes, name mismatches, and repeat rides. Caps at
+// batchSize. arrivalWait is computed server-side via computeArrivalWait — the
+// LLM value is ignored to prevent naive currentWait+walkMinutes arithmetic.
 export function parseAndValidate(
   text: string,
+  codeMap: Map<string, RideForPrompt>,
   candidates: RideForPrompt[],
   batchSize: number = DEFAULT_BATCH_SIZE
 ): Recommendation[] | null {
@@ -286,8 +354,8 @@ export function parseAndValidate(
   const recs = root.recommendations;
   if (!Array.isArray(recs)) return null;
 
-  const candidateIds = new Set(candidates.map(c => c.ride.id));
-  const candidateLookup = new Map(candidates.map(c => [c.ride.id, c]));
+  const byId = new Map(candidates.map(c => [c.ride.id, c]));
+  const seen = new Set<string>();
 
   const valid: Recommendation[] = [];
   for (const entry of recs) {
@@ -299,12 +367,14 @@ export function parseAndValidate(
     // output tokens. Restore when paragraph comes back as an on-demand
     // fetch. See promptBuilder.ts TODO(paragraph).
     // if (typeof e.paragraph !== 'string') continue;
-    if (!candidateIds.has(e.rideId)) continue;
-    const candidate = candidateLookup.get(e.rideId)!;
+    const candidate = resolveRideRef(e.rideId, codeMap, byId);
+    if (!candidate) continue;
+    if (seen.has(candidate.ride.id)) continue;
+    seen.add(candidate.ride.id);
     valid.push({
-      rideId: e.rideId,
-      oneLiner: e.oneLiner,
-      restrictionNote: typeof e.restrictionNote === 'string' ? e.restrictionNote : null,
+      rideId: candidate.ride.id,
+      oneLiner: cleanCopy(e.oneLiner),
+      restrictionNote: typeof e.restrictionNote === 'string' ? cleanCopy(e.restrictionNote) : null,
       // paragraph: e.paragraph,
       walkMinutes: candidate.walkMinutes,
       walkYards: candidate.walkYards,
@@ -317,6 +387,18 @@ export function parseAndValidate(
     if (valid.length >= batchSize) break;
   }
   return valid;
+}
+
+// Deterministic guard for two copy rules Haiku breaks even when told not to
+// (spec section 9): em/en dashes become a comma, exclamation marks a period.
+// Collapses doubled spaces the substitution can leave behind.
+export function cleanCopy(text: string): string {
+  return text
+    .replace(/\s*[\u2014\u2013]\s*/g, ', ')
+    .replace(/!+/g, '.')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
 }
 
 // The model is told not to wrap output in ```json ... ``` fences, but if it

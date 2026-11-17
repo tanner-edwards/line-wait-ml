@@ -1,0 +1,145 @@
+{
+  "id": "S7v",
+  "title": "S7 variant: Space Mountain reopened 5 minutes ago",
+  "tests": "a very fresh reopen drops the ride below a steady option",
+  "persona": "as S7",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 11:30 AM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 690,
+    "weather": null,
+    "batchSize": 6,
+    "field": "mixed",
+    "anchor": {
+      "code": "r1",
+      "name": "Buzz Lightyear Astro Blasters"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "88197808-3c56-4198-a5a4-6066541251cf",
+      "name": "Buzz Lightyear Astro Blasters",
+      "wait": 15,
+      "arrive": 15,
+      "usual": 25,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        15,
+        15,
+        15,
+        15,
+        15
+      ],
+      "window": null,
+      "isAnchor": true
+    },
+    {
+      "code": "r2",
+      "rideId": "9167db1d-e5e7-46da-a07f-ae30a87bc4c4",
+      "name": "Space Mountain",
+      "wait": 15,
+      "arrive": 15,
+      "usual": 45,
+      "ofUsual": "far-below",
+      "vsUsual": -30,
+      "walk": 1,
+      "verdict": "star",
+      "reason": "rare-low",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": 5,
+      "buckets": [
+        15,
+        25,
+        35,
+        38,
+        40
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r3",
+      "rideId": "faaa8be9-cc1e-4535-ac20-04a535654bd0",
+      "name": "Matterhorn Bobsleds",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 35,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 8,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r4",
+      "rideId": "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+      "name": "Big Thunder Mountain Railroad",
+      "wait": 30,
+      "arrive": 30,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": -5,
+      "walk": 12,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        30,
+        30,
+        30,
+        30,
+        30
+      ],
+      "window": null,
+      "isAnchor": false
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "faaa8be9-cc1e-4535-ac20-04a535654bd0"
+    ],
+    "mustInclude": [
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
+    ],
+    "perRide": {
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4": {
+        "forbiddenWords": [
+          "rare",
+          "great deal",
+          "steal"
+        ],
+        "requiredAnyPhrase": [
+          "reopened",
+          "check the real line",
+          "real line",
+          "posted",
+          "just opened back"
+        ]
+      }
+    }
+  }
+}

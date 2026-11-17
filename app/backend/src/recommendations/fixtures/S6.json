@@ -1,0 +1,171 @@
+{
+  "id": "S6",
+  "title": "Closing hour, last-stop headliner is still reachable",
+  "tests": "in line at close still rides; a falling line within 30 min is a better bet; reachability is server-side",
+  "persona": "two adults and a 15-year-old, not first-timers, no wanted rides",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 10:10 PM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 50,
+    "weather": null,
+    "batchSize": 6,
+    "field": "mixed",
+    "anchor": {
+      "code": "r1",
+      "name": "Pirates of the Caribbean"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "82aeb29b-504a-416f-b13f-f41fa5b766aa",
+      "name": "Pirates of the Caribbean",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 30,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "window": null,
+      "isAnchor": true
+    },
+    {
+      "code": "r2",
+      "rideId": "ff52cb64-c1d5-4feb-9d43-5dbd429bac81",
+      "name": "Haunted Mansion",
+      "wait": 15,
+      "arrive": 15,
+      "usual": 25,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 2,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        15,
+        15,
+        15,
+        null,
+        null
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r3",
+      "rideId": "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+      "name": "Big Thunder Mountain Railroad",
+      "wait": 40,
+      "arrive": 40,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": 5,
+      "walk": 6,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        40,
+        25,
+        null,
+        null,
+        null
+      ],
+      "window": {
+        "wait": 25,
+        "at": "10:40 PM"
+      },
+      "isAnchor": false
+    },
+    {
+      "code": "r4",
+      "rideId": "faaa8be9-cc1e-4535-ac20-04a535654bd0",
+      "name": "Matterhorn Bobsleds",
+      "wait": 30,
+      "arrive": 30,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": -5,
+      "walk": 10,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        30,
+        30,
+        30,
+        30,
+        30
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r5",
+      "rideId": "9167db1d-e5e7-46da-a07f-ae30a87bc4c4",
+      "name": "Space Mountain",
+      "wait": 60,
+      "arrive": 60,
+      "usual": 45,
+      "ofUsual": "above",
+      "vsUsual": 15,
+      "walk": 14,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        60,
+        45,
+        40,
+        null,
+        null
+      ],
+      "window": {
+        "wait": 40,
+        "at": "10:50 PM"
+      },
+      "isAnchor": false
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "ff52cb64-c1d5-4feb-9d43-5dbd429bac81"
+    ],
+    "mustInclude": [
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
+    ],
+    "perRide": {
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4": {
+        "requiredAnyPhrase": [
+          "in line",
+          "before close",
+          "before the park closes",
+          "still ride",
+          "still get on"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,143 @@
+{
+  "id": "S3",
+  "title": "Flat field, everything is a decent deal and the walk decides",
+  "tests": "no invented window; lead with the real tiebreaker; no ride descriptions",
+  "persona": "two adults, two kids (8 and 10), not first-timers, Pirates wanted",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 2:00 PM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 540,
+    "weather": null,
+    "batchSize": 6,
+    "field": "flat",
+    "anchor": {
+      "code": "r1",
+      "name": "Mark Twain Riverboat"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "6c30d5b0-8c0a-406f-9258-0b6c55d4a5e4",
+      "name": "Mark Twain Riverboat",
+      "wait": 5,
+      "arrive": 5,
+      "usual": 10,
+      "ofUsual": "far-below",
+      "vsUsual": -5,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        5,
+        5,
+        5,
+        5,
+        5
+      ],
+      "window": null,
+      "isAnchor": true
+    },
+    {
+      "code": "r2",
+      "rideId": "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+      "name": "Big Thunder Mountain Railroad",
+      "wait": 30,
+      "arrive": 30,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": -5,
+      "walk": 2,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        30,
+        30,
+        30,
+        30,
+        30
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r3",
+      "rideId": "82aeb29b-504a-416f-b13f-f41fa5b766aa",
+      "name": "Pirates of the Caribbean",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 30,
+      "ofUsual": "below",
+      "vsUsual": -5,
+      "walk": 4,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": true,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r4",
+      "rideId": "9167db1d-e5e7-46da-a07f-ae30a87bc4c4",
+      "name": "Space Mountain",
+      "wait": 40,
+      "arrive": 40,
+      "usual": 45,
+      "ofUsual": "about",
+      "vsUsual": -5,
+      "walk": 12,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        40,
+        40,
+        40,
+        40,
+        40
+      ],
+      "window": null,
+      "isAnchor": false
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+      "82aeb29b-504a-416f-b13f-f41fa5b766aa"
+    ],
+    "order": [
+      [
+        "82aeb29b-504a-416f-b13f-f41fa5b766aa",
+        "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
+      ],
+      [
+        "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+        "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
+      ]
+    ],
+    "forbiddenWordsAll": [
+      "rare",
+      "great deal",
+      "best window",
+      "steal"
+    ]
+  }
+}

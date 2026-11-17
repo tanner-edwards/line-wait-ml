@@ -1,0 +1,195 @@
+{
+  "id": "S1",
+  "title": "Pregnant guest, rough star ride has a rare short line",
+  "tests": "a star verdict does not win by default; restriction is a ranking factor and an answered objection",
+  "persona": "two adults, one pregnant, thrill-forward, not first-timers, no wanted rides",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 1:30 PM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 570,
+    "weather": null,
+    "batchSize": 6,
+    "field": "mixed",
+    "anchor": {
+      "code": "r1",
+      "name": "Buzz Lightyear Astro Blasters"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "88197808-3c56-4198-a5a4-6066541251cf",
+      "name": "Buzz Lightyear Astro Blasters",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 25,
+      "ofUsual": "below",
+      "vsUsual": -5,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "window": null,
+      "isAnchor": true
+    },
+    {
+      "code": "r2",
+      "rideId": "1b83fda8-d60e-48e4-9a3d-90ddcbcd1001",
+      "name": "Jungle Cruise",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 35,
+      "ofUsual": "far-below",
+      "vsUsual": -15,
+      "walk": 5,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r3",
+      "rideId": "82aeb29b-504a-416f-b13f-f41fa5b766aa",
+      "name": "Pirates of the Caribbean",
+      "wait": 15,
+      "arrive": 15,
+      "usual": 30,
+      "ofUsual": "far-below",
+      "vsUsual": -15,
+      "walk": 5,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        15,
+        18,
+        22,
+        25,
+        28
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r4",
+      "rideId": "2aedc657-1ee2-4545-a1ce-14753f28cc66",
+      "name": "Indiana Jones Adventure",
+      "wait": 30,
+      "arrive": 30,
+      "usual": 55,
+      "ofUsual": "far-below",
+      "vsUsual": -25,
+      "walk": 6,
+      "verdict": "star",
+      "reason": "rare-low",
+      "wanted": false,
+      "restricted": [
+        "pregnancy"
+      ],
+      "reopenedMinAgo": null,
+      "buckets": [
+        30,
+        35,
+        40,
+        45,
+        50
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r5",
+      "rideId": "ff52cb64-c1d5-4feb-9d43-5dbd429bac81",
+      "name": "Haunted Mansion",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 25,
+      "ofUsual": "about",
+      "vsUsual": 0,
+      "walk": 7,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": false
+    },
+    {
+      "code": "r6",
+      "rideId": "0de1413a-73ee-46cf-af2e-c491cc7c7d3b",
+      "name": "Big Thunder Mountain Railroad",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 30,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 9,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [
+        "pregnancy"
+      ],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "window": null,
+      "isAnchor": false
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "82aeb29b-504a-416f-b13f-f41fa5b766aa"
+    ],
+    "notRank1": [
+      "2aedc657-1ee2-4545-a1ce-14753f28cc66",
+      "0de1413a-73ee-46cf-af2e-c491cc7c7d3b"
+    ],
+    "perRide": {
+      "2aedc657-1ee2-4545-a1ce-14753f28cc66": {
+        "restrictionNote": true
+      },
+      "0de1413a-73ee-46cf-af2e-c491cc7c7d3b": {
+        "restrictionNote": true
+      }
+    },
+    "rank1MayName": [
+      "2aedc657-1ee2-4545-a1ce-14753f28cc66"
+    ]
+  }
+}
