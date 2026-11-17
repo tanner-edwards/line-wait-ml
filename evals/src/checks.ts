@@ -138,6 +138,9 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
   add('restricted-note', 'A restricted ride (not wanted) carries a restriction note', 'hard',
     recs.filter(r => { const d = ride(r); return d && d.restrictedFor.length && !d.wanted && !(r.restrictionNote ?? '').trim(); })
       .map(r => `${r.ride} (${ride(r)!.restrictedFor.join(', ')})`).join(', ') || null);
+  add('rider-swap', 'A height-restricted pick mentions rider swap', 'hard',
+    recs.filter(r => { const d = ride(r); return d && d.restrictedFor.some(x => x === 'toddler' || x === 'child') && !/swap/i.test(`${r.oneLiner} ${r.restrictionNote ?? ''}`); })
+      .map(r => `${r.ride}: "${r.oneLiner}"${r.restrictionNote ? ` / note "${r.restrictionNote}"` : ''}`).join(' | ') || null);
   add('restricted-wanted', 'A restricted wanted ride says who it affects', 'hard',
     recs.filter(r => { const d = ride(r); return d && d.restrictedFor.length && d.wanted && !PARTY_FACTOR.test(`${r.oneLiner} ${r.restrictionNote ?? ''}`); })
       .map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);

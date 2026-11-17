@@ -34,7 +34,7 @@ const cls = (x: number, good: number, ok: number) => (!Number.isFinite(x) ? '' :
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 const median = (xs: number[]) => (xs.length ? pct([...xs].sort((a, b) => a - b), 50) : NaN);
-const PROVISIONAL = new Set(['S7', 'S7v']); // reopen threshold still being tuned (spec 6.6)
+const PROVISIONAL = new Set<string>(); // scenarios whose expected answer is still undecided
 /** Spec §13.3: a scenario passes when at least 4 of 5 runs pass. */
 const barFor = (n: number) => Math.max(1, Math.ceil(n * 0.8));
 
