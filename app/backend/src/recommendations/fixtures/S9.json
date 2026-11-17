@@ -1,0 +1,142 @@
+{
+  "id": "S9",
+  "title": "Anchor ride is a good pick",
+  "tests": "the nearest ride is a candidate and may lead; caption does not assume the guest has not ridden it",
+  "persona": "two adults, not first-timers, no wanted rides",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 3:00 PM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 480,
+    "weather": null,
+    "batchSize": 6,
+    "field": "mixed",
+    "anchor": {
+      "code": "r1",
+      "name": "Haunted Mansion"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "ff52cb64-c1d5-4feb-9d43-5dbd429bac81",
+      "name": "Haunted Mansion",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 40,
+      "ofUsual": "far-below",
+      "vsUsual": -20,
+      "walk": 0,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        25,
+        30,
+        35,
+        40
+      ],
+      "window": null,
+      "isAnchor": true,
+      "trend": "rising"
+    },
+    {
+      "code": "r2",
+      "rideId": "82aeb29b-504a-416f-b13f-f41fa5b766aa",
+      "name": "Pirates of the Caribbean",
+      "wait": 30,
+      "arrive": 30,
+      "usual": 30,
+      "ofUsual": "about",
+      "vsUsual": 0,
+      "walk": 3,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        30,
+        30,
+        30,
+        30,
+        30
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r3",
+      "rideId": "1b83fda8-d60e-48e4-9a3d-90ddcbcd1001",
+      "name": "Jungle Cruise",
+      "wait": 35,
+      "arrive": 35,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": 0,
+      "walk": 4,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        35,
+        35,
+        35,
+        35,
+        35
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r4",
+      "rideId": "2aedc657-1ee2-4545-a1ce-14753f28cc66",
+      "name": "Indiana Jones Adventure",
+      "wait": 55,
+      "arrive": 55,
+      "usual": 55,
+      "ofUsual": "about",
+      "vsUsual": 0,
+      "walk": 5,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        55,
+        55,
+        55,
+        55,
+        55
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "ff52cb64-c1d5-4feb-9d43-5dbd429bac81"
+    ],
+    "mustInclude": [
+      "ff52cb64-c1d5-4feb-9d43-5dbd429bac81"
+    ],
+    "perRide": {
+      "ff52cb64-c1d5-4feb-9d43-5dbd429bac81": {
+        "forbiddenWords": [
+          "head over",
+          "walk over",
+          "make your way"
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,204 @@
+{
+  "id": "S4",
+  "title": "Bad field, everything is busy and the pick is the least bad option",
+  "tests": "honest framing; wanted ride with weak window not oversold; always returns a rec; skip picks open with the busy-day framing",
+  "persona": "two adults, two kids (6 and 9), not first-timers, Peter Pan wanted",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 12:30 PM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 630,
+    "weather": null,
+    "batchSize": 6,
+    "field": "bad",
+    "anchor": {
+      "code": "r1",
+      "name": "Mad Tea Party"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "e0cfed11-96d7-40f3-907f-5cfed172592a",
+      "name": "Mad Tea Party",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 15,
+      "ofUsual": "far-above",
+      "vsUsual": 10,
+      "walk": 0,
+      "verdict": "skip",
+      "reason": "high-vs-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": true,
+      "trend": "flat"
+    },
+    {
+      "code": "r2",
+      "rideId": "cc980e8e-192f-48b6-848c-27784084e54b",
+      "name": "Dumbo the Flying Elephant",
+      "wait": 45,
+      "arrive": 45,
+      "usual": 30,
+      "ofUsual": "above",
+      "vsUsual": 15,
+      "walk": 3,
+      "verdict": "skip",
+      "reason": "busy-no-relief",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        45,
+        45,
+        45,
+        45,
+        45
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r3",
+      "rideId": "c23af6ba-8515-406a-8a48-d0818ba0bfc9",
+      "name": "Peter Pan's Flight",
+      "wait": 75,
+      "arrive": 75,
+      "usual": 50,
+      "ofUsual": "above",
+      "vsUsual": 25,
+      "walk": 3,
+      "verdict": "skip",
+      "reason": "busy-no-relief",
+      "wanted": true,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        75,
+        72,
+        70,
+        70,
+        70
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r4",
+      "rideId": "faaa8be9-cc1e-4535-ac20-04a535654bd0",
+      "name": "Matterhorn Bobsleds",
+      "wait": 40,
+      "arrive": 40,
+      "usual": 35,
+      "ofUsual": "about",
+      "vsUsual": 5,
+      "walk": 6,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        40,
+        40,
+        40,
+        40,
+        40
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r5",
+      "rideId": "9167db1d-e5e7-46da-a07f-ae30a87bc4c4",
+      "name": "Space Mountain",
+      "wait": 80,
+      "arrive": 80,
+      "usual": 45,
+      "ofUsual": "far-above",
+      "vsUsual": 35,
+      "walk": 10,
+      "verdict": "skip",
+      "reason": "busy-no-relief",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        80,
+        80,
+        80,
+        80,
+        80
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    }
+  ],
+  "assert": {
+    "minRecs": 1,
+    "rank1": [
+      "faaa8be9-cc1e-4535-ac20-04a535654bd0",
+      "c23af6ba-8515-406a-8a48-d0818ba0bfc9"
+    ],
+    "mayOmit": [
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
+    ],
+    "skipPicksOpenWithBusyDay": true,
+    "perRide": {
+      "c23af6ba-8515-406a-8a48-d0818ba0bfc9": {
+        "forbiddenWords": [
+          "great time",
+          "good deal",
+          "rare",
+          "short line",
+          "best window",
+          "steal",
+          "grab it"
+        ],
+        "requiredAnyPhrase": [
+          "won't get shorter",
+          "won't drop",
+          "stays long",
+          "all afternoon",
+          "won't improve"
+        ]
+      },
+      "cc980e8e-192f-48b6-848c-27784084e54b": {
+        "forbiddenWords": [
+          "great time",
+          "good deal",
+          "rare",
+          "short line",
+          "best window",
+          "steal",
+          "grab it"
+        ]
+      },
+      "9167db1d-e5e7-46da-a07f-ae30a87bc4c4": {
+        "forbiddenWords": [
+          "great time",
+          "good deal",
+          "rare",
+          "short line",
+          "best window",
+          "steal",
+          "grab it"
+        ]
+      }
+    }
+  }
+}

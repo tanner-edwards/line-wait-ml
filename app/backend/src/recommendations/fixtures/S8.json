@@ -1,0 +1,229 @@
+{
+  "id": "S8",
+  "title": "Radiator Springs, the production incident: a bad DCA field with a far-off window",
+  "tests": "a later window is never a pick's own reason; no number that is not in the data; skip picks open with the busy-day framing",
+  "persona": "default persona, no wanted rides",
+  "context": {
+    "park": "Disney California Adventure",
+    "localTime": "Tuesday 3:39 PM",
+    "closesAt": "9:00 PM",
+    "minutesUntilClose": 321,
+    "weather": null,
+    "batchSize": 6,
+    "field": "bad",
+    "anchor": {
+      "code": "r1",
+      "name": "WEB SLINGERS: A Spider-Man Adventure"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "2295351d-ce6b-4c04-92d5-5b416372c5b5",
+      "name": "WEB SLINGERS: A Spider-Man Adventure",
+      "wait": 55,
+      "arrive": 55,
+      "usual": 45,
+      "ofUsual": "above",
+      "vsUsual": 10,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        55,
+        55,
+        55,
+        55,
+        55
+      ],
+      "window": null,
+      "isAnchor": true,
+      "trend": "flat"
+    },
+    {
+      "code": "r2",
+      "rideId": "c60c768b-3461-465c-8f4f-b44b087506fc",
+      "name": "Radiator Springs Racers",
+      "wait": 130,
+      "arrive": 130,
+      "usual": 125,
+      "ofUsual": "about",
+      "vsUsual": 5,
+      "walk": 2,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        130,
+        115,
+        111,
+        110,
+        112
+      ],
+      "window": {
+        "wait": 95,
+        "at": "8:00 PM"
+      },
+      "isAnchor": false,
+      "trend": "falling"
+    },
+    {
+      "code": "r3",
+      "rideId": "b7678dab-5544-48d5-8fdc-c1a0127cfbcd",
+      "name": "Guardians of the Galaxy – Mission: BREAKOUT!",
+      "wait": 80,
+      "arrive": 80,
+      "usual": 60,
+      "ofUsual": "above",
+      "vsUsual": 20,
+      "walk": 4,
+      "verdict": "skip",
+      "reason": "high-vs-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        80,
+        78,
+        75,
+        75,
+        72
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r4",
+      "rideId": "5d07a2b1-49ca-4de7-9d32-6d08edf69b08",
+      "name": "Incredicoaster",
+      "wait": 75,
+      "arrive": 75,
+      "usual": 55,
+      "ofUsual": "above",
+      "vsUsual": 20,
+      "walk": 5,
+      "verdict": "skip",
+      "reason": "high-vs-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        75,
+        75,
+        75,
+        75,
+        75
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r5",
+      "rideId": "e1fbc7a1-2cd1-4282-b373-ac11d9d9d38a",
+      "name": "The Little Mermaid – Ariel's Undersea Adventure",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 20,
+      "ofUsual": "above",
+      "vsUsual": 5,
+      "walk": 6,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r6",
+      "rideId": "86ab3069-110d-49c5-a7e7-29ddf28695a6",
+      "name": "Toy Story Midway Mania!",
+      "wait": 60,
+      "arrive": 60,
+      "usual": 45,
+      "ofUsual": "above",
+      "vsUsual": 15,
+      "walk": 6,
+      "verdict": "skip",
+      "reason": "high-vs-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        60,
+        60,
+        60,
+        60,
+        60
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r7",
+      "rideId": "77f205a4-d482-4d91-a5ff-71e54a086ad2",
+      "name": "Soarin' Around the World",
+      "wait": 50,
+      "arrive": 50,
+      "usual": 40,
+      "ofUsual": "above",
+      "vsUsual": 10,
+      "walk": 7,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        50,
+        50,
+        50,
+        50,
+        50
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    }
+  ],
+  "assert": {
+    "minRecs": 1,
+    "skipPicksOpenWithBusyDay": true,
+    "noForeignNumbers": true,
+    "forbiddenWordsAll": [
+      "1.5",
+      "95 min",
+      "in 1.5",
+      "come back"
+    ],
+    "perRide": {
+      "c60c768b-3461-465c-8f4f-b44b087506fc": {
+        "forbiddenWords": [
+          "8:00",
+          "8 PM",
+          "tonight",
+          "later",
+          "come back",
+          "drop to"
+        ]
+      }
+    }
+  }
+}

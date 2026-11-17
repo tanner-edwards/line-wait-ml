@@ -65,12 +65,18 @@ jobs:
         run: |
           FIREBASE_JSON_B64=$(echo "$FIREBASE_JSON" | base64 -w 0)
 
+          # BedrockModelId is passed explicitly on EVERY deploy: left out of
+          # --parameter-overrides, the template default silently picks the
+          # model for /v2/recommendations. Change it via the repo variable
+          # BEDROCK_MODEL_ID (Settings > Secrets and variables > Actions >
+          # Variables); unset falls back to Haiku 4.5.
           PARAMS=(
             "ApiKeyValue=${{ secrets.CLUB32_API_KEY }}"
             "CorsOrigin=${{ steps.cors.outputs.origin }}"
             "FirebaseServiceAccountJson=$FIREBASE_JSON_B64"
             "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}"
             "AllowAnonymousPremium=${{ github.event.inputs.allow_anonymous_premium }}"
+            "BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}"
           )
 
           # Sign in with Apple revocation (guideline 5.1.1(v)). These must be

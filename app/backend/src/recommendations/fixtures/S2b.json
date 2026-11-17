@@ -1,0 +1,170 @@
+{
+  "id": "S2b",
+  "title": "S2 variant B: Rise at a third of usual, unwanted; party fit still outranks the window",
+  "tests": "a far-below restricted headliner is surfaced with its note, and \"rarely this short\" is allowed, but party fit and the stroller walk keep it off rank 1",
+  "persona": "as S2, no wanted rides",
+  "context": {
+    "park": "Disneyland",
+    "localTime": "Saturday 11:00 AM",
+    "closesAt": "11:00 PM",
+    "minutesUntilClose": 720,
+    "weather": null,
+    "batchSize": 6,
+    "field": "mixed",
+    "anchor": {
+      "code": "r1",
+      "name": "Mad Tea Party"
+    }
+  },
+  "rides": [
+    {
+      "code": "r1",
+      "rideId": "e0cfed11-96d7-40f3-907f-5cfed172592a",
+      "name": "Mad Tea Party",
+      "wait": 10,
+      "arrive": 10,
+      "usual": 15,
+      "ofUsual": "below",
+      "vsUsual": -5,
+      "walk": 0,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        10,
+        10,
+        10,
+        10,
+        10
+      ],
+      "window": null,
+      "isAnchor": true,
+      "trend": "flat"
+    },
+    {
+      "code": "r2",
+      "rideId": "cc980e8e-192f-48b6-848c-27784084e54b",
+      "name": "Dumbo the Flying Elephant",
+      "wait": 20,
+      "arrive": 20,
+      "usual": 35,
+      "ofUsual": "far-below",
+      "vsUsual": -15,
+      "walk": 3,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        20,
+        20,
+        20,
+        20,
+        20
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r3",
+      "rideId": "c23af6ba-8515-406a-8a48-d0818ba0bfc9",
+      "name": "Peter Pan's Flight",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 50,
+      "ofUsual": "far-below",
+      "vsUsual": -25,
+      "walk": 4,
+      "verdict": "go",
+      "reason": "below-usual",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        25,
+        25,
+        25,
+        25
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r4",
+      "rideId": "cb929138-d77a-4dd2-983c-f651bbd1bd92",
+      "name": "Storybook Land Canal Boats",
+      "wait": 15,
+      "arrive": 15,
+      "usual": 25,
+      "ofUsual": "below",
+      "vsUsual": -10,
+      "walk": 5,
+      "verdict": "neutral",
+      "reason": "none",
+      "wanted": false,
+      "restricted": [],
+      "reopenedMinAgo": null,
+      "buckets": [
+        15,
+        15,
+        15,
+        15,
+        15
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "flat"
+    },
+    {
+      "code": "r5",
+      "rideId": "34b1d70f-11c4-42df-935e-d5582c9f1a8e",
+      "name": "Star Wars: Rise of the Resistance",
+      "wait": 25,
+      "arrive": 25,
+      "usual": 75,
+      "ofUsual": "far-below",
+      "vsUsual": -50,
+      "walk": 14,
+      "verdict": "star",
+      "reason": "rare-low",
+      "wanted": false,
+      "restricted": [
+        "toddler"
+      ],
+      "reopenedMinAgo": null,
+      "buckets": [
+        25,
+        35,
+        45,
+        55,
+        60
+      ],
+      "window": null,
+      "isAnchor": false,
+      "trend": "rising"
+    }
+  ],
+  "assert": {
+    "rank1": [
+      "c23af6ba-8515-406a-8a48-d0818ba0bfc9",
+      "cc980e8e-192f-48b6-848c-27784084e54b"
+    ],
+    "notRank1": [
+      "34b1d70f-11c4-42df-935e-d5582c9f1a8e"
+    ],
+    "mustInclude": [
+      "34b1d70f-11c4-42df-935e-d5582c9f1a8e"
+    ],
+    "perRide": {
+      "34b1d70f-11c4-42df-935e-d5582c9f1a8e": {
+        "restrictionNote": true
+      }
+    }
+  }
+}

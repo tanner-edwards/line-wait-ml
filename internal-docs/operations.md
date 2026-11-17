@@ -83,6 +83,8 @@ Before deploying the backend:
 cd app/backend && ./deploy.sh
 ```
 
+**Bedrock model (`BedrockModelId`).** Both deploy paths pass the model explicitly, so the template default never picks it by omission. The Deploy workflow reads the repo variable `BEDROCK_MODEL_ID` (GitHub > Settings > Secrets and variables > Actions > Variables) and falls back to Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) when it is unset; `./deploy.sh` reads the `BEDROCK_MODEL_ID` env var with the same fallback. To change the model, set the repo variable to the new inference profile ID and run the Deploy workflow, then check `[bedrock-raw]` in `/aws/lambda/club32-waits-handler` for `stopReason: end_turn`. To revert, delete the variable and redeploy.
+
 ### Cloud Run Job (cron image)
 Used by: ML predictions (`predict.py`), closure profile rebuild (`build_closure_profiles.py`).
 
