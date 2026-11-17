@@ -41,6 +41,13 @@ cannot check (claims match the data, present-tense picks, skip framing, restrict
 reason, voice, ranking). Judges are non-Claude Bedrock models (`config/judges.json`). They are
 pointers: run `npm run judge-check` and only trust a judge that scores high there.
 
+## Independent second opinion
+
+`npm run review-pack` writes `site/review/review-pack-<run>.md` from the latest run: each scenario's
+situation, the real answer, the automatic check results and Judge A's verdicts, with instructions
+for a reviewer. Paste it into a non-Claude chat model (ChatGPT, Gemini) to sanity-check the judge,
+the checks and the scenario expectations. It replies with a JSON block that can be tallied.
+
 ## Prompt versions (`src/variants.ts`)
 
 - `v1`: production before the spec, frozen in `src/prompts/v1/` (anchor and skip rides removed,
