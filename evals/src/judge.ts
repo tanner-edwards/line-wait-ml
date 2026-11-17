@@ -82,7 +82,9 @@ export async function judgeAnswer(judge: string, b: BuiltFixture, recs: Resolved
     ...recs.map((r, i) => `${i + 1}. ${r.ride ?? `UNKNOWN RIDE (${r.rawId})`}: "${r.oneLiner}"${r.restrictionNote ? ` [restriction note: ${r.restrictionNote}]` : ''}`),
   ].join('\n');
   try {
-    const res = await converse(judge, SYSTEM(), user, { maxTokens: 900 });
+    // Generous limit: newer Claude models think by default and that counts toward max tokens;
+    // too low a limit truncates the JSON (shows up as "unusable replies"). No sampling params are sent.
+    const res = await converse(judge, SYSTEM(), user, { maxTokens: 4000 });
     const j = extractJson(res.text);
     const results: Judgement['results'] = {};
     for (const c of CRITERIA) {
