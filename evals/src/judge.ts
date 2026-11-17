@@ -9,7 +9,7 @@ import { converse } from './llm';
 import { extractJson } from './parse';
 import { BuiltFixture, ResolvedRec } from './types';
 
-export const JUDGE_VERSION = 'spec-2026-11-16-v1';
+export const JUDGE_VERSION = 'spec-2026-11-16-v2'; // v2: go/skip/star only banned as labels; party-tied descriptions allowed
 
 export const CRITERIA = [
   { id: 'grounded', label: 'Claims match the data', q: 'Every claim about a line (shorter or longer than usual, rising, falling, holding, "rarely this short", any time or number) matches the ride data. No invented numbers or ride facts.' },

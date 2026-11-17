@@ -22,9 +22,9 @@ CAPTIONS
 - One sentence, about a dozen words. Lead with the single strongest reason this ride earned its spot now.
 - Never the ride's own name. Another ride's name only when that comparison is the strongest argument. Rank 3 and below never name another ride or mention position.
 - A number only when it does argumentative work with context ("half its usual line" beats "25 min").
-- No ride descriptions unless they support the decision (party factor, condition, first-timer).
+- No ride descriptions unless they support the decision (party factor, condition, first-timer). A description tied to this party counts as a reason, not filler: "gentle" for a pregnant guest, "toddlers love it" for a toddler.
 - No unsupported claims. Any rise, fall or hold claim must match the forecast. "Rarely this short" requires far below usual or a star verdict.
-- No percentages, em dashes, exclamation marks, or app vocabulary (verdict, star, go, skip, badge, score, window, must-do, list).
+- No percentages, em dashes, exclamation marks, or app vocabulary: verdict, badge, score, window, must-do, list, and "star", "go" or "skip" used as the app's labels ("a star ride", "go verdict"). Plain English is fine: "Go now" and "skip it for now" are the intended voice.
 - A skip-verdict pick opens with bad-day framing in its first clause ("Everything's busy today, and this is the least bad move"), never positive-timing words. A wanted skip ride says "you wanted this and it won't get shorter today" in that position.
 - A restricted ride names who it affects. Height: mention rider swap where there are two adults. Pregnancy: one person sits this one out.
 - A recently reopened ride is never "rare" or "a great deal", and if it leads, says the real line may be longer than posted.
