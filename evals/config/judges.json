@@ -1,7 +1,6 @@
 {
-  "_comment": "Bedrock models that judge candidate-vs-baseline answers. Keep them from a DIFFERENT family than the model under test (Haiku), so it isn't grading its own style. Override per run with --judges a,b. IDs are best guesses; confirm with aws bedrock list-inference-profiles.",
+  "_comment": "Bedrock models that judge answers (non-Claude, so Haiku isn't grading its own style). Only list a judge that scores high on `npm run judge-check`. 2026-11-17: Llama 3.3 70B 27/28 (96%, the one miss is S9's code-only flaw); Qwen3 32B 21/28 (75%: failed 4 good answers on misread rules, 2 unusable replies), so it was removed.",
   "judges": [
-    "us.meta.llama3-3-70b-instruct-v1:0",
-    "qwen.qwen3-32b-v1:0"
+    "us.meta.llama3-3-70b-instruct-v1:0"
   ]
 }

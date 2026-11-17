@@ -16,8 +16,8 @@ async function main() {
   const judges = (arg('judges') ?? (JSON.parse(readFileSync(join(EVALS_ROOT, 'config', 'judges.json'), 'utf8')) as { judges: string[] }).judges.join(',')).split(',').map(s => s.trim()).filter(Boolean);
   const fixtures = (arg('fixtures')?.split(',').map(fixtureById) ?? FIXTURES).map(buildFixture);
   type Row = { judge: string; b: BuiltFixture; kind: 'ideal' | 'bad' };
-  const rows: Row[] = judges.flatMap(judge => fixtures.flatMap(b => (['ideal', 'bad'] as const).map(kind => ({ judge, b, kind }))));
-  console.log(`Judge check: ${judges.length} judge(s) x ${fixtures.length} fixtures x ideal+bad = ${rows.length} reviews`);
+  const rows: Row[] = judges.flatMap(judge => fixtures.flatMap(b => (['ideal', 'bad'] as const).filter(k => !(k === 'bad' && b.fx.badIsCodeOnly)).map(kind => ({ judge, b, kind }))));
+  console.log(`Judge check: ${judges.length} judge(s), ${rows.length} reviews (ideal + bad per fixture; bad answers whose flaw only code checks cover are skipped)`);
   const res = await pool(rows.map(r => () => judgeAnswer(r.judge, r.b, toRecs(r.b.fx[r.kind]), 0)), 4);
 
   for (const judge of judges) {

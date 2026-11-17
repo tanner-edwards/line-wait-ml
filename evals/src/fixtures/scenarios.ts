@@ -383,6 +383,7 @@ export const FIXTURES: Fixture[] = [
       { ride: 'Indiana Jones Adventure', caption: 'A bit under its usual line if you want a thrill.' },
     ],
     bad: [{ ride: 'Haunted Mansion', caption: "You haven't ridden this yet, and it's half the usual line." }],
+    badIsCodeOnly: true, // no judge question covers this; the scenario's code assertion does
   },
 ];
 

@@ -47,6 +47,8 @@ export interface Fixture {
   /** Reference answers: `ideal` must pass every code check; `bad` must fail at least one assert. */
   ideal: AnswerRow[];
   bad: AnswerRow[];
+  /** True when the bad answer's flaw is one only a code check covers (judge-check then skips it). */
+  badIsCodeOnly?: boolean;
 }
 
 /** A simple answer used for reference answers: ride by name, caption, note. */
