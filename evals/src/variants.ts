@@ -1,77 +1,95 @@
-// Prompt variants: each experiment is a named, self-contained way of building the prompt
-// (and, if it renames ride ids, decoding the answer). `baseline` is exactly what production
-// sends today (it calls the real backend builders). A variant that wins gets ported into
-// app/backend/src/recommendations/promptBuilder.ts (and handler.ts if parsing changes).
+// Prompt variants. A variant turns a fixture into the exact system prompt + user message a given
+// version of the server would send, and maps the model's ids back to rides.
 //
-// Add a variant: write one object below and register it in VARIANTS. Then:
-//   npm run bench -- --variant my-variant --runs 5
-//   npm run compare -- <baseline results> <my-variant results>
+//   v1   = production before the 2026-11-16 spec (frozen copy in prompts/v1/). Reproduces the old
+//          handler too: the anchor ride and skip-verdict rides are removed before the model sees them.
+//
+// When the spec rewrite lands in app/backend/src/recommendations, add two variants that import the
+// NEW backend builder (spec §10 asks for both and compares them):
+//   spec-uuid   the new prompt, model outputs UUIDs
+//   spec-codes  the new prompt, model outputs "r3 Big Thunder Mountain Railroad" (use decodeCodeName)
+// Each needs only a render() that builds the backend's input from the fixture. Then:
+//   npm run eval -- --variant spec-codes
 
-import { buildSystemPrompt, buildUserMessage, PromptContext } from '../../app/backend/src/recommendations/promptBuilder';
-import { BuiltScenario, ParsedRec } from './scenarios';
+import { Ride, RideMetadata } from '../../app/backend/src/types';
+import { ParsedRec } from './parse';
+import { personaToText as v1PersonaToText } from './prompts/v1/persona';
+import { buildSystemPrompt as v1System, buildUserMessage as v1User, PromptContext as V1Context } from './prompts/v1/promptBuilder';
+import { BuiltFixture, DerivedRide, ResolvedRec } from './types';
+import { BATCH } from './checks';
 
-export interface Variant {
-  id: string;
-  description: string;
-  buildSystem(persona: string, batchSize: number): string;
-  buildUser(ctx: PromptContext, batchSize: number): string;
-  /** Map ride ids in the model's answer back to real ids (only for variants that rename ids). */
-  decode?(recs: ParsedRec[], b: BuiltScenario): ParsedRec[];
-  /** Real ride id -> the id shown to the model (used by the dry-run self-test). */
-  encodeId?(b: BuiltScenario, realId: string): string;
+export interface Rendered {
+  system: string;
+  user: string;
+  /** Ride names actually offered to the model. */
+  offered: string[];
+  decode(raw: ParsedRec[]): ResolvedRec[];
+}
+export interface Variant { id: string; description: string; render(b: BuiltFixture): Rendered }
+
+const PARK_NAME = { 'disneyland': 'Disneyland', 'california-adventure': 'Disney California Adventure' } as const;
+
+/** A backend `Ride` object for a fixture ride, as the waits pipeline would build it. */
+export function toBackendRide(r: DerivedRide): Ride {
+  const usual = r.usual ?? r.wait;
+  const slope = r.buckets[1] - r.buckets[0];
+  return {
+    id: r.id, name: r.name, land: r.land, status: 'OPERATING', currentWait: r.wait,
+    historicalAverage: { dayType: 'weekend', buckets: r.buckets.map((wait, i) => ({ offsetMinutes: i * 30, timeSlot: 'n/a', wait, sampleCount: 30 })) },
+    rideStats: { p10: r.p10 ?? Math.round(usual * 0.5), p50: usual, p90: r.p90 ?? Math.round(usual * 1.6), sampleCount: 200 },
+    prediction: { trend: slope <= -5 ? 'falling' : slope >= 5 ? 'rising' : 'stable', confidence: 'medium' },
+    recentHistory: null, lat: null, lng: null, closedAt: null,
+    heightMinIn: r.heightMinIn, thrillLevel: r.thrillLevel, pregnancyAdvisory: r.pregnancyAdvisory, transferRequired: r.transferRequired,
+    verdict: {
+      verdict: r.verdict,
+      reasons: {
+        primary: r.reason ?? 'none', current: r.wait, typical: r.usual, todayP30: null, todayP80: null,
+        p10: r.p10 ?? Math.round(usual * 0.5), p90: r.p90 ?? Math.round(usual * 1.6),
+        beatableSoon: !!r.window, betterWindowWait: r.window?.wait ?? null, betterWindowInMin: r.window?.inMin ?? null, star: r.verdict === 'star',
+      },
+    },
+  } as unknown as Ride;
 }
 
-const baseline: Variant = {
-  id: 'baseline',
-  description: 'Exactly what production sends today.',
-  buildSystem: buildSystemPrompt,
-  buildUser: buildUserMessage,
+const metadataMap = (b: BuiltFixture) => new Map<string, RideMetadata>(b.rides.map(r => [r.id, { rideId: r.id, parkId: b.fx.park, name: r.name, lat: null, lng: null, source: 'manual' } as RideMetadata]));
+
+const byId = (b: BuiltFixture) => new Map(b.rides.map(r => [r.id, r.name]));
+
+const v1: Variant = {
+  id: 'v1',
+  description: 'Production prompt before the 2026-11-16 spec (UUID ids, anchor and skip rides removed).',
+  render(b) {
+    const candidates = b.rides.filter(r => !r.isAnchor && r.verdict !== 'skip');
+    const anchor = b.rides.find(r => r.isAnchor)!;
+    const ctx: V1Context = {
+      park: PARK_NAME[b.fx.park],
+      currentRide: { id: anchor.id, name: anchor.name },
+      currentLocalTime: b.fx.localTime,
+      parkHours: b.fx.hours,
+      rides: candidates.map(r => ({ ride: toBackendRide(r), walkMinutes: r.walk, walkYards: r.walk * 90 })),
+    };
+    const ids = byId(b);
+    return {
+      system: v1System(v1PersonaToText(b.persona, metadataMap(b)), BATCH),
+      user: v1User(ctx, BATCH),
+      offered: candidates.map(r => r.name),
+      decode: raw => raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: x.oneLiner, restrictionNote: x.restrictionNote })),
+    };
+  },
 };
 
-// --- short-ids: r1..rN instead of 36-character UUIDs --------------------------------------
-// Hypothesis: UUIDs are ~1/3 of the output tokens and the source of garbled-id errors.
-const code = (i: number) => `r${i + 1}`;
-const shortIds: Variant = {
-  id: 'short-ids',
-  description: 'Rides are labeled r1..rN instead of UUIDs (fewer output tokens, no garbled ids).',
-  buildSystem: (persona, n) => buildSystemPrompt(persona, n).replace('<UUID from the ride list>', '<ride code from the list, like r3>'),
-  buildUser: (ctx, n) =>
-    buildUserMessage({
-      ...ctx,
-      currentRide: { ...ctx.currentRide, id: 'r0' },
-      rides: ctx.rides.map((rf, i) => ({ ...rf, ride: { ...rf.ride, id: code(i) } })),
-    }, n),
-  decode: (recs, b) => recs.map(r => {
-    // Tolerate harmless formatting drift: "R3", " r3 ", "3", "r3.", "(r3)", "#3".
-    const m = /^[\s(#]*r?\s*(\d+)[\s.)]*$/i.exec(r.rideId);
-    const real = m ? b.candidates[Number(m[1]) - 1]?.ride.id : undefined;
-    return { ...r, rideId: real ?? r.rideId }; // unknown codes stay as-is so the checks flag them
-  }),
-  encodeId: (b, realId) => code(b.candidates.findIndex(c => c.ride.id === realId)),
-};
+/** Spec §5: "r3 Big Thunder Mountain Railroad" -> ride, only when the name matches that code's ride. */
+export function decodeCodeName(raw: ParsedRec[], codes: Map<string, string>): ResolvedRec[] {
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+  return raw.map(x => {
+    const m = /^\s*(r\d+)\b\s*(.*)$/i.exec(x.rideId);
+    const ride = m ? codes.get(m[1].toLowerCase()) : undefined;
+    const ok = ride && (!m![2] || norm(m![2]) === norm(ride));
+    return { ride: ok ? ride! : null, rawId: x.rideId, oneLiner: x.oneLiner, restrictionNote: x.restrictionNote };
+  });
+}
 
-// --- tight-copy: stricter caption rules + examples ----------------------------------------
-// Starting point from the first evaluations: captions ran long, restated numbers, and made
-// claims the data didn't support. Expect to iterate on this wording together.
-const TIGHT_COPY_BLOCK = `WRITING THE COPY (oneLiner):
-- HARD LIMIT: 70 characters or fewer. Shorter is better.
-- Write like a knowledgeable friend giving a quick tip, not a system explaining its output.
-- Add the "why now" that the card cannot show. You MAY use a relative comparison ("half its usual line", "shortest it has been all day"), but do NOT quote raw minutes, the ride name, or the walk time: the card already shows them.
-- Only say what the data supports. Never call a wait "short" or "minimal" unless it is clearly below that ride's usual wait.
-- Never mention internal terms: badge, star, go, score, verdict, projection.
-- When a ride jumps ahead of closer options, say why it is worth the extra walk.
-Good captions: "Half its usual line, rare chance at a headliner" / "Closest good option, and the line is shrinking" / "Evening crowds build here, grab it before dinner" / "Gentle dark ride, an easy win with little ones".
-Bad captions (do NOT write): "Great ride with only a 25 minute wait!" (restates the wait) / "Big Thunder Mountain is a classic" (restates the name, adds nothing).
-
-HARD RULES`;
-const tightCopy: Variant = {
-  id: 'tight-copy',
-  description: 'Stricter caption rules (70 chars, relative comparisons allowed, grounded claims) with good/bad examples.',
-  buildSystem: (persona, n) => buildSystemPrompt(persona, n).replace(/WRITING THE COPY \(oneLiner\):[\s\S]*?\n\nHARD RULES/, TIGHT_COPY_BLOCK),
-  buildUser: buildUserMessage,
-};
-
-export const VARIANTS: Record<string, Variant> = Object.fromEntries([baseline, shortIds, tightCopy].map(v => [v.id, v]));
+export const VARIANTS: Record<string, Variant> = { v1 };
 
 export function getVariant(id: string): Variant {
   const v = VARIANTS[id];

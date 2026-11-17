@@ -1,79 +1,70 @@
-// One command: run the eval and produce a readable HTML report.
+// One command: run the spec scenarios against a prompt variant, grade, judge, and write the HTML report.
 //
-//   npm run eval                                  # baseline prompt, 3 runs, AI judges, HTML report
-//   npm run eval -- --runs 5 --variant baseline
-//   npm run eval -- --from baseline               # reuse the latest saved answers (no Haiku calls), judge + report
-//   npm run eval -- --from results/x.json --no-judge
-//   npm run eval -- --mock                        # offline, free, fake answers (to try the tool)
-//   npm run eval -- --rebuild-site                # re-render every saved run page + the index
+//   npm run eval                              # v1 (current production prompt), 5 runs, AI judges, report
+//   npm run eval -- --variant spec-codes      # a candidate (once added in src/variants.ts)
+//   npm run eval -- --from v1                 # re-grade + re-judge the latest saved v1 run, no model calls
+//   npm run eval -- --mock                    # offline, free, fake answers (to try the tool)
+//   npm run eval -- --rebuild-site            # re-render every saved run with the current checks
 //
-// Output: evals/site/index.html (history of runs) and evals/site/runs/<run>.html (one run).
-// Options: --judges a,b (default config/judges.json) | --judge-runs n (judge only the first n runs
-//   per scenario) | --no-judge | --no-open | --site-dir <dir> | plus every bench option
-//   (--scenarios, --models, --temperature, ...).
+// Options: --runs n (default 5, the spec's protocol) | --fixtures S1,S2 | --model <bedrock id>
+//   --judges a,b (default config/judges.json) | --no-judge | --no-open | --site-dir <dir>
 
 import { spawn } from 'child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { arg, EVALS_ROOT, flag, resolveRun, stamp } from './args';
-import { generate, rescoreOne, RunRecord, VARIANT } from './bench';
+import { arg, EVALS_ROOT, flag, PRODUCTION_MODEL, resolveRun, stamp } from './args';
+import { buildFixture } from './fixtures/derive';
+import { FIXTURES, fixtureById } from './fixtures/scenarios';
+import { grade } from './grade';
 import { RunData, renderIndex, renderRun } from './html';
-import { AnswerJudgement, judgeAnswer, JUDGE_PROMPT_VERSION, pool } from './judge';
+import { JUDGE_VERSION, Judgement, judgeAnswer, pool } from './judge';
 import { MOCK } from './llm';
-import { mean, parseModelText } from './parse';
-import { SCENARIOS, buildScenario } from './scenarios';
-import { metrics } from './stats';
+import { generate } from './run';
+import { RunRecord } from './types';
 import { getVariant } from './variants';
 
 const SITE = arg('site-dir', join(EVALS_ROOT, 'site'))!;
 
-function loadSiteData(): RunData[] {
+function loadSite(): RunData[] {
   const dir = join(SITE, 'data');
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir).filter(f => f.endsWith('.json')).map(f => JSON.parse(readFileSync(join(dir, f), 'utf8')) as RunData);
+  return existsSync(dir) ? readdirSync(dir).filter(f => f.endsWith('.json')).map(f => JSON.parse(readFileSync(join(dir, f), 'utf8')) as RunData) : [];
 }
 
-function writeSite(runs: RunData[], all: RunData[]) {
+function writeSite(made: RunData[], all: RunData[]) {
   mkdirSync(join(SITE, 'data'), { recursive: true });
   mkdirSync(join(SITE, 'runs'), { recursive: true });
-  for (const d of runs) {
+  for (const d of made) {
     writeFileSync(join(SITE, 'data', `${d.runId}.json`), JSON.stringify(d));
     writeFileSync(join(SITE, 'runs', `${d.runId}.html`), renderRun(d));
   }
   writeFileSync(join(SITE, 'index.html'), renderIndex(all));
 }
 
-async function judgeRecords(records: RunRecord[], judges: string[]): Promise<AnswerJudgement[]> {
-  const maxRuns = arg('judge-runs') ? Number(arg('judge-runs')) : Infinity;
-  const tasks: (() => Promise<AnswerJudgement | null>)[] = [];
-  for (const sc of SCENARIOS) {
-    const b = buildScenario(sc);
-    for (const r of records.filter(x => x.scenario === sc.id && x.run <= maxRuns && !x.error)) {
-      const text = [r.text, r.rawText].filter((t): t is string => !!t).sort((a, c) => c.length - a.length)[0];
-      const p = text ? parseModelText(text) : null;
-      if (!p?.recs) continue;
-      const v = getVariant(r.variant ?? 'baseline');
-      const recs = v.decode ? v.decode(p.recs, b) : p.recs;
-      for (const j of judges) tasks.push(() => judgeAnswer(j, b, recs, r.run));
-    }
+async function judgeAll(records: RunRecord[], judges: string[]): Promise<Judgement[]> {
+  const tasks: (() => Promise<Judgement | null>)[] = [];
+  for (const rec of records) {
+    const b = buildFixture(fixtureById(rec.fixture));
+    const g = grade(rec, b);
+    if (!g.recs || !g.recs.length) continue;
+    for (const j of judges) tasks.push(() => judgeAnswer(j, b, g.recs!, rec.run));
   }
   if (!tasks.length) return [];
-  process.stdout.write(`AI judges: ${tasks.length} reviews (${judges.map(j => j.split('.').slice(-1)[0]).join(', ')}) `);
-  const res = await pool(tasks, 4, n => { if (n % 10 === 0 || n === tasks.length) process.stdout.write('.'); });
-  const ok = res.filter((x): x is AnswerJudgement => x !== null);
+  process.stdout.write(`AI judges: ${tasks.length} reviews `);
+  const res = await pool(tasks, 4, k => { if (k % 10 === 0 || k === tasks.length) process.stdout.write('.'); });
+  const ok = res.filter((x): x is Judgement => x !== null);
   console.log(` done${ok.length < res.length ? ` (${res.length - ok.length} unusable replies)` : ''}`);
   return ok;
 }
 
 async function main() {
   if (flag('rebuild-site')) {
-    const all = loadSiteData();
+    const all = loadSite();
     writeSite(all, all);
     console.log(`Rebuilt ${all.length} run page(s) and ${join(SITE, 'index.html')}`);
     return;
   }
 
-  // 1. answers: reuse a saved run, or generate new ones
+  // 1. answers
   let records: RunRecord[];
   let source: string;
   if (arg('from')) {
@@ -81,52 +72,45 @@ async function main() {
     records = (JSON.parse(readFileSync(source, 'utf8')) as { records: RunRecord[] }).records;
     console.log(`Using saved answers from ${source} (no new model calls)`);
   } else {
-    console.log(`Running variant "${VARIANT.id}"${MOCK ? ' [MOCK]' : ''}...`);
-    const g = await generate();
+    const variant = getVariant(arg('variant', 'v1')!);
+    const wanted = arg('fixtures')?.split(',').map(s => s.trim());
+    const fixtures = wanted ? wanted.map(fixtureById) : FIXTURES;
+    const runs = Number(arg('runs', '5'));
+    const model = arg('model', PRODUCTION_MODEL)!;
+    console.log(`Running ${variant.id} on ${model}${MOCK ? ' [MOCK]' : ''}: ${fixtures.length} scenarios x ${runs} runs`);
+    const g = await generate({ variant, fixtures, runs, model });
     records = g.records;
     source = g.file;
   }
-  // 2. always grade with the CURRENT checks, so old runs and new runs are comparable
-  records = records.filter(r => r.scenario !== '*').map(rescoreOne);
+  if (!records.length) throw new Error('No records to evaluate.');
 
-  // 3. AI judges
-  const judges = flag('no-judge') ? [] : (arg('judges') ?? (JSON.parse(readFileSync(join(EVALS_ROOT, 'config', 'judges.json'), 'utf8')) as { judges: string[] }).judges.join(',')).split(',').map(s => s.trim()).filter(Boolean);
+  // 2. judges
+  const judges = flag('no-judge') ? [] : (arg('judges') ?? (JSON.parse(readFileSync(join(EVALS_ROOT, 'config', 'judges.json'), 'utf8')) as { judges: string[] }).judges.join(','))
+    .split(',').map(s => s.trim()).filter(Boolean);
+  const judgements = judges.length ? await judgeAll(records, judges) : [];
 
-  // 4. one report per model in the run
-  const made: RunData[] = [];
-  for (const model of [...new Set(records.map(r => r.model))]) {
-    const rs = records.filter(r => r.model === model);
-    const variantId = rs[0]?.variant ?? 'baseline';
-    const judgements = judges.length ? await judgeRecords(rs, judges) : [];
-    made.push({
-      runId: `${stamp()}-${variantId}${records.some(r => r.model !== model) ? '-' + model.replace(/[^a-z0-9]+/gi, '-').slice(0, 40) : ''}`,
-      at: new Date().toISOString(),
-      variant: variantId,
-      variantDescription: getVariant(variantId).description,
-      model,
-      mock: MOCK || rs.some(r => /Mock tip/.test(r.text ?? '')),
-      source,
-      judges,
-      judgePromptVersion: judges.length ? JUDGE_PROMPT_VERSION : null,
-      records: rs.map(({ judge: _j, ...r }) => r),
-      judgements,
-    });
-  }
-  const all = [...loadSiteData().filter(d => !made.some(m => m.runId === d.runId)), ...made];
-  writeSite(made, all);
+  // 3. report
+  const variantId = records[0].variant;
+  const d: RunData = {
+    runId: `${stamp()}-${variantId}`,
+    at: new Date().toISOString(),
+    variant: variantId,
+    variantDescription: getVariant(variantId).description,
+    model: records[0].model,
+    mock: MOCK || records.some(r => /Mock tip/.test(r.text ?? '')),
+    source, judges, judgeVersion: judges.length ? JUDGE_VERSION : null, records, judgements,
+  };
+  writeSite([d], [...loadSite().filter(x => x.runId !== d.runId), d]);
 
-  // 5. short summary + open
-  for (const d of made) {
-    const m = metrics(d.records);
-    const j = mean(d.judgements.map(x => x.scores.overall));
-    console.log(`\n${d.variant} on ${d.model}${d.mock ? ' [MOCK]' : ''}`);
-    console.log(`  typical ${(m.p50Ms / 1000).toFixed(1)}s | ${m.outTokens} tokens | hard rules ${m.hardPassPct}% | soft checks ${m.softPassPct}% | AI judges ${d.judgements.length ? j.toFixed(1) + '/5' : 'off'}`);
-    console.log(`  Report: ${join(SITE, 'runs', `${d.runId}.html`)}`);
-  }
-  console.log(`  All runs: ${join(SITE, 'index.html')}`);
-  if (process.platform === 'darwin' && process.stdout.isTTY && !flag('no-open') && made[0]) {
-    spawn('open', [join(SITE, 'runs', `${made[0].runId}.html`)], { stdio: 'ignore', detached: true }).unref();
-  }
+  // 4. summary
+  const graded = records.map(r => grade(r, buildFixture(fixtureById(r.fixture))));
+  const fixtures = [...new Set(records.map(r => r.fixture))];
+  const atBar = fixtures.filter(f => { const g = graded.filter(x => x.rec.fixture === f); return g.filter(x => x.passed).length >= Math.max(1, Math.ceil(g.length * 0.8)); });
+  const missed = fixtures.filter(f => !atBar.includes(f));
+  const page = join(SITE, 'runs', `${d.runId}.html`);
+  console.log(`\n${d.variant} on ${d.model}${d.mock ? ' [MOCK]' : ''}: ${atBar.length}/${fixtures.length} scenarios pass at least 4 of 5 runs${missed.length ? ` (missing: ${missed.join(', ')})` : ''}`);
+  console.log(`Report: ${page}\nAll runs: ${join(SITE, 'index.html')}`);
+  if (process.platform === 'darwin' && process.stdout.isTTY && !flag('no-open')) spawn('open', [page], { stdio: 'ignore', detached: true }).unref();
 }
 
 main().catch(err => { console.error('FAILED:', err.message ?? err); process.exit(1); });

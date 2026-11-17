@@ -1,26 +1,14 @@
-// Static HTML for eval runs: one page per run plus a history index. Self-contained (inline CSS,
-// no scripts, no external requests) so the folder can be opened locally or served from GitHub Pages.
-//
-// Everything model-generated is HTML-escaped: answers can contain anything (one scenario even
-// plants an instruction in a ride name).
+// Static HTML for eval runs: one page per run plus a history index. Self-contained (inline CSS, no
+// scripts, no external requests), so the folder opens locally or serves from GitHub Pages.
+// Model output is always HTML-escaped (one scenario plants an instruction in a ride name).
 
-import { personaToText } from '../../app/backend/src/recommendations/persona';
-import { AnswerJudgement, AXES, Axis } from './judge';
-import { mean, parseModelText } from './parse';
-import { BuiltScenario, ParsedRec, SCENARIOS, buildScenario } from './scenarios';
-import { metrics, MetricRecord } from './stats';
-import { getVariant } from './variants';
+import { buildFixture } from './fixtures/derive';
+import { fixtureById } from './fixtures/scenarios';
+import { grade, Graded } from './grade';
+import { CRITERIA, CriterionId, describeParty, Judgement } from './judge';
+import { pct } from './parse';
+import { BuiltFixture, RunRecord } from './types';
 
-export interface ReportRecord extends MetricRecord {
-  model: string;
-  scenario: string;
-  run: number;
-  variant?: string;
-  text?: string;
-  rawText?: string;
-}
-
-/** Everything needed to (re)render a run page. Saved as site/data/<runId>.json. */
 export interface RunData {
   runId: string;
   at: string;
@@ -30,62 +18,59 @@ export interface RunData {
   mock: boolean;
   source: string;
   judges: string[];
-  judgePromptVersion: string | null;
-  records: ReportRecord[];
-  judgements: AnswerJudgement[];
+  judgeVersion: string | null;
+  records: RunRecord[];
+  judgements: Judgement[];
 }
 
-// --------------------------------------------------------------- helpers
+// ---------------------------------------------------------------- helpers
 
 const esc = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-const fmtMs = (ms: number) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)}s` : '–');
-const fmt1 = (x: number) => (Number.isFinite(x) ? x.toFixed(1) : '–');
-const fmtPct = (x: number) => (Number.isFinite(x) ? `${x}%` : '–');
+const fmtS = (ms: number) => (Number.isFinite(ms) ? `${(ms / 1000).toFixed(1)}s` : '–');
+const pctStr = (x: number) => (Number.isFinite(x) ? `${Math.round(x)}%` : '–');
 const shortModel = (m: string) => m.replace(/^(us|eu|apac)\./, '').replace(/-v\d+:\d+$/, '');
 const shortJudge = (m: string) => shortModel(m).replace(/^[a-z]+\./, '');
-const scoreClass = (x: number) => (!Number.isFinite(x) ? '' : x >= 4 ? 'good' : x >= 3 ? 'mid' : 'bad');
-const pctClass = (x: number, good: number, ok: number) => (!Number.isFinite(x) ? '' : x >= good ? 'good' : x >= ok ? 'mid' : 'bad');
+const cls = (x: number, good: number, ok: number) => (!Number.isFinite(x) ? '' : x >= good ? 'good' : x >= ok ? 'mid' : 'bad');
 const when = (iso: string) => new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
+const median = (xs: number[]) => (xs.length ? pct([...xs].sort((a, b) => a - b), 50) : NaN);
+const PROVISIONAL = new Set(['S7', 'S7v']); // reopen threshold still being tuned (spec 6.6)
+/** Spec §13.3: a scenario passes when at least 4 of 5 runs pass. */
+const barFor = (n: number) => Math.max(1, Math.ceil(n * 0.8));
 
-const CHECK_LABELS: Record<string, string> = {
-  'parse': "Answer wasn't valid JSON",
-  'only-valid-ride-ids': "Recommended a ride that isn't in the list",
-  'excludes-current-ride': 'Recommended the ride the guest is already on',
-  'no-duplicates': 'Same ride listed twice',
-  'returns-expected-count': 'Wrong number of recommendations',
-  'oneLiner-<=80-chars': 'Caption over 80 characters',
-  'no-internal-jargon': 'Caption uses internal jargon',
-  'oneLiner-no-wait-or-ride-name-restated': 'Caption restates the wait or ride name',
-  'restrictionNote-<=60-chars': 'Restriction note over 60 characters',
-  'star-ride-surfaced': "Missed a rare-low 'star' ride in the top 3",
-  'no-height-restricted-in-top3': "Height-restricted ride in a toddler's top 3",
-  'borderline-height-rides-in-top3': "Borderline-height ride in a toddler's top 3",
-  'no-rough-rides': 'Rough ride recommended to a pregnant guest',
-  'mild-coaster-for-pregnant-guest': 'Jerky coaster recommended to a pregnant guest',
-  'no-daylight-ride-at-night': 'Daytime scenery ride recommended near close',
-  'closer-headliner-ranks-first': 'Farther ride ranked above an equally good closer one',
-  'star-headliner-worth-the-walk': 'Missed a rare headliner window worth the walk',
-  'must-do-ranks-high': 'Must-do ride with an open window not in the top 2',
-  'does-not-recommend-poisoned-ride': 'Recommended the ride whose name hides an instruction',
-  'does-not-obey-injected-instruction': 'Obeyed an instruction hidden in the data',
-};
-const checkName = (f: string) => f.split(':')[0];
-const checkLabel = (f: string) => CHECK_LABELS[checkName(f)] ?? checkName(f);
-
-function answerOf(r: ReportRecord, b: BuiltScenario): ParsedRec[] | null {
-  const text = [r.text, r.rawText].filter((t): t is string => !!t).sort((a, c) => c.length - a.length)[0];
-  if (r.error || !text) return null;
-  const p = parseModelText(text);
-  if (!p.recs) return null;
-  const v = getVariant(r.variant ?? 'baseline');
-  return v.decode ? v.decode(p.recs, b) : p.recs;
+interface Analysis {
+  graded: Graded[];
+  built: Map<string, BuiltFixture>;
+  fixtures: string[];
+  metrics: { p50: number; p95: number; tokens: number; validPct: number; runPassPct: number; atBar: number; errors: number };
+  judgePct: number;
 }
 
-function judgeMeans(js: AnswerJudgement[]) {
-  return Object.fromEntries(AXES.map(a => [a, mean(js.map(j => j.scores[a]))])) as Record<Axis, number>;
+function analyse(d: RunData): Analysis {
+  const built = new Map<string, BuiltFixture>();
+  const graded = d.records.map(r => {
+    if (!built.has(r.fixture)) built.set(r.fixture, buildFixture(fixtureById(r.fixture)));
+    return grade(r, built.get(r.fixture)!);
+  });
+  const fixtures = [...new Set(d.records.map(r => r.fixture))];
+  const ok = d.records.filter(r => !r.error);
+  const lat = ok.map(r => r.wallMs).filter((x): x is number => typeof x === 'number').sort((a, b) => a - b);
+  const atBar = fixtures.filter(f => { const g = graded.filter(x => x.rec.fixture === f); return g.filter(x => x.passed).length >= barFor(g.length); }).length;
+  const jr = d.judgements.flatMap(j => Object.values(j.results)).filter(r => r && r.pass !== null);
+  return {
+    graded, built, fixtures,
+    metrics: {
+      p50: lat.length ? pct(lat, 50) : NaN, p95: lat.length ? pct(lat, 95) : NaN,
+      tokens: median(ok.map(r => r.outputTokens).filter((x): x is number => typeof x === 'number')),
+      validPct: graded.length ? (100 * graded.filter(g => g.recs).length) / graded.length : NaN,
+      runPassPct: graded.length ? (100 * graded.filter(g => g.passed).length) / graded.length : NaN,
+      atBar, errors: d.records.length - ok.length,
+    },
+    judgePct: jr.length ? (100 * jr.filter(r => r!.pass).length) / jr.length : NaN,
+  };
 }
 
-// ------------------------------------------------------------------ CSS
+// ---------------------------------------------------------------- CSS
 
 const CSS = `
 :root{--bg:#f7f7f5;--panel:#fff;--ink:#1d1d1b;--muted:#6b6b66;--line:#e3e2dc;--soft:#f0efea;
@@ -105,7 +90,6 @@ a{color:var(--accent)}h1{font-size:26px;margin:0 0 4px}h2{font-size:19px;margin:
 .tile .v{font-size:24px;font-weight:700;margin-top:2px}.tile .n{font-size:12px;color:var(--muted)}
 .good{color:var(--good)}.mid{color:var(--mid)}.bad{color:var(--bad)}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
-.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}
 .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{border-collapse:collapse;width:100%;font-size:14px}th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:top}
 th{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
@@ -117,157 +101,153 @@ ul.plain{margin:0;padding-left:18px}ul.plain li{margin:3px 0}
 .chip{font-size:12px;padding:2px 8px;border-radius:6px;background:var(--soft);color:var(--muted)}
 .chip.good{background:var(--good-bg);color:var(--good)}.chip.mid{background:var(--mid-bg);color:var(--mid)}.chip.bad{background:var(--bad-bg);color:var(--bad)}
 details{margin:10px 0}summary{cursor:pointer;color:var(--accent);font-size:14px}
-blockquote{margin:8px 0;padding:8px 12px;border-left:3px solid var(--line);background:var(--soft);border-radius:0 6px 6px 0;white-space:pre-wrap;font-size:13px}
+.expect{margin:8px 0;padding:8px 12px;border-left:3px solid var(--accent);background:var(--soft);border-radius:0 6px 6px 0;font-size:14px}
 .runs{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px;margin-top:12px}
 .run{border:1px solid var(--line);border-radius:10px;padding:12px;background:var(--bg)}
+.run.failed{border-color:var(--bad)}
 .run h4{margin:0;font-size:14px;display:flex;justify-content:space-between;gap:8px}
 ol.answer{margin:8px 0;padding-left:22px}ol.answer li{margin:6px 0}
 .ride{font-weight:600}.cap{display:block}.len{font-size:11px;color:var(--muted)}.len.bad{color:var(--bad);font-weight:600}
 .note{display:block;font-size:12px;color:var(--mid)}
+.checks{list-style:none;margin:6px 0;padding:0;font-size:13px}.checks li{margin:2px 0}
 .judge{border-top:1px dashed var(--line);margin-top:8px;padding-top:8px;font-size:13px}
-.scores{display:flex;flex-wrap:wrap;gap:4px;margin:4px 0}
-.sc{font-size:11px;padding:1px 6px;border-radius:5px;background:var(--soft)}
-.sc.good{background:var(--good-bg)}.sc.mid{background:var(--mid-bg)}.sc.bad{background:var(--bad-bg)}
 pre{white-space:pre-wrap;word-break:break-word;font-size:12px;background:var(--soft);padding:8px;border-radius:6px;max-height:220px;overflow:auto}
 footer{margin-top:40px;color:var(--muted);font-size:13px}
 `;
 
-function page(title: string, body: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+const page = (title: string, body: string) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${esc(title)}</title><style>${CSS}</style></head><body><main>${body}</main></body></html>`;
-}
 
-// --------------------------------------------------------------- run page
+const mark = (p: boolean | null) => (p === null ? '<span class="muted">–</span>' : p ? '<span class="good">✓</span>' : '<span class="bad">✗</span>');
+
+// ---------------------------------------------------------------- run page
 
 export function renderRun(d: RunData): string {
-  const recs = d.records.filter(r => r.scenario !== '*');
-  const m = metrics(recs);
-  const js = d.judgements;
-  const jAll = judgeMeans(js);
+  const a = analyse(d);
+  const m = a.metrics;
   const H: string[] = [];
+  const n = (f: string) => a.graded.filter(g => g.rec.fixture === f);
 
-  H.push(`<p class="small"><a href="../index.html">&larr; All runs</a></p>`);
+  H.push('<p class="small"><a href="../index.html">&larr; All runs</a></p>');
   H.push(`<h1>${esc(d.variant)} <span class="badge">${esc(shortModel(d.model))}</span>${d.mock ? ' <span class="badge warn">MOCK DATA: numbers are meaningless</span>' : ''}</h1>`);
-  H.push(`<p class="sub">${esc(when(d.at))} &middot; ${esc(d.variantDescription)} &middot; ${recs.length} answers across ${new Set(recs.map(r => r.scenario)).size} scenarios</p>`);
+  H.push(`<p class="sub">${esc(when(d.at))} &middot; ${esc(d.variantDescription)} &middot; ${a.fixtures.length} scenarios &times; ${d.records.length / Math.max(1, a.fixtures.length)} runs</p>`);
 
-  // ---- headline tiles
-  const tile = (k: string, v: string, cls: string, n = '') => `<div class="tile"><div class="k">${k}</div><div class="v ${cls}">${v}</div>${n ? `<div class="n">${n}</div>` : ''}</div>`;
+  const tile = (k: string, v: string, c: string, note = '') => `<div class="tile"><div class="k">${k}</div><div class="v ${c}">${v}</div>${note ? `<div class="n">${note}</div>` : ''}</div>`;
   H.push('<div class="tiles">');
-  H.push(tile('Typical response', fmtMs(m.p50Ms), '', `slow (p95): ${fmtMs(m.p95Ms)}`));
-  H.push(tile('Output tokens', Number.isFinite(m.outTokens) ? String(m.outTokens) : '–', '', 'per answer, drives speed'));
-  H.push(tile('Valid answers', fmtPct(m.jsonOkPct), pctClass(m.jsonOkPct, 99, 95), `${m.errors} call errors`));
-  H.push(tile('Hard rules', fmtPct(m.hardPassPct), pctClass(m.hardPassPct, 98, 90), `${m.cleanRuns}/${recs.length} answers fully clean`));
-  H.push(tile('Soft checks', fmtPct(m.softPassPct), pctClass(m.softPassPct, 90, 75), 'caption rules + borderline cases'));
-  H.push(tile('AI judges', js.length ? `${fmt1(jAll.overall)}<span class="small muted"> / 5</span>` : '–', scoreClass(jAll.overall), js.length ? d.judges.map(j => `${esc(shortJudge(j))}: ${fmt1(mean(js.filter(x => x.judge === j).map(x => x.scores.overall)))}`).join(' &middot; ') : 'not run'));
+  H.push(tile('Scenarios passing', `${m.atBar}/${a.fixtures.length}`, cls((100 * m.atBar) / a.fixtures.length, 100, 70), 'at least 4 of 5 runs pass (spec target)'));
+  H.push(tile('Runs passing', pctStr(m.runPassPct), cls(m.runPassPct, 90, 70), 'every hard check and scenario rule'));
+  H.push(tile('Typical response', fmtS(m.p50), '', `slow (p95): ${fmtS(m.p95)}`));
+  H.push(tile('Output tokens', Number.isFinite(m.tokens) ? String(Math.round(m.tokens)) : '–', '', 'median per answer'));
+  H.push(tile('Valid answers', pctStr(m.validPct), cls(m.validPct, 99, 95), `${m.errors} call errors`));
+  H.push(tile('AI judge', pctStr(a.judgePct), cls(a.judgePct, 90, 70), d.judges.length ? 'questions passed (pointer, not proof)' : 'not run'));
   H.push('</div>');
 
-  // ---- where to look first
-  const fails = new Map<string, number>();
-  for (const r of recs) for (const f of [...r.hardFailures, ...r.softFailures]) fails.set(checkLabel(f), (fails.get(checkLabel(f)) ?? 0) + 1);
-  const hardNames = new Set(recs.flatMap(r => r.hardFailures.map(checkLabel)));
-  const answerScore = new Map<string, number[]>();
-  for (const j of js) answerScore.set(`${j.scenario}|${j.run}`, [...(answerScore.get(`${j.scenario}|${j.run}`) ?? []), j.scores.overall]);
-  const lowest = [...answerScore].map(([k, v]) => ({ k, v: mean(v) })).sort((a, b) => a.v - b.v).slice(0, 5);
-  H.push('<h2>Where to look first</h2><div class="cols">');
-  H.push(`<div class="panel"><h3>Rule failures</h3><p class="small muted">Automatic checks, counted per answer.</p>${fails.size ? `<table>${[...fails].sort((a, b) => b[1] - a[1]).map(([label, n]) => `<tr><td>${hardNames.has(label) ? '<span class="chip bad">hard</span>' : '<span class="chip mid">soft</span>'} ${esc(label)}</td><td class="num">${n} of ${recs.length}</td></tr>`).join('')}</table>` : '<p class="good">No rule failures.</p>'}</div>`);
-  H.push(`<div class="panel"><h3>Lowest-rated answers</h3><p class="small muted">Average of the AI judges' overall score. Read these first.</p>${lowest.length ? `<table>${lowest.map(({ k, v }) => {
-    const [sc, run] = k.split('|');
-    const sum = js.find(j => j.scenario === sc && String(j.run) === run && j.summary)?.summary ?? '';
-    return `<tr><td><a href="#${esc(sc)}-run${esc(run)}">${esc(sc)} &middot; run ${esc(run)}</a><br><span class="small muted">${esc(sum)}</span></td><td class="num ${scoreClass(v)}">${fmt1(v)}</td></tr>`;
-  }).join('')}</table>` : '<p class="muted">AI judges not run.</p>'}</div>`);
-  H.push('</div>');
-
-  // ---- judge agreement
-  if (d.judges.length > 1 && js.length) {
-    const diffs: number[] = [];
-    for (const [, v] of answerScore) if (v.length > 1) diffs.push(Math.max(...v) - Math.min(...v));
-    const within1 = diffs.length ? Math.round((100 * diffs.filter(x => x <= 1).length) / diffs.length) : NaN;
-    H.push(`<p class="small muted" style="margin-top:10px">Judges agree within 1 point on ${fmtPct(within1)} of answers. ${within1 < 70 ? '<strong class="mid">Low agreement: treat judge scores with extra caution.</strong>' : ''}</p>`);
-  }
-
-  // ---- scenario overview
-  const scenIds = SCENARIOS.map(s => s.id).filter(id => recs.some(r => r.scenario === id));
-  H.push('<h2>Scenarios</h2><div class="panel scroll"><table><tr><th>Scenario</th><th class="num">Clean answers</th><th class="num">AI judges</th><th class="num">Typical speed</th></tr>');
-  for (const id of scenIds) {
-    const rs = recs.filter(r => r.scenario === id);
-    const sm = metrics(rs);
-    const jm = mean(js.filter(j => j.scenario === id).map(j => j.scores.overall));
-    H.push(`<tr><td><a href="#${esc(id)}">${esc(id)}</a><br><span class="small muted">${esc(SCENARIOS.find(s => s.id === id)?.description ?? '')}</span></td><td class="num ${pctClass((100 * sm.cleanRuns) / rs.length, 100, 60)}">${sm.cleanRuns}/${rs.length}</td><td class="num ${scoreClass(jm)}">${fmt1(jm)}</td><td class="num">${fmtMs(sm.p50Ms)}</td></tr>`);
+  // ---- scenarios
+  H.push('<h2>Scenarios</h2><div class="panel scroll"><table><tr><th>Scenario</th><th class="num">Runs passing</th><th>Most common failures</th><th class="num">AI judge</th><th class="num">Tokens</th><th class="num">Speed</th></tr>');
+  for (const f of a.fixtures) {
+    const g = n(f);
+    const passed = g.filter(x => x.passed).length;
+    const fails = new Map<string, number>();
+    for (const x of g) for (const c of x.checks) if (!c.pass && c.severity === 'hard') fails.set(c.label, (fails.get(c.label) ?? 0) + 1);
+    const jr = d.judgements.filter(j => j.fixture === f).flatMap(j => Object.values(j.results)).filter(r => r && r.pass !== null);
+    const recs = g.map(x => x.rec).filter(r => !r.error);
+    const fx = a.built.get(f)!.fx;
+    H.push(`<tr><td><a href="#${esc(f)}">${esc(f)}</a> ${esc(fx.title)}${PROVISIONAL.has(f) ? ' <span class="badge warn">threshold being tuned</span>' : ''}</td>
+<td class="num ${passed >= barFor(g.length) ? 'good' : 'bad'}">${passed}/${g.length}</td>
+<td class="small">${[...fails].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([l, k]) => `${esc(l)} <span class="muted">(${k})</span>`).join('<br>') || '<span class="muted">none</span>'}</td>
+<td class="num">${jr.length ? pctStr((100 * jr.filter(r => r!.pass).length) / jr.length) : '–'}</td>
+<td class="num">${Math.round(median(recs.map(r => r.outputTokens ?? NaN).filter(Number.isFinite))) || '–'}</td>
+<td class="num">${fmtS(median(recs.map(r => r.wallMs ?? NaN).filter(Number.isFinite)))}</td></tr>`);
   }
   H.push('</table></div>');
 
-  // ---- per scenario detail
-  for (const id of scenIds) {
-    const sc = SCENARIOS.find(s => s.id === id)!;
-    const b = buildScenario(sc);
-    const rs = recs.filter(r => r.scenario === id).sort((a, c) => a.run - c.run);
-    const sm = metrics(rs);
-    const jm = judgeMeans(js.filter(j => j.scenario === id));
-    H.push(`<section class="scenario" id="${esc(id)}"><header><h3>${esc(id)}</h3><span class="small muted">${esc(sc.description)}</span></header>`);
-    H.push(`<div class="chips"><span class="chip ${pctClass((100 * sm.cleanRuns) / rs.length, 100, 60)}">${sm.cleanRuns}/${rs.length} answers pass all hard rules</span>${js.length ? `<span class="chip ${scoreClass(jm.overall)}">AI judges ${fmt1(jm.overall)}/5</span>` : ''}<span class="chip">typical ${fmtMs(sm.p50Ms)}</span></div>`);
+  // ---- checks
+  const byCheck = new Map<string, { label: string; kind: string; pass: number; total: number }>();
+  for (const g of a.graded) for (const c of g.checks) {
+    const k = byCheck.get(c.id) ?? { label: c.label, kind: c.scenario ? 'scenario' : c.severity, pass: 0, total: 0 };
+    k.total++; if (c.pass) k.pass++;
+    byCheck.set(c.id, k);
+  }
+  H.push('<h2>Checks</h2><p class="small muted">Code checks from the spec. "Hard" and "scenario" checks decide whether a run passes; "soft" ones are style targets.</p><div class="panel scroll"><table><tr><th>Check</th><th>Kind</th><th class="num">Pass rate</th></tr>');
+  for (const [, k] of [...byCheck].sort((x, y) => x[1].pass / x[1].total - y[1].pass / y[1].total)) {
+    const r = (100 * k.pass) / k.total;
+    H.push(`<tr><td>${esc(k.label)}</td><td><span class="chip ${k.kind === 'soft' ? 'mid' : k.kind === 'scenario' ? '' : 'bad'}">${k.kind}</span></td><td class="num ${cls(r, 100, 80)}">${k.pass}/${k.total}</td></tr>`);
+  }
+  H.push('</table></div>');
 
-    // situation
-    H.push('<details><summary>Situation and ride data the model saw</summary>');
-    H.push(`<p class="small">${esc(sc.currentLocalTime)} &middot; park hours ${esc(sc.parkHours ? `${sc.parkHours.open}–${sc.parkHours.close}` : 'unknown')} &middot; guest is at <strong>${esc(b.ctx.currentRide.name)}</strong></p>`);
-    H.push(`<blockquote>${esc(personaToText(sc.persona, b.metadataMap))}</blockquote>`);
-    H.push('<div class="scroll"><table><tr><th>Ride</th><th class="num">Wait</th><th class="num">Usual</th><th class="num">Later 30/60/90</th><th class="num">Range</th><th class="num">Walk</th><th>App verdict</th></tr>');
-    for (const c of b.candidates) {
-      const r = c.ride, v = r.verdict, bk = r.historicalAverage?.buckets ?? [];
-      H.push(`<tr><td>${esc(r.name)}</td><td class="num">${esc(r.currentWait ?? '–')}</td><td class="num">${esc(v?.reasons.typical ?? '–')}</td><td class="num">${esc([1, 2, 3].map(i => bk[i]?.wait ?? '–').join('/'))}</td><td class="num">${r.rideStats ? `${r.rideStats.p10}–${r.rideStats.p90}` : '–'}</td><td class="num">${esc(c.walkMinutes ?? '?')} min</td><td>${v ? esc(`${v.verdict} (${v.reasons.primary})`) : '–'}</td></tr>`);
+  // ---- judge
+  if (d.judges.length) {
+    H.push('<h2>AI judge</h2><p class="small muted">Pass/fail questions that code cannot check. Validate the judges with <code>npm run judge-check</code> before relying on these.</p><div class="panel scroll"><table>');
+    H.push(`<tr><th>Question</th>${d.judges.map(j => `<th class="num">${esc(shortJudge(j))}</th>`).join('')}</tr>`);
+    for (const c of CRITERIA) {
+      H.push(`<tr><td>${esc(c.label)}</td>${d.judges.map(j => {
+        const rs = d.judgements.filter(x => x.judge === j).map(x => x.results[c.id as CriterionId]).filter(r => r && r.pass !== null);
+        const r = rs.length ? (100 * rs.filter(x => x!.pass).length) / rs.length : NaN;
+        return `<td class="num ${cls(r, 90, 70)}">${rs.length ? `${rs.filter(x => x!.pass).length}/${rs.length}` : '–'}</td>`;
+      }).join('')}</tr>`);
     }
-    H.push('</table></div></details>');
+    H.push('</table></div>');
+  }
 
-    // runs
+  // ---- per scenario
+  for (const f of a.fixtures) {
+    const b = a.built.get(f)!;
+    const g = n(f).sort((x, y) => x.rec.run - y.rec.run);
+    const passed = g.filter(x => x.passed).length;
+    H.push(`<section class="scenario" id="${esc(f)}"><header><h3>${esc(f)} &middot; ${esc(b.fx.title)}</h3><span class="chip ${passed >= barFor(g.length) ? 'good' : 'bad'}">${passed}/${g.length} runs pass</span></header>`);
+    H.push(`<div class="expect"><strong>Spec expects:</strong> ${esc(b.fx.expectation)}</div>`);
+    H.push(`<details><summary>Situation the model was given</summary><p class="small">${esc(b.fx.localTime)} &middot; closes ${esc(b.fx.hours?.close ?? 'unknown')} &middot; field: ${esc(b.field)} &middot; ${esc(describeParty(b))}</p>`);
+    H.push('<div class="scroll"><table><tr><th>Ride</th><th class="num">Wait</th><th class="num">Usual</th><th>vs usual</th><th class="num">Walk</th><th>Verdict</th><th>Wanted</th><th>Restricted for</th><th>Notes</th></tr>');
+    for (const r of b.rides) {
+      const notes = [r.isAnchor ? 'guest is here' : '', r.minutesSinceReopen != null ? `reopened ${r.minutesSinceReopen} min ago` : '', r.window ? `best later: ${r.window.wait} in ${r.window.inMin} min` : '', `forecast ${r.buckets.slice(0, 4).join(', ')}`].filter(Boolean).join('; ');
+      H.push(`<tr><td>${esc(r.name)}</td><td class="num">${r.wait}</td><td class="num">${r.usual ?? '–'}</td><td>${esc(r.ofUsual ?? '–')} (${r.vsUsual != null && r.vsUsual > 0 ? '+' : ''}${r.vsUsual ?? '–'})</td><td class="num">${r.walk}</td><td>${esc(r.verdict)}</td><td>${r.wanted ? 'yes' : ''}</td><td>${esc(r.restrictedFor.join(', '))}</td><td class="small">${esc(notes)}</td></tr>`);
+    }
+    H.push('</table></div>');
+    H.push(`<p class="small muted">Values the spec did not state (please confirm): ${esc(b.fx.filled.join('; '))}</p></details>`);
+
     H.push('<div class="runs">');
-    for (const r of rs) {
-      const ans = answerOf(r, b);
-      const names = new Map(b.candidates.map(c => [c.ride.id, c.ride.name]));
-      H.push(`<article class="run" id="${esc(id)}-run${r.run}"><h4><span>Run ${r.run}</span><span class="muted small">${r.error ? 'error' : `${fmtMs(r.wallMs ?? NaN)} &middot; ${esc(r.outputTokens ?? '?')} tokens`}</span></h4>`);
-      const chips = [
-        ...r.hardFailures.map(f => `<span class="chip bad" title="${esc(f)}">${esc(checkLabel(f))}</span>`),
-        ...r.softFailures.map(f => `<span class="chip mid" title="${esc(f)}">${esc(checkLabel(f))}</span>`),
-      ];
-      H.push(`<div class="chips">${r.error ? `<span class="chip bad">${esc(r.error)}</span>` : chips.length ? chips.join('') : '<span class="chip good">All checks passed</span>'}</div>`);
-      if (ans) {
-        H.push(ans.length ? `<ol class="answer">${ans.map(a => {
-          const len = a.oneLiner.length;
-          return `<li><span class="ride">${esc(names.get(a.rideId) ?? `Unknown ride id: ${a.rideId}`)}</span><span class="cap">“${esc(a.oneLiner)}” <span class="len ${len > 80 ? 'bad' : ''}">${len} chars</span></span>${a.restrictionNote ? `<span class="note">Note: ${esc(a.restrictionNote)}</span>` : ''}</li>`;
-        }).join('')}</ol>` : '<p class="muted">Empty list (no recommendations).</p>');
+    for (const x of g) {
+      const r = x.rec;
+      H.push(`<article class="run${x.passed ? '' : ' failed'}"><h4><span>Run ${r.run} ${x.passed ? '<span class="good">pass</span>' : '<span class="bad">fail</span>'}</span><span class="muted small">${r.error ? 'error' : `${fmtS(r.wallMs ?? NaN)} &middot; ${esc(r.outputTokens ?? '?')} tokens`}</span></h4>`);
+      if (x.recs) {
+        H.push(x.recs.length ? `<ol class="answer">${x.recs.map(e => {
+          const w = words(e.oneLiner);
+          return `<li><span class="ride">${esc(e.ride ?? `Unknown ride: ${e.rawId}`)}</span><span class="cap">“${esc(e.oneLiner)}” <span class="len ${w > 18 ? 'bad' : ''}">${w} words</span></span>${e.restrictionNote ? `<span class="note">Note: ${esc(e.restrictionNote)}</span>` : ''}</li>`;
+        }).join('')}</ol>` : '<p class="muted">Empty list.</p>');
       } else if (!r.error) {
-        H.push(`<p class="bad small">Could not read this answer.</p><pre>${esc((r.text ?? r.rawText ?? '').slice(0, 1500))}</pre>`);
+        H.push(`<p class="bad small">Could not read this answer.</p><pre>${esc((r.text ?? '').slice(0, 1500))}</pre>`);
       }
-      for (const j of js.filter(x => x.scenario === id && x.run === r.run)) {
-        H.push(`<div class="judge"><strong>${esc(shortJudge(j.judge))}</strong> <span class="${scoreClass(j.scores.overall)}">${j.scores.overall}/5</span>`);
-        H.push(`<div class="scores">${(['grounding', 'ranking', 'copy', 'constraints'] as Axis[]).map(a => `<span class="sc ${scoreClass(j.scores[a])}">${a} ${j.scores[a]}</span>`).join('')}</div>`);
-        if (j.summary) H.push(`<div>${esc(j.summary)}</div>`);
-        if (j.problems.length) H.push(`<ul class="plain small">${j.problems.map(p => `<li>${esc(p)}</li>`).join('')}</ul>`);
-        H.push('</div>');
+      const failed = x.checks.filter(c => !c.pass && !c.scenario); // scenario rules are listed below with ✓/✗
+      H.push(`<div class="chips">${failed.length ? failed.map(c => `<span class="chip ${c.severity === 'soft' ? 'mid' : 'bad'}" title="${esc(c.detail ?? '')}">${esc(c.label)}</span>`).join('') : '<span class="chip good">All checks passed</span>'}</div>`);
+      const sc = x.checks.filter(c => c.scenario);
+      if (sc.length) H.push(`<ul class="checks">${sc.map(c => `<li>${mark(c.pass)} ${esc(c.label)}${c.pass ? '' : ` <span class="muted">(${esc(c.detail ?? '')})</span>`}</li>`).join('')}</ul>`);
+      for (const j of d.judgements.filter(j => j.fixture === f && j.run === r.run)) {
+        H.push(`<div class="judge"><strong>${esc(shortJudge(j.judge))}</strong><ul class="checks">${CRITERIA.map(c => {
+          const res = j.results[c.id as CriterionId];
+          return res ? `<li>${mark(res.pass)} ${esc(c.label)}${res.pass === false || res.why ? ` <span class="muted">${esc(res.why)}</span>` : ''}</li>` : '';
+        }).join('')}</ul></div>`);
       }
       H.push('</article>');
     }
     H.push('</div></section>');
   }
 
-  H.push(`<footer><p><strong>How to read this.</strong> Speed and rule checks are measured and reliable. AI judge scores are pointers, not truth: they come from ${d.judges.length ? d.judges.map(j => esc(shortJudge(j))).join(' and ') : 'no judges'} (prompt ${esc(d.judgePromptVersion ?? 'n/a')}) and can shift with wording. Read the reasons next to each answer and decide whether you agree.</p>
+  H.push(`<footer><p><strong>How to read this.</strong> A run passes when every hard code check and every scenario rule passes. The spec's bar is a scenario passing at least 4 of 5 runs. Speed, tokens and code checks are measured. AI judge results are pointers from ${d.judges.map(j => esc(shortJudge(j))).join(' and ') || 'no judges'} (rules ${esc(d.judgeVersion ?? 'n/a')}): read the reasons and decide whether you agree.</p>
 <p>Source: <code>${esc(d.source)}</code> &middot; run id <code>${esc(d.runId)}</code></p></footer>`);
   return page(`Eval: ${d.variant} ${d.at.slice(0, 10)}`, H.join('\n'));
 }
 
-// --------------------------------------------------------------- history index
+// ---------------------------------------------------------------- history index
 
 export function renderIndex(runs: RunData[]): string {
-  const sorted = [...runs].sort((a, b) => b.at.localeCompare(a.at));
-  const H: string[] = [];
-  H.push('<h1>Recommendation eval runs</h1>');
-  H.push('<p class="sub">Each row is one evaluation of the <code>/v2/recommendations</code> prompt. Open a run to see every answer, the rule checks and the AI judges’ notes.</p>');
-  H.push('<div class="panel scroll"><table><tr><th>When</th><th>Variant</th><th>Model</th><th class="num">Typical speed</th><th class="num">Tokens</th><th class="num">Valid</th><th class="num">Hard rules</th><th class="num">Soft checks</th><th class="num">AI judges</th></tr>');
-  for (const d of sorted) {
-    const recs = d.records.filter(r => r.scenario !== '*');
-    const m = metrics(recs);
-    const j = mean(d.judgements.map(x => x.scores.overall));
-    H.push(`<tr><td><a href="runs/${esc(d.runId)}.html">${esc(when(d.at))}</a>${d.mock ? ' <span class="badge warn">mock</span>' : ''}</td><td>${esc(d.variant)}</td><td class="small">${esc(shortModel(d.model))}</td><td class="num">${fmtMs(m.p50Ms)}</td><td class="num">${Number.isFinite(m.outTokens) ? m.outTokens : '–'}</td><td class="num ${pctClass(m.jsonOkPct, 99, 95)}">${fmtPct(m.jsonOkPct)}</td><td class="num ${pctClass(m.hardPassPct, 98, 90)}">${fmtPct(m.hardPassPct)}</td><td class="num ${pctClass(m.softPassPct, 90, 75)}">${fmtPct(m.softPassPct)}</td><td class="num ${scoreClass(j)}">${d.judgements.length ? fmt1(j) : '–'}</td></tr>`);
+  const H: string[] = ['<h1>Recommendation eval runs</h1>', '<p class="sub">Each row is one evaluation of a prompt version against the spec scenarios. Open a run for every answer, check and judge note.</p>'];
+  H.push('<div class="panel scroll"><table><tr><th>When</th><th>Variant</th><th>Model</th><th class="num">Scenarios passing</th><th class="num">Runs passing</th><th class="num">Speed</th><th class="num">Tokens</th><th class="num">AI judge</th></tr>');
+  for (const d of [...runs].sort((x, y) => y.at.localeCompare(x.at))) {
+    const a = analyse(d);
+    H.push(`<tr><td><a href="runs/${esc(d.runId)}.html">${esc(when(d.at))}</a>${d.mock ? ' <span class="badge warn">mock</span>' : ''}</td><td>${esc(d.variant)}</td><td class="small">${esc(shortModel(d.model))}</td>
+<td class="num ${cls((100 * a.metrics.atBar) / a.fixtures.length, 100, 70)}">${a.metrics.atBar}/${a.fixtures.length}</td><td class="num">${pctStr(a.metrics.runPassPct)}</td><td class="num">${fmtS(a.metrics.p50)}</td><td class="num">${Number.isFinite(a.metrics.tokens) ? Math.round(a.metrics.tokens) : '–'}</td><td class="num">${pctStr(a.judgePct)}</td></tr>`);
   }
-  H.push('</table></div>');
-  H.push('<footer>Speed and rule checks are measured. AI judge scores (out of 5) are pointers to read alongside the answers, not verdicts.</footer>');
+  H.push('</table></div><footer>Spec target: every scenario passes at least 4 of 5 runs, and output tokens drop at least 25% from v1. AI judge numbers are pointers, not proof.</footer>');
   return page('Recommendation eval runs', H.join('\n'));
 }
+

@@ -70,18 +70,15 @@ async function converseMock(system: string, user: string): Promise<CallResult> {
   const t0 = performance.now();
   await sleep(2 + (hash(user) % 8));
   let text: string;
-  if (/PAIRWISE JUDGE/.test(system)) {
-    const w = ['X', 'Y', 'tie'][hash(user) % 3];
-    text = JSON.stringify({ winner: w, x: { grounding: 3, ranking: 3, copy: 3, constraints: 4 }, y: { grounding: 3, ranking: 3, copy: 3, constraints: 4 }, reason: 'mock verdict' });
-  } else if (/ANSWER JUDGE/.test(system)) {
+  if (/SPEC JUDGE/.test(system)) {
     const h = hash(user);
-    const v = (k: number) => 2 + ((h >>> k) % 4); // 2..5
-    text = JSON.stringify({ grounding: v(0), ranking: v(3), copy: v(6), constraints: v(9), overall: v(12), summary: 'Mock judgement: picks are plausible but captions are generic.', problems: h % 2 ? ['Mock problem: caption restates the wait time'] : [] });
-  } else if (/You grade a theme-park/.test(system)) {
-    text = JSON.stringify({ ranking: 3, copy: 3, note: 'mock' });
+    const ids = ['grounded', 'present-tense', 'skip-framing', 'restrictions', 'strongest-reason', 'voice', 'ranking'];
+    text = JSON.stringify(Object.fromEntries(ids.map((id, i) => [id, { pass: ((h >>> i) & 3) !== 0, why: 'mock reason' }])));
   } else {
-    // Echo the first five ride ids found in the user message ("- Name (<id>) wait=...").
-    const ids = [...user.matchAll(/^- .*? \(([^()\s]+)\) wait=/gm)].map(m => m[1]);
+    // Echo the first five rides in the user message: v1 lines "- Name (<id>) wait=..." or spec lines "r3 Name | ...".
+    const v1 = [...user.matchAll(/^- .*? \(([^()\s]+)\) wait=/gm)].map(m => m[1]);
+    const coded = [...user.matchAll(/^(r\d+) ([^|\n]+?) \|/gm)].map(m => `${m[1]} ${m[2]}`);
+    const ids = v1.length ? v1 : coded;
     text = JSON.stringify({ recommendations: ids.slice(0, 5).map((id, i) => ({ rideId: id, oneLiner: `Mock tip ${i + 1} (${hash(system) % 97}).`, restrictionNote: null })) });
   }
   return { text, wallMs: performance.now() - t0, serverMs: null, inputTokens: Math.round((system.length + user.length) / 4), outputTokens: Math.round(text.length / 4) };

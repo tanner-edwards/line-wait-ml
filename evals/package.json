@@ -2,14 +2,11 @@
   "name": "club32-evals",
   "version": "0.1.0",
   "private": true,
-  "description": "Repeatable evaluation harness for the /v2/recommendations LLM prompt (speed, rule checks, automated head-to-head judging). Not part of the app.",
+  "description": "Eval harness for the /v2/recommendations prompt against the 'AI Recommendation Expectations' spec (2026-11-16).",
   "scripts": {
     "eval": "tsx src/eval.ts",
-    "bench": "tsx src/bench.ts",
-    "compare": "tsx src/compare.ts",
-    "losses": "tsx src/losses.ts",
-    "pack": "tsx src/eval-pack.ts",
-    "dry-run": "tsx src/bench.ts --dry-run",
+    "dry-run": "tsx src/dry-run.ts",
+    "judge-check": "tsx src/judge-check.ts",
     "typecheck": "tsc --noEmit -p ."
   },
   "dependencies": {

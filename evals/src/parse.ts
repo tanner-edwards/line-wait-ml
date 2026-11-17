@@ -1,5 +1,6 @@
 // Parsing + small stats helpers shared by the runner, the judge and the pack builder.
-import { ParsedRec } from './scenarios';
+/** An entry as the model wrote it, before the variant maps its id back to a ride. */
+export interface ParsedRec { rideId: string; oneLiner: string; restrictionNote: string | null }
 
 export function pct(sorted: number[], p: number): number {
   if (!sorted.length) return NaN;
