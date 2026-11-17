@@ -58,7 +58,7 @@ const POSITION = /\b(first|second|(?<!\b(?:a|one) )third|top (pick|choice|spot)|
 // Spec: every pick is for right now; captions never order the picks into a route.
 const ROUTE = /\b(go next|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on the way|on your way)\b/i;
 const COME_BACK = /\b(come back|swing back|head back|return (later|tonight|this)|later tonight|later today|wait until|after dinner)\b/i;
-const BUSY_OPENING = /(busy|long (lines?|everywhere|wait)|lines are long|least bad|crowded|packed|every(thing|where)|won't get (any )?shorter|wanted|still want|tough day|holiday)/i;
+const BUSY_OPENING = /(busy|long (lines?|everywhere|wait)|lines are long|least bad|crowded|packed|every(thing|where)|won't get (any )?shorter|wanted|still want|eye on|hoping|radar|hurts the least|nothing is short|closest to (a )?normal|slammed|tough day|holiday)/i;
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
 

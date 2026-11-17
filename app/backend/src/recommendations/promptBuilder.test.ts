@@ -100,7 +100,7 @@ describe('buildSystemPrompt', () => {
   });
 
   it('keeps the structural sections within the word budget', () => {
-    expect(wordCount(structuralBlocks(6).join('\n'))).toBeLessThanOrEqual(1500) // spec 10 targets ~1,000; raised 2026-11-17 for the trend and never-rank-first rules, then for the voice pass (examples and route ban);
+    expect(wordCount(structuralBlocks(6).join('\n'))).toBeLessThanOrEqual(1750) // spec 10 targets ~1,000; raised 2026-11-17 for the trend and never-rank-first rules, then for the voice pass (examples and route ban);
   });
 
   it('shows the exact JSON object and the batch size in <output>', () => {

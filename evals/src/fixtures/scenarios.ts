@@ -120,7 +120,7 @@ export const FIXTURES: Fixture[] = [
       { ride: "Peter Pan's Flight", caption: 'Half its usual line, and an easy ride for your toddler.' },
       { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line, and toddlers love it.' },
     ],
-    bad: [{ ride: 'Star Wars: Rise of the Resistance', caption: "You still want this one, and it's close to half its usual line." }],
+    bad: [{ ride: 'Star Wars: Rise of the Resistance', caption: "You were hoping for this one, and it's close to half its usual line." }],
   },
   {
     id: 'S2B', title: 'Toddler, Rise of the Resistance at a third of usual (not wanted)',
@@ -172,7 +172,7 @@ export const FIXTURES: Fixture[] = [
     expectation: 'No caption uses "rare", "great deal" or "best window". Ranks 1 and 2 are Pirates (wanted) and Big Thunder (closest), in either order. Space Mountain ranks below both.',
     ideal: [
       { ride: 'Big Thunder Mountain Railroad', caption: 'The shortest walk, and lines everywhere are a bit under usual.' },
-      { ride: 'Pirates of the Caribbean', caption: 'You wanted this one, and its line is a bit under usual.' },
+      { ride: 'Pirates of the Caribbean', caption: 'This was on your list, and its line is a bit under usual.' },
       { ride: 'Space Mountain', caption: 'A popular thrill ride with a line a bit under usual.' },
     ],
     bad: [{ ride: 'Space Mountain', caption: 'A rare chance at a great deal on a headliner.' }],
@@ -195,11 +195,11 @@ export const FIXTURES: Fixture[] = [
       A.present("Peter Pan's Flight"),
       A.captionIf("Peter Pan's Flight", WONT_SHORTER, "says honestly it won't get shorter"),
     ],
-    expectation: "At least one recommendation. Every skip-verdict pick's caption opens with busy-day framing (first clause). Peter Pan's Flight appears with honest copy (you wanted this and it won't get shorter), never positive-timing words. Space Mountain may be omitted.",
+    expectation: "At least one recommendation. Every skip-verdict pick's caption opens with busy-day framing (first clause). Peter Pan's Flight appears with honest copy (one you had your eye on, and it won't get shorter), never positive-timing words. Space Mountain may be omitted.",
     ideal: [
       { ride: 'Matterhorn Bobsleds', caption: "Everything's busy today, and this line is closest to normal." },
       { ride: 'Dumbo the Flying Elephant', caption: 'Lines are long everywhere, and this one is a short walk for the kids.' },
-      { ride: "Peter Pan's Flight", caption: "You wanted this one, and it won't get shorter this afternoon." },
+      { ride: "Peter Pan's Flight", caption: "You wanted to ride this one, and the line is staying long this afternoon." },
     ],
     bad: [{ ride: "Peter Pan's Flight", caption: 'Great time to ride, the line is moving fast.' }],
   },
@@ -228,7 +228,7 @@ export const FIXTURES: Fixture[] = [
     ideal: [
       { ride: 'Matterhorn Bobsleds', caption: 'About 15 minutes shorter than usual, a good one to add.' },
       { ride: 'Big Thunder Mountain Railroad', caption: 'A bit under its usual line, if you want another thrill.' },
-      { ride: 'Space Mountain', caption: "You still want this one, and it won't get shorter today." },
+      { ride: 'Space Mountain', caption: "One you had your eye on, and it won't get shorter today." },
     ],
     bad: [
       { ride: 'Big Thunder Mountain Railroad', caption: 'A bit under its usual line.' },
