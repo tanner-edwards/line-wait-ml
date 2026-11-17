@@ -1,0 +1,370 @@
+{
+  "id": "LIVE-california-adventure-2026-11-17T20-32-40-990Z",
+  "title": "Live snapshot: california-adventure at Tuesday 12:32 PM",
+  "tests": "Real park data, no scripted expectation. Hard code checks and the AI judge decide.",
+  "park": "california-adventure",
+  "localTime": "Tuesday 12:32 PM",
+  "nowMin": 752,
+  "hours": {
+    "open": "08:00",
+    "close": "21:00"
+  },
+  "persona": null,
+  "anchor": {
+    "name": "Grizzly River Run",
+    "wait": 5,
+    "usual": 21,
+    "verdict": "go",
+    "reason": "todays-low",
+    "walk": 2,
+    "buckets": [
+      5,
+      6.3,
+      7.7,
+      10.8,
+      12.9,
+      14.8
+    ],
+    "p10": 5,
+    "p90": 30,
+    "minutesSinceReopen": null,
+    "wanted": false
+  },
+  "rides": [
+    {
+      "name": "Golden Zephyr",
+      "wait": 5,
+      "usual": 6,
+      "verdict": "neutral",
+      "reason": "filler",
+      "walk": 8,
+      "buckets": [
+        5,
+        5,
+        5,
+        5.1,
+        5,
+        5.3
+      ],
+      "p10": 5,
+      "p90": 15,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "WEB SLINGERS: A Spider-Man Adventure",
+      "wait": 40,
+      "usual": 37,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 2,
+      "buckets": [
+        40,
+        39.9,
+        39.8,
+        39.9,
+        40.5,
+        40
+      ],
+      "p10": 10,
+      "p90": 50,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Jessie's Critter Carousel",
+      "wait": 5,
+      "usual": 5,
+      "verdict": "neutral",
+      "reason": "filler",
+      "walk": 5,
+      "buckets": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5.1
+      ],
+      "p10": 5,
+      "p90": 5,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Monsters, Inc. Mike & Sulley to the Rescue!",
+      "wait": 35,
+      "usual": 35,
+      "verdict": "neutral",
+      "reason": "none",
+      "walk": 4,
+      "buckets": [
+        35,
+        36,
+        37,
+        35,
+        33,
+        38
+      ],
+      "p10": 5,
+      "p90": 45,
+      "minutesSinceReopen": 22,
+      "wanted": false
+    },
+    {
+      "name": "Mater's Junkyard Jamboree",
+      "wait": 20,
+      "usual": 12,
+      "verdict": "skip",
+      "reason": "busy-no-relief",
+      "walk": 5,
+      "buckets": [
+        20,
+        19.9,
+        18.6,
+        17.8,
+        16.9,
+        17.1
+      ],
+      "p10": 5,
+      "p90": 25,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Silly Symphony Swings",
+      "wait": 5,
+      "usual": 5,
+      "verdict": "neutral",
+      "reason": "filler",
+      "walk": 8,
+      "buckets": [
+        5,
+        5,
+        5,
+        5,
+        5.3,
+        5.3
+      ],
+      "p10": 5,
+      "p90": 10,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Pixar Pal-A-Round",
+      "wait": 5,
+      "usual": 20,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 4,
+      "buckets": [
+        5,
+        12.2,
+        16.8,
+        17.8,
+        16.6,
+        15
+      ],
+      "p10": 5,
+      "p90": 35,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Incredicoaster",
+      "wait": 20,
+      "usual": 27,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 4,
+      "buckets": [
+        20,
+        20.4,
+        21.4,
+        21.9,
+        23.9,
+        23.7
+      ],
+      "p10": 5,
+      "p90": 45,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Inside Out Emotional Whirlwind",
+      "wait": 10,
+      "usual": 13,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 5,
+      "buckets": [
+        13,
+        11,
+        12,
+        14,
+        14,
+        14
+      ],
+      "p10": 5,
+      "p90": 25,
+      "minutesSinceReopen": 2,
+      "wanted": false
+    },
+    {
+      "name": "Soarin' Around the World",
+      "wait": 30,
+      "usual": 29,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 3,
+      "buckets": [
+        30,
+        33.6,
+        34.4,
+        34.7,
+        36.5,
+        37
+      ],
+      "p10": 10,
+      "p90": 45,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Luigi's Rollickin' Roadsters",
+      "wait": 30,
+      "usual": 19,
+      "verdict": "skip",
+      "reason": "at-ceiling",
+      "walk": 4,
+      "buckets": [
+        30,
+        28.1,
+        23.6,
+        23.3,
+        23.9,
+        22.5
+      ],
+      "p10": 5,
+      "p90": 30,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Toy Story Midway Mania!",
+      "wait": 40,
+      "usual": 38,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 5,
+      "buckets": [
+        40,
+        41.2,
+        41.1,
+        41.7,
+        41.6,
+        41.5
+      ],
+      "p10": 15,
+      "p90": 50,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Guardians of the Galaxy – Monsters After Dark",
+      "wait": 55,
+      "usual": 48,
+      "verdict": "neutral",
+      "reason": "none",
+      "walk": 4,
+      "buckets": [
+        55,
+        54.1,
+        56.3,
+        57.7,
+        57.1,
+        59.9
+      ],
+      "p10": 25,
+      "p90": 65,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Radiator Springs Racers",
+      "wait": 80,
+      "usual": 63,
+      "verdict": "skip",
+      "reason": "high-vs-usual",
+      "walk": 4,
+      "buckets": [
+        80,
+        82.9,
+        62.9,
+        62.9,
+        61,
+        64.6
+      ],
+      "window": {
+        "wait": 61,
+        "inMin": 120
+      },
+      "p10": 40,
+      "p90": 82,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "Jumpin' Jellyfish",
+      "wait": 5,
+      "usual": 5,
+      "verdict": "neutral",
+      "reason": "filler",
+      "walk": 7,
+      "buckets": [
+        5,
+        5,
+        5,
+        5,
+        5,
+        5.1
+      ],
+      "p10": 5,
+      "p90": 10,
+      "minutesSinceReopen": null,
+      "wanted": false
+    },
+    {
+      "name": "The Little Mermaid – Ariel's Undersea Adventure",
+      "wait": 15,
+      "usual": 17,
+      "verdict": "go",
+      "reason": "todays-low",
+      "walk": 6,
+      "buckets": [
+        15,
+        17.1,
+        17.7,
+        18.6,
+        17.7,
+        18.4
+      ],
+      "p10": 5,
+      "p90": 25,
+      "minutesSinceReopen": null,
+      "wanted": false
+    }
+  ],
+  "weather": {
+    "tempF": 70,
+    "feelsF": 64,
+    "conditions": "clear"
+  },
+  "filled": [
+    "Live snapshot: every value came from the backend at capture time; persona is the default guest with no wanted rides."
+  ],
+  "expectation": "No scripted answer. Judge whether every pick is a sensible move to walk to right now given the waits, usual waits, forecast trend and walk; whether captions are grounded in the data and present-tense; and whether any skip-verdict pick is framed honestly as a busy-day or least-bad choice.",
+  "ideal": [],
+  "bad": []
+}

@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import {
+  applySkipGate,
   assignCodes,
   bucketsFor,
   buildRequestContext,
@@ -401,5 +402,29 @@ describe('normalizeRideName', () => {
     expect(normalizeRideName('Guardians of the Galaxy – Mission: BREAKOUT!'))
       .toBe(normalizeRideName('guardians of the galaxy - mission breakout'));
     expect(normalizeRideName('Café')).toBe('cafe');
+  });
+});
+
+describe('applySkipGate', () => {
+  const c = (id: string, verdict: 'go' | 'skip' | 'neutral') =>
+    ({ ride: { id, verdict: { verdict } }, walkMinutes: 1, walkYards: 90 } as unknown as import('./promptInputs').RideForPrompt);
+  const ids = (xs: { ride: { id: string } }[]) => xs.map(x => x.ride.id);
+
+  it('removes unwanted skip rides when under 80% of the pool is skip', () => {
+    const { pool, gated } = applySkipGate([c('a', 'go'), c('b', 'skip'), c('d', 'neutral')], null);
+    expect(gated).toBe(true);
+    expect(ids(pool)).toEqual(['a', 'd']);
+  });
+
+  it('keeps a wanted skip ride', () => {
+    const { pool } = applySkipGate([c('a', 'go'), c('b', 'skip')], { mustDoRideIds: ['b'] });
+    expect(ids(pool)).toEqual(['a', 'b']);
+  });
+
+  it('keeps everything at 80% skip or more, and passes an empty pool through', () => {
+    const { pool, gated } = applySkipGate([c('a', 'go'), c('b', 'skip'), c('d', 'skip'), c('e', 'skip'), c('f', 'skip')], null);
+    expect(gated).toBe(false);
+    expect(pool).toHaveLength(5);
+    expect(applySkipGate([], null)).toEqual({ pool: [], gated: false });
   });
 });

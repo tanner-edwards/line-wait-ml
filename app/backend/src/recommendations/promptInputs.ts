@@ -93,6 +93,12 @@ export const FLAT_SPREAD_MAX_MIN = 15;
 /** A field is 'bad' when no ride is below usual and at least this fraction are above. */
 export const BAD_FIELD_ABOVE_FRACTION = 0.5;
 
+/** Skip-verdict rides leave the candidate pool unless at least this fraction of the
+ *  pool is skip (then there is nothing else to show). A wanted skip ride stays in
+ *  either way but ranks after every non-skip pick (handler guardSkipLast). Decided
+ *  2026-11-17: a red skip badge beside a recommendation looks bad when good options exist. */
+export const SKIP_POOL_FRACTION = 0.8;
+
 /** Reopen events older than this are not reported to the model. */
 export const REOPEN_WINDOW_MIN = 60;
 

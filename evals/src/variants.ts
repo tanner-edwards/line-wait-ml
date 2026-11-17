@@ -20,9 +20,9 @@ import { BATCH } from './checks';
 // The spec rewrite (2026-11-17): the live backend's prompt and input builders.
 import { buildSystemPrompt as specSystem, buildUserMessage as specUser } from '../../app/backend/src/recommendations/promptBuilder';
 import { personaToText as specPersonaToText } from '../../app/backend/src/recommendations/persona';
-import { assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
+import { applySkipGate, assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { IdStyle } from '../../app/backend/src/recommendations/promptInputs';
-import { cleanCopy } from '../../app/backend/src/recommendations/handler';
+import { cleanCopy, guardRankOne, guardSkipLast } from '../../app/backend/src/recommendations/handler';
 
 export interface Rendered {
   system: string;
@@ -116,7 +116,9 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
   const candidates = b.rides
     .filter(r => r.reachableBeforeClose)
     .map(r => ({ ride: toBackendRide(r), walkMinutes: r.walk, walkYards: r.walk * 90 }));
-  const codeMap = assignCodes(candidates);
+  // The Lambda's skip gate: unwanted skip rides leave the pool unless the day is bad.
+  const { pool, gated: skipGated } = applySkipGate(candidates, b.persona);
+  const codeMap = assignCodes(pool);
   const reopens = new Map<string, number>();
   for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
   const lines = buildRideLines(codeMap, {
@@ -131,10 +133,16 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
     user: specUser(ctx, lines, { idStyle }),
     offered: lines.map(l => l.name),
     // The Lambda's parser runs cleanCopy (dashes to commas, "!" to ".") on every
-    // caption before the app sees it, so the harness grades the shipped text.
-    decode: idStyle === 'code'
-      ? raw => decodeCodeName(raw.map(x => ({ ...x, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? x.restrictionNote : cleanCopy(x.restrictionNote) })), codes)
-      : raw => raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? null : cleanCopy(x.restrictionNote) })),
+    // caption and guardRankOne (a restricted, unwanted ride never leads) on the
+    // order before the app sees it, so the harness grades the shipped result.
+    decode: raw => {
+      const resolved = idStyle === 'code'
+        ? decodeCodeName(raw.map(x => ({ ...x, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? x.restrictionNote : cleanCopy(x.restrictionNote) })), codes)
+        : raw.map(x => ({ ride: ids.get(x.rideId.trim()) ?? null, rawId: x.rideId, oneLiner: cleanCopy(x.oneLiner), restrictionNote: x.restrictionNote == null ? null : cleanCopy(x.restrictionNote) }));
+      const idByName = new Map(lines.map(l => [l.name, l.rideId]));
+      const keyed = resolved.map(r => ({ ...r, rideId: (r.ride && idByName.get(r.ride)) ?? `?${r.rawId}` }));
+      return (guardSkipLast(guardRankOne(keyed, lines), lines, skipGated) ?? keyed).map(({ rideId: _drop, ...rest }: typeof keyed[number]) => rest);
+    },
   };
 }
 

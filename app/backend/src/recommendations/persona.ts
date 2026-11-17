@@ -15,13 +15,13 @@ import { DEFAULT_PERSONA } from './promptBuilder';
 
 const TRIP_DURATION_TEXT: Record<TripDuration, string> = {
   '1-day':
-    'Single-day visit — every recommendation matters; this is the only chance for the headliners.',
+    'Single-day visit, every recommendation matters; this is the only chance at the big rides.',
   '2-days':
-    'Two-day visit — moderate pace, can spread the must-do rides across both days.',
+    'Two-day visit: moderate pace, can spread the top rides across both days.',
   '3-4-days':
-    'Three-to-four day visit — relaxed pace, plenty of time to cover both parks.',
+    'Three-to-four day visit, relaxed pace, plenty of time to cover both parks.',
   '5-plus-days':
-    'Extended five-or-more day visit — very relaxed pace; willing to explore lesser-known attractions.',
+    'Extended five-or-more day visit, very relaxed pace; willing to explore lesser-known attractions.',
 };
 
 const RIDE_CATEGORY_TEXT: Record<Exclude<RideCategory, 'first-time'>, string> = {
@@ -37,30 +37,30 @@ const RIDE_CATEGORY_TEXT: Record<Exclude<RideCategory, 'first-time'>, string> = 
 
 const ACCESSIBILITY_TEXT: Record<Exclude<AccessibilityNeed, 'none'>, string> = {
   stroller:
-    "Party is traveling with a stroller — there's no ride-transfer concern (strollers park outside the queue), but navigating the park with one is slower and more cumbersome: crowds, narrow paths, curbs. Weigh proximity more heavily than usual; a moderate wait improvement rarely justifies more than a short walk.",
+    "Party is traveling with a stroller, there's no ride-transfer concern (strollers park outside the queue), but navigating the park with one is slower and more cumbersome: crowds, narrow paths, curbs. Weigh proximity more heavily than usual; a moderate wait improvement rarely justifies more than a short walk.",
   wheelchair:
-    'Party member uses a wheelchair or mobility scooter — avoid attractions that require transferring out of the wheelchair when comparable options exist. Navigating the park is also generally slower; weigh proximity more heavily than usual, and a moderate wait improvement rarely justifies more than a short walk.',
+    'Party member uses a wheelchair or mobility scooter, avoid attractions that require transferring out of the wheelchair when comparable options exist. Navigating the park is also generally slower; weigh proximity more heavily than usual, and a moderate wait improvement rarely justifies more than a short walk.',
   pregnant:
-    'A pregnant guest is in the party — do not recommend severe drops, high-G coasters, spinning rides, or otherwise rough thrills.',
+    'A pregnant guest is in the party, do not recommend severe drops, high-G coasters, spinning rides, or otherwise rough thrills.',
   sensory:
-    'A guest in the party has sensory sensitivities (may be using DAS) — be mindful of attractions with intense strobes, loud audio, or sudden drops.',
+    'A guest in the party has sensory sensitivities (may be using DAS), be mindful of attractions with intense strobes, loud audio, or sudden drops.',
 };
 
 const RIDER_SWAP_NOTE =
-  ' Rider swap is an option when there are multiple adults — feel free to recommend a height-restricted headliner if the group can pivot, but do not assume it; lean default toward rides everyone can do together.';
+  ' Rider swap is an option when there are multiple adults, feel free to recommend a height-restricted big ride if the group can pivot, but do not assume it; lean default toward rides everyone can do together.';
 
 function ageText(age: number): string {
   if (age >= 18) {
-    return 'All adults in the party — no height restrictions to worry about; the full thrill catalog is available.';
+    return 'All adults in the party, no height restrictions to worry about; the full thrill catalog is available.';
   }
   if (age <= 3) {
-    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences. Long walks between attractions are harder with a toddler in tow — favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences. Long walks between attractions are harder with a toddler in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 6) {
-    return `Youngest in the party is a young child (age ${age}). Several headliner thrills (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks. Long walks between attractions are harder with young kids in tow — favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a young child (age ${age}). Several big thrill rides (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks. Long walks between attractions are harder with young kids in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 12) {
-    return `Youngest in the party is age ${age}. Most attractions are accessible; only the very tallest thrills (Indiana Jones at 46", Incredicoaster at 48", Guardians at 42") may be borderline — recommend with care if the child is small for their age.`;
+    return `Youngest in the party is age ${age}. Most attractions are accessible; only the very tallest thrills (Indiana Jones at 46", Incredicoaster at 48", Guardians at 42") may be borderline, recommend with care if the child is small for their age.`;
   }
   return `Youngest in the party is a teen (age ${age}). All attractions are height-accessible.`;
 }
@@ -86,7 +86,7 @@ export function personaToText(
   if (persona.ridePreferences.length > 0) {
     if (persona.ridePreferences.includes('first-time')) {
       parts.push(
-        "This is the guest's first visit to the park. Prioritize iconic, must-do attractions over obscure picks. Explain briefly what each ride is — they don't know the lore yet. Don't assume park knowledge."
+        "This is the guest's first visit to the park. Prioritize the famous rides over obscure picks. Say in a few plain words what each ride is; they don't know the park yet. Don't assume park knowledge."
       );
     }
     const otherPrefs = persona.ridePreferences.filter(

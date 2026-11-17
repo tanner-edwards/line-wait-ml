@@ -6,6 +6,7 @@
   "scripts": {
     "eval": "tsx src/eval.ts",
     "dry-run": "tsx src/dry-run.ts",
+    "live": "tsx src/live.ts",
     "judge-check": "tsx src/judge-check.ts",
     "typecheck": "tsc --noEmit -p .",
     "review-pack": "tsx src/review-pack.ts"

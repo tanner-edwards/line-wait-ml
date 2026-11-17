@@ -41,6 +41,21 @@ cannot check (claims match the data, present-tense picks, skip framing, restrict
 reason, voice, ranking). Judges are non-Claude Bedrock models (`config/judges.json`). They are
 pointers: run `npm run judge-check` and only trust a judge that scores high there.
 
+## Live snapshots
+
+Score the prompt on real park data instead of the scripted scenarios:
+
+```bash
+FIREBASE_SERVICE_ACCOUNT_JSON="$(cat ../firebase-key.json)" NODE_EXTRA_CA_CERTS=$HOME/.zscaler-ca.pem \
+  npm run live -- --park disneyland            # or california-adventure; --lat/--lng to stand somewhere specific
+npm run eval -- --fixtures LIVE-disneyland-<stamp> --variant spec-codes --runs 3
+```
+
+`live` captures the same data the Lambda uses (park, metadata, hours, reopens, weather) as a fixture
+under `live/`, anchored on the nearest operating ride to the given position (default: the park hub).
+A live fixture has no scripted assertions, so the hard code checks and the AI judge are the whole
+test. Note the bar: with `--runs 3` a scenario must pass 3 of 3.
+
 ## Independent second opinion
 
 `npm run review-pack` writes `site/review/review-pack-<run>.md` from the latest run: each scenario's

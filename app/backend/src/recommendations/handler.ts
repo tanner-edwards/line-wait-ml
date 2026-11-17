@@ -33,6 +33,7 @@ import { loadRecentReopens } from '../recentReopens';
 import { loadWeatherLine } from '../weather';
 import { RequestContext, RideForPrompt, RideLine } from './promptInputs';
 import {
+  applySkipGate,
   assignCodes,
   buildRequestContext,
   buildRideLines,
@@ -106,6 +107,8 @@ export interface RecommendationInputs {
   /** code → candidate, for mapping model output back to UUIDs. */
   codeMap: Map<string, RideForPrompt>;
   lines: RideLine[];
+  /** True when unwanted skip rides were removed from the pool (under SKIP_POOL_FRACTION skip). */
+  skipGated: boolean;
   requestContext: RequestContext;
   /** ms spent on the park fetch and side loads, for the [recs-timing] log. */
   loadMs: number;
@@ -164,7 +167,7 @@ export async function prepareRecommendationInputs(
     park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
     candidates: [], codeMap: new Map(), lines: [],
     requestContext: buildRequestContext({ parkSlug: req.park, now, parkHours, lines: [], weather: null, batchSize }),
-    parkHours, now, loadMs,
+    parkHours, now, loadMs, skipGated: false,
   });
 
   // Park closed, all rides already shown, etc. → nothing to recommend.
@@ -175,7 +178,11 @@ export async function prepareRecommendationInputs(
   const reachable = operating.filter(c => reachableBeforeClose(c.walkMinutes, untilClose));
   if (reachable.length === 0) return empty();
 
-  const codeMap = assignCodes(reachable);
+  // Skip-verdict rides leave the pool unless the day is bad (spec 6.11 amendment).
+  const { pool, gated: skipGated } = applySkipGate(reachable, req.persona);
+  if (pool.length === 0) return empty();
+
+  const codeMap = assignCodes(pool);
   const lines = buildRideLines(codeMap, {
     persona: req.persona,
     reopens,
@@ -188,7 +195,7 @@ export async function prepareRecommendationInputs(
   return {
     park, metadataMap, batchSize, nearest, currentRideId, currentRideEntity,
     candidates: [...codeMap.values()],
-    codeMap, lines, requestContext, parkHours, now, loadMs,
+    codeMap, lines, requestContext, parkHours, now, loadMs, skipGated,
   };
 }
 
@@ -241,7 +248,7 @@ export async function buildRecommendations(
       elapsedMs,
       preview: text.slice(0, 400),
     }));
-    llmRecs = parseAndValidate(text, codeMap, candidates, batchSize);
+    llmRecs = guardSkipLast(guardRankOne(parseAndValidate(text, codeMap, candidates, batchSize), inputs.lines), inputs.lines, inputs.skipGated);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
     console.warn('Bedrock call failed; falling back to deterministic recs', err);
@@ -389,6 +396,37 @@ export function parseAndValidate(
     if (valid.length >= batchSize) break;
   }
   return valid;
+}
+
+// Deterministic guard for hard rule 11 (spec section 8): rank 1 is never a ride
+// someone in the party cannot ride unless the guest wanted it. Haiku 4.5 puts
+// the biggest deal first regardless of the rule (S1: a star-verdict Indiana
+// Jones with a pregnant guest led 5 of 5 runs), so the server promotes the
+// first pick everyone can ride. Captions are untouched; order is the only
+// change, and only when the model broke the rule.
+export function guardRankOne<T extends { rideId: string }>(recs: T[] | null, lines: RideLine[]): T[] | null {
+  if (!recs || recs.length < 2) return recs;
+  const byId = new Map(lines.map(l => [l.rideId, l]));
+  const blocked = (r: T) => { const l = byId.get(r.rideId); return !!l && l.restricted.length > 0 && !l.wanted; };
+  if (!blocked(recs[0])) return recs;
+  const i = recs.findIndex(r => !blocked(r));
+  if (i < 0) return recs;
+  console.log('[rank-guard]', JSON.stringify({ demoted: recs[0].rideId, promoted: recs[i].rideId }));
+  return [recs[i], ...recs.slice(0, i), ...recs.slice(i + 1)];
+}
+
+// Deterministic guard for the skip gate: when unwanted skips were removed from
+// the pool, any (wanted) skip-verdict pick ranks after every non-skip pick.
+// Stable, so the model's order within each group is kept.
+export function guardSkipLast<T extends { rideId: string }>(recs: T[] | null, lines: RideLine[], gated: boolean): T[] | null {
+  if (!gated || !recs || recs.length < 2) return recs;
+  const skip = new Set(lines.filter(l => l.verdict === 'skip').map(l => l.rideId));
+  const keep = recs.filter(r => !skip.has(r.rideId));
+  const last = recs.filter(r => skip.has(r.rideId));
+  if (last.length === 0 || keep.length === 0) return recs;
+  if (keep.every((r, i) => recs[i] === r)) return recs;
+  console.log('[skip-guard]', JSON.stringify({ movedLast: last.map(r => r.rideId) }));
+  return [...keep, ...last];
 }
 
 // Deterministic guard for two copy rules Haiku breaks even when told not to

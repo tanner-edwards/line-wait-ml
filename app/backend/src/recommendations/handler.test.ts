@@ -442,7 +442,7 @@ describe('buildRecommendations — happy path', () => {
     expect(inputs.requestContext.anchor).toEqual({ code: 'r1', name: 'Current' });
   });
 
-  it('keeps skip-verdict rides in the candidate pool', async () => {
+  it('drops unwanted skip-verdict rides when under 80% of the pool is skip', async () => {
     const rides = [
       makeRide('curr', 'Current', 15, 5),
       makeRide('busy', 'Busy', 90, 0), // verdict skip
@@ -450,14 +450,36 @@ describe('buildRecommendations — happy path', () => {
     expect(rides[1].verdict?.verdict).toBe('skip');
     mockFetchPark.mockResolvedValue(makeParkData(rides));
     mockEnsureMeta.mockResolvedValue(currMeta());
-    mockInvoke.mockResolvedValue(bedrockOk(JSON.stringify({
-      recommendations: [{ rideId: 'busy', oneLiner: 'Everything is busy today' }],
-    })));
-
-    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
-    expect(res.recommendations.map(r => r.rideId)).toEqual(['busy']);
     const inputs = await prepareRecommendationInputs({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
-    expect(inputs.lines.find(l => l.rideId === 'busy')?.verdict).toBe('skip');
+    expect(inputs.skipGated).toBe(true);
+    expect(inputs.lines.map(l => l.rideId)).toEqual(['curr']);
+  });
+
+  it('keeps a wanted skip ride in the pool and ranks it after every non-skip pick', async () => {
+    const rides = [
+      makeRide('curr', 'Current', 15, 5),
+      makeRide('busy', 'Busy', 90, 0), // verdict skip, wanted
+    ];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+    mockInvoke.mockResolvedValue(bedrockOk(JSON.stringify({
+      recommendations: [{ rideId: 'busy', oneLiner: 'You wanted this' }, { rideId: 'curr', oneLiner: 'Go now' }],
+    })));
+    const persona = { tripDuration: null, youngestAge: null, ridePreferences: [], mustDoRideIds: ['busy'], accessibilityNeeds: [] };
+    const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG, persona });
+    expect(res.recommendations.map(r => r.rideId)).toEqual(['curr', 'busy']);
+  });
+
+  it('keeps every skip ride when 80% or more of the pool is skip', async () => {
+    const rides = [
+      makeRide('curr', 'Current', 15, 5),
+      makeRide('b1', 'B1', 90, 0), makeRide('b2', 'B2', 90, 0), makeRide('b3', 'B3', 90, 0), makeRide('b4', 'B4', 90, 0),
+    ];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+    const inputs = await prepareRecommendationInputs({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
+    expect(inputs.skipGated).toBe(false);
+    expect(inputs.lines.filter(l => l.verdict === 'skip')).toHaveLength(4);
   });
 
   it('removes rides the guest cannot walk to before close', async () => {
@@ -550,9 +572,9 @@ describe('buildRecommendations — degraded paths', () => {
     const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
 
     expect(res.degraded).toBe(true);
-    // verdict-tier order: b(go), a(neutral), then curr (skip). The nearest
-    // ride is a candidate now (spec 6.10) and skip verdicts stay in (6.11).
-    expect(res.recommendations.map(r => r.rideId)).toEqual(['b', 'a', 'curr']);
+    // verdict-tier order: b(go), a(neutral). The nearest ride is a candidate
+    // now (spec 6.10); curr (skip) left the pool because under 80% is skip (6.11).
+    expect(res.recommendations.map(r => r.rideId)).toEqual(['b', 'a']);
     expect(res.recommendations[0].oneLiner).toBe('Recommended based on current waits.');
   });
 
@@ -567,8 +589,8 @@ describe('buildRecommendations — degraded paths', () => {
 
     const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
     expect(res.degraded).toBe(true);
-    // 'a' plus the anchor 'curr'
-    expect(res.recommendations).toHaveLength(2);
+    // 'a' only: the anchor 'curr' is skip and left the pool (skip gate)
+    expect(res.recommendations).toHaveLength(1);
   });
 
   it('falls back with at least one entry when the whole pool is skip', async () => {
@@ -753,5 +775,47 @@ describe('cleanCopy', () => {
   });
   it('leaves clean copy alone', () => {
     expect(cleanCopy('Lines are long everywhere today, so this is the least bad move.')).toBe('Lines are long everywhere today, so this is the least bad move.');
+  });
+});
+
+describe('guardRankOne', () => {
+  const { guardRankOne } = jest.requireActual<typeof import('./handler')>('./handler');
+  const line = (rideId: string, restricted: string[], wanted = false) =>
+    ({ rideId, name: rideId, restricted, wanted } as unknown as import('./promptInputs').RideLine);
+  const recs = [{ rideId: 'indy' }, { rideId: 'pirates' }, { rideId: 'thunder' }];
+
+  it('promotes the first pick everyone can ride when a restricted, unwanted ride leads', () => {
+    const lines = [line('indy', ['pregnancy']), line('pirates', []), line('thunder', ['pregnancy'])];
+    expect(guardRankOne(recs, lines)!.map(r => r.rideId)).toEqual(['pirates', 'indy', 'thunder']);
+  });
+
+  it('leaves the order alone when rank 1 is unrestricted or wanted', () => {
+    expect(guardRankOne(recs, [line('indy', []), line('pirates', [])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+    expect(guardRankOne(recs, [line('indy', ['pregnancy'], true), line('pirates', [])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+  });
+
+  it('leaves the order alone when every pick is restricted, and passes null and short lists through', () => {
+    expect(guardRankOne(recs, [line('indy', ['toddler']), line('pirates', ['toddler']), line('thunder', ['toddler'])])!.map(r => r.rideId)).toEqual(['indy', 'pirates', 'thunder']);
+    expect(guardRankOne(null, [])).toBeNull();
+    expect(guardRankOne([recs[0]], [line('indy', ['toddler'])])).toEqual([recs[0]]);
+  });
+});
+
+describe('guardSkipLast', () => {
+  const { guardSkipLast } = jest.requireActual<typeof import('./handler')>('./handler');
+  const line = (rideId: string, verdict: string) => ({ rideId, verdict } as unknown as import('./promptInputs').RideLine);
+  const lines = [line('space', 'skip'), line('matterhorn', 'go'), line('thunder', 'go')];
+  const recs = [{ rideId: 'space' }, { rideId: 'matterhorn' }, { rideId: 'thunder' }];
+
+  it('moves skip picks after every non-skip pick when the gate is on, keeping each group in order', () => {
+    expect(guardSkipLast(recs, lines, true)!.map(r => r.rideId)).toEqual(['matterhorn', 'thunder', 'space']);
+  });
+
+  it('does nothing when the gate is off, the order already complies, or the list is short', () => {
+    expect(guardSkipLast(recs, lines, false)).toBe(recs);
+    const ok = [recs[1], recs[2], recs[0]];
+    expect(guardSkipLast(ok, lines, true)).toBe(ok);
+    expect(guardSkipLast([recs[0]], lines, true)).toEqual([recs[0]]);
+    expect(guardSkipLast(null, lines, true)).toBeNull();
   });
 });
