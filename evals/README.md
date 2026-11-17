@@ -59,6 +59,14 @@ the checks and the scenario expectations. It replies with a JSON block that can 
 
 ## Notes and decisions
 
+Product decisions made after the spec (2026-11-17, Tanner). The spec should be updated to match:
+- **S2B, party fit wins:** an unwanted ride the party can't all do never leads, even at a third of its
+  usual line. A toddler-friendly ride leads; Rise may appear lower with its restriction and rider swap.
+- **Rider swap, always:** every height-restricted pick mentions rider swap, because the app doesn't
+  know how many adults are in the party. Enforced by a hard code check.
+- **S7v, just reopened next door:** a ride a minute away that reopened minutes ago with a short line
+  is a go-now pick (the line refills fast). It leads, says it just reopened, and is never "rare".
+
 - Spec section 8 bans the words "go", "skip" and "star", but its own voice uses "Go now" and "Skip
   Rise for now". Those three are flagged only as labels ("star ride", "go verdict", "starred").
 - The spec's section 12 points at `app/backend/scripts/model-bench/`; the harness now lives here.

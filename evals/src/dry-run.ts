@@ -50,6 +50,7 @@ const probes: Probe[] = [
   P('S1', 'dupes', { ride: 'Pirates of the Caribbean', caption: 'Half its usual line.' }, { ride: 'Pirates of the Caribbean', caption: 'Half its usual line.' }),
   P('S1', 'count'),
   P('S1', 'count', ...Array(7).fill({ ride: 'Jungle Cruise', caption: 'Gentle.' })),
+  P('S2', 'rider-swap', { ride: "Peter Pan's Flight", caption: 'Half its usual line.' }, { ride: 'Star Wars: Rise of the Resistance', caption: 'A third of its usual line.', note: 'Your toddler is under the 40-inch minimum.' }),
   P('S2A', 'restricted-wanted', { ride: 'Star Wars: Rise of the Resistance', caption: 'Close to half its usual line.' }),
   P('S3', 'rare-needs-data', { ride: 'Big Thunder Mountain Railroad', caption: 'Rarely this short, go now.' }),
   P('S4', 'skip-positive', { ride: 'Dumbo the Flying Elephant', caption: 'A great deal with a short line.' }),

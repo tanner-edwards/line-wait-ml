@@ -119,7 +119,7 @@ export const FIXTURES: Fixture[] = [
   },
   {
     id: 'S2B', title: 'Toddler, Rise of the Resistance at a third of usual (not wanted)',
-    tests: 'A far-below window on a restricted ride can still lead; "rarely this short" is allowed because it is far below usual.',
+    tests: 'Party fit beats window strength: an unwanted ride the toddler cannot ride does not lead, even at a third of its usual line (decision 2026-11-17).',
     park: 'disneyland', localTime: 'Saturday 11:00 AM', nowMin: SAT(11, 0), hours: DL_HOURS,
     persona: { tripDuration: null, youngestAge: 3, ridePreferences: [], mustDoRideIds: [], accessibilityNeeds: ['stroller'] },
     anchor: { name: 'Mad Tea Party', wait: 15, usual: 15, verdict: 'neutral', reason: 'none', walk: 0 },
@@ -130,17 +130,20 @@ export const FIXTURES: Fixture[] = [
       { name: 'Dumbo the Flying Elephant', wait: 20, usual: 35, verdict: 'go', reason: 'below-usual', walk: 3 },
       { name: 'Storybook Land Canal Boats', wait: 15, usual: 25, verdict: 'neutral', reason: 'none', walk: 5 },
     ],
-    filled: ['Same as S2, with Rise of the Resistance at 25 and not wanted'],
-    asserts: [A.rank1('Star Wars: Rise of the Resistance')],
-    expectation: 'Rise of the Resistance is rank 1 even though it is not wanted. "Rarely this short" is allowed. Its restriction note says the toddler is under the minimum.',
+    filled: ['Same as S2, with Rise of the Resistance at 25 and not wanted', 'Decision 2026-11-17 (Tanner): party fit wins over window strength, replacing the spec\'s "Rise is rank 1 even unwanted"'],
+    asserts: [
+      A.notRank1('Star Wars: Rise of the Resistance'),
+      A.either('A ride the toddler can ride leads', A.rank1("Peter Pan's Flight"), A.rank1('Dumbo the Flying Elephant'), A.rank1('Storybook Land Canal Boats')),
+    ],
+    expectation: 'Party fit wins: a ride the toddler can ride leads (Peter Pan, Dumbo or Storybook). Rise of the Resistance may appear lower, with its restriction noted and rider swap mentioned; "rarely this short" is allowed for it because it is far below usual.',
     ideal: [
-      { ride: 'Star Wars: Rise of the Resistance', caption: "A third of its usual line and it's rarely this short; plan a rider swap.", note: 'Your toddler is under the 40-inch minimum.' },
       { ride: "Peter Pan's Flight", caption: 'Half its usual line, and an easy ride for your toddler.' },
+      { ride: 'Star Wars: Rise of the Resistance', caption: "A third of its usual line and it's rarely this short; plan a rider swap.", note: 'Your toddler is under the 40-inch minimum.' },
       { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line, and toddlers love it.' },
     ],
     bad: [
+      { ride: 'Star Wars: Rise of the Resistance', caption: "A third of its usual line and it's rarely this short; plan a rider swap.", note: 'Your toddler is under the 40-inch minimum.' },
       { ride: "Peter Pan's Flight", caption: 'Half its usual line, and an easy ride for your toddler.' },
-      { ride: 'Star Wars: Rise of the Resistance', caption: 'A third of its usual line.', note: 'Your toddler is under the 40-inch minimum.' },
     ],
   },
   // ------------------------------------------------------------------ S3
@@ -305,7 +308,7 @@ export const FIXTURES: Fixture[] = [
   },
   {
     id: 'S7v', title: 'Reopened ride next door (5 minutes ago)',
-    tests: 'A just-reopened posted time is not trusted enough to lead.',
+    tests: 'A ride that just reopened with a low wait, a minute away, is a go-now pick (decision 2026-11-17).',
     park: 'disneyland', localTime: 'Saturday 11:30 AM', nowMin: SAT(11, 30), hours: DL_HOURS,
     persona: { tripDuration: null, youngestAge: 10, ridePreferences: [], mustDoRideIds: [], accessibilityNeeds: [] },
     anchor: BUZZ,
@@ -314,19 +317,21 @@ export const FIXTURES: Fixture[] = [
       { name: 'Matterhorn Bobsleds', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 8 },
       { name: 'Big Thunder Mountain Railroad', wait: 30, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
     ],
-    filled: ['Same as S7 with minutesSinceReopen 5. The reopen threshold is still being tuned (spec 6.6): report separately.'],
+    filled: ['Same as S7 with minutesSinceReopen 5', 'Decision 2026-11-17 (Tanner): "if the ride opened 5 minutes ago and has a low wait, go there quickly", replacing the spec\'s Matterhorn-first ruling'],
     asserts: [
-      A.rank1('Matterhorn Bobsleds'),
-      A.rank('Space Mountain', 2),
-      A.captionIf('Space Mountain', /(check|real line|actual line|posted)/i, 'says to check the real line'),
+      A.rank1('Space Mountain'),
+      A.captionIf('Space Mountain', /(re-?opened|back (open|up|running)|just opened)/i, 'says it just reopened'),
     ],
-    expectation: 'Matterhorn is rank 1; Space Mountain is rank 2 with a "check the real line" caption.',
+    expectation: 'Space Mountain is rank 1: it just reopened, the line is short and it is a minute away, so go now before the line refills. Its caption says it just reopened and never calls it "rare" or "a great deal".',
     ideal: [
-      { ride: 'Matterhorn Bobsleds', caption: "A steady line, and a safe pick while Space Mountain's wait settles." },
-      { ride: 'Space Mountain', caption: 'Just reopened, so check the real line before you commit.' },
+      { ride: 'Space Mountain', caption: 'It just reopened and the line is short, so head over now.' },
+      { ride: 'Matterhorn Bobsleds', caption: 'A steady line, and a safe fallback if Space Mountain fills up.' },
       { ride: 'Big Thunder Mountain Railroad', caption: "A bit under its usual line, and it's holding steady." },
     ],
-    bad: [{ ride: 'Space Mountain', caption: 'A great deal right next door, go now.' }],
+    bad: [
+      { ride: 'Matterhorn Bobsleds', caption: "A steady line, and a safe pick while Space Mountain's wait settles." },
+      { ride: 'Space Mountain', caption: 'Just reopened, so check the real line before you commit.' },
+    ],
   },
   // ------------------------------------------------------------------ S8
   {

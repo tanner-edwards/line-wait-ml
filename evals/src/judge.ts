@@ -9,13 +9,13 @@ import { converse } from './llm';
 import { extractJson } from './parse';
 import { BuiltFixture, ResolvedRec } from './types';
 
-export const JUDGE_VERSION = 'spec-2026-11-16-v3'; // v2: go/skip/star only as labels; party-tied descriptions ok. v3: judge only rides shown to the model; mechanical copy rules left to code; correct rounded math is grounded; restrictions only as marked in the data
+export const JUDGE_VERSION = 'spec-2026-11-16-v4'; // v4 (2026-11-17 decisions): party fit beats window strength; always mention rider swap; a just-reopened short line next door is go-now
 
 export const CRITERIA = [
   { id: 'grounded', label: 'Claims match the data', q: 'Every factual claim (shorter or longer than usual, rising, falling, holding, "rarely this short", any time or number, any fact about a ride such as its type) matches the data or is true of the real ride. Correctly rounded arithmetic from the data counts as grounded. This question is about facts only, not style.' },
   { id: 'present-tense', label: 'Every pick is a do-it-now move', q: "Every pick is something to walk to now. No pick's own caption tells the guest to come back later; a later drop appears only as a reason on a different pick." },
   { id: 'skip-framing', label: 'Skip picks framed honestly', q: 'Each picked ride whose verdict is skip opens (first clause) with busy-day or least-bad framing, or for a wanted ride "you wanted this and it won\'t get shorter". No positive-timing words. Answer "na" if no skip-verdict ride was picked.', na: true },
-  { id: 'restrictions', label: 'Restrictions handled honestly', q: 'A picked ride whose "restricted for" column is not "none" is never presented as a clean fit: the caption or note names who it affects (rider swap for height; one person sits out for pregnancy). Only the data decides which rides are restricted. Answer "na" if no restricted ride was picked.', na: true },
+  { id: 'restrictions', label: 'Restrictions handled honestly', q: 'A picked ride whose "restricted for" column is not "none" is never presented as a clean fit: the caption or note names who it affects (always rider swap for height; one person sits out for pregnancy). Only the data decides which rides are restricted. Answer "na" if no restricted ride was picked.', na: true },
   { id: 'strongest-reason', label: 'Leads with the strongest reason', q: 'Each caption leads with the single strongest reason this ride earned its spot now and adds something the card (name, wait, walk) does not already show.' },
   { id: 'voice', label: 'Voice', q: 'Confident, warm and plain, like a friend who knows the park. No hype, hedging or filler.' },
   { id: 'ranking', label: 'Ranking fits the spec', q: "The order follows the ranking rules and this scenario's expectation, judged only among the rides that were shown to the model." },
