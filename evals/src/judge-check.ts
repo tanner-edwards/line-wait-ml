@@ -7,7 +7,7 @@ import { join } from 'path';
 import { arg, EVALS_ROOT } from './args';
 import { buildFixture } from './fixtures/derive';
 import { FIXTURES, fixtureById } from './fixtures/scenarios';
-import { judgeAnswer, pool } from './judge';
+import { isJudgement, judgeAnswer, pool } from './judge';
 import { AnswerRow, BuiltFixture, ResolvedRec } from './types';
 
 const toRecs = (rows: AnswerRow[]): ResolvedRec[] => rows.map(r => ({ ride: r.ride, rawId: r.ride, oneLiner: r.caption, restrictionNote: r.note ?? null }));
@@ -27,7 +27,7 @@ async function main() {
       if (r.judge !== judge) return;
       const j = res[i];
       total++;
-      if (!j) { console.log(`  ??  ${r.b.fx.id.padEnd(4)} ${r.kind.padEnd(5)} unusable reply`); return; }
+      if (!isJudgement(j)) { console.log(`  ??  ${r.b.fx.id.padEnd(4)} ${r.kind.padEnd(5)} unusable: ${j.error}`); return; }
       const fails = Object.entries(j.results).filter(([, v]) => v?.pass === false);
       const ok = r.kind === 'ideal' ? fails.length === 0 : fails.length > 0;
       if (ok) right++;

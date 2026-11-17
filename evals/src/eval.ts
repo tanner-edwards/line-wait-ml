@@ -17,7 +17,7 @@ import { buildFixture } from './fixtures/derive';
 import { FIXTURES, fixtureById } from './fixtures/scenarios';
 import { grade } from './grade';
 import { RunData, renderIndex, renderRun } from './html';
-import { JUDGE_VERSION, Judgement, judgeAnswer, pool } from './judge';
+import { isJudgement, JUDGE_VERSION, Judgement, JudgeFailure, judgeAnswer, pool } from './judge';
 import { MOCK } from './llm';
 import { generate } from './run';
 import { RunRecord } from './types';
@@ -41,7 +41,7 @@ function writeSite(made: RunData[], all: RunData[]) {
 }
 
 async function judgeAll(records: RunRecord[], judges: string[]): Promise<Judgement[]> {
-  const tasks: (() => Promise<Judgement | null>)[] = [];
+  const tasks: (() => Promise<Judgement | JudgeFailure>)[] = [];
   for (const rec of records) {
     const b = buildFixture(fixtureById(rec.fixture));
     const g = grade(rec, b);
@@ -51,8 +51,10 @@ async function judgeAll(records: RunRecord[], judges: string[]): Promise<Judgeme
   if (!tasks.length) return [];
   process.stdout.write(`AI judges: ${tasks.length} reviews `);
   const res = await pool(tasks, 4, k => { if (k % 10 === 0 || k === tasks.length) process.stdout.write('.'); });
-  const ok = res.filter((x): x is Judgement => x !== null);
-  console.log(` done${ok.length < res.length ? ` (${res.length - ok.length} unusable replies)` : ''}`);
+  const ok = res.filter(isJudgement);
+  const failed = res.filter((x): x is JudgeFailure => !isJudgement(x));
+  console.log(` done${failed.length ? ` (${failed.length} unusable replies)` : ''}`);
+  for (const [judge, msg] of new Map(failed.map(f => [f.judge, f.error]))) console.log(`  ${judge}: ${failed.filter(f => f.judge === judge).length} unusable, e.g. ${msg}`);
   return ok;
 }
 

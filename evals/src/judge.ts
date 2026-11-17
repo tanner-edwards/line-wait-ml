@@ -24,6 +24,9 @@ export type CriterionId = (typeof CRITERIA)[number]['id'];
 
 export interface CriterionResult { pass: boolean | null; why: string } // null = not applicable
 export interface Judgement { judge: string; fixture: string; run: number; results: Partial<Record<CriterionId, CriterionResult>> }
+/** Why a judge call produced nothing usable (API error, no JSON, missing answers). */
+export interface JudgeFailure { judge: string; fixture: string; run: number; error: string }
+export const isJudgement = (x: Judgement | JudgeFailure | null): x is Judgement => !!x && 'results' in x;
 
 const rules = () => readFileSync(join(EVALS_ROOT, 'config', 'judge-rules.md'), 'utf8').replace(/<!--[\s\S]*?-->/g, '').trim();
 
@@ -73,7 +76,7 @@ ${CRITERIA.map(c => `- ${c.id}: ${c.q}`).join('\n')}
 
 Reply with ONLY a JSON object: {${CRITERIA.map(c => `"${c.id}":{"pass":true|false${'na' in c ? '|"na"' : ''},"why":"..."}`).join(',')}}`;
 
-export async function judgeAnswer(judge: string, b: BuiltFixture, recs: ResolvedRec[], run: number): Promise<Judgement | null> {
+export async function judgeAnswer(judge: string, b: BuiltFixture, recs: ResolvedRec[], run: number): Promise<Judgement | JudgeFailure> {
   const user = [
     `## Scenario ${b.fx.id}: ${b.fx.title}`,
     ...situationLines(b),
@@ -81,22 +84,25 @@ export async function judgeAnswer(judge: string, b: BuiltFixture, recs: Resolved
     '', '## The answer (rank order)',
     ...recs.map((r, i) => `${i + 1}. ${r.ride ?? `UNKNOWN RIDE (${r.rawId})`}: "${r.oneLiner}"${r.restrictionNote ? ` [restriction note: ${r.restrictionNote}]` : ''}`),
   ].join('\n');
+  const fail = (error: string): JudgeFailure => ({ judge, fixture: b.fx.id, run, error });
+  let text: string;
   try {
     // Generous limit: newer Claude models think by default and that counts toward max tokens;
-    // too low a limit truncates the JSON (shows up as "unusable replies"). No sampling params are sent.
-    const res = await converse(judge, SYSTEM(), user, { maxTokens: 4000 });
-    const j = extractJson(res.text);
-    const results: Judgement['results'] = {};
-    for (const c of CRITERIA) {
-      const v = j[c.id];
-      if (!v) continue;
-      const p = v.pass;
-      results[c.id] = { pass: p === 'na' || p === null ? null : p === true || p === 'true' ? true : false, why: String(v.why ?? '').slice(0, 240) };
-    }
-    return Object.keys(results).length ? { judge, fixture: b.fx.id, run, results } : null;
-  } catch {
-    return null;
+    // too low a limit truncates the JSON. No sampling params are sent.
+    text = (await converse(judge, SYSTEM(), user, { maxTokens: 4000 })).text;
+  } catch (err) {
+    return fail(`${(err as Error).name}: ${(err as Error).message.slice(0, 200)}`);
   }
+  let j: any;
+  try { j = extractJson(text); } catch { return fail(`reply had no JSON object. Reply starts: ${JSON.stringify(text.slice(0, 160))}`); }
+  const results: Judgement['results'] = {};
+  for (const c of CRITERIA) {
+    const v = j[c.id];
+    if (!v) continue;
+    const p = v.pass;
+    results[c.id] = { pass: p === 'na' || p === null ? null : p === true || p === 'true', why: String(v.why ?? '').slice(0, 240) };
+  }
+  return Object.keys(results).length ? { judge, fixture: b.fx.id, run, results } : fail(`JSON had none of the expected questions. Keys: ${Object.keys(j).slice(0, 8).join(', ')}`);
 }
 
 export async function pool<T>(tasks: (() => Promise<T>)[], size: number, onDone?: (n: number) => void): Promise<T[]> {
