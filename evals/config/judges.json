@@ -1,7 +1,6 @@
 {
-  "_comment": "Bedrock models that judge answers. Only list a judge that scores high on `npm run judge-check`. 2026-11-17: Llama 3.3 70B 27/28 (96%; the one miss is S9's code-only flaw). Qwen3 32B 21/28 (75%) was removed. Sonnet 5.5 added as a second judge pending its judge-check; it is the same family as Haiku, so keep Llama as the cross-family check and watch for Sonnet passing answers Llama fails.",
+  "_comment": "Bedrock models that judge answers. Only list a judge that scores high on `npm run judge-check`. 2026-11-17: Llama 3.3 70B 26-27/27-28 across two runs (96%). Qwen3 32B 21/28 (75%), removed. Sonnet 5.5 is listed for the account but calls are AccessDenied; add a Sonnet back once a model ID both works and passes judge-check (same family as Haiku, so keep Llama as the cross-family check).",
   "judges": [
-    "us.meta.llama3-3-70b-instruct-v1:0",
-    "us.anthropic.claude-sonnet-5-5"
+    "us.meta.llama3-3-70b-instruct-v1:0"
   ]
 }
