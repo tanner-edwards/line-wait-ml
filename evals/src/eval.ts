@@ -46,7 +46,7 @@ async function judgeAll(records: RunRecord[], judges: string[]): Promise<Judgeme
     const b = buildFixture(fixtureById(rec.fixture));
     const g = grade(rec, b);
     if (!g.recs || !g.recs.length) continue;
-    for (const j of judges) tasks.push(() => judgeAnswer(j, b, g.recs!, rec.run));
+    for (const j of judges) tasks.push(() => judgeAnswer(j, b, g.recs!, rec.run, rec.offered));
   }
   if (!tasks.length) return [];
   process.stdout.write(`AI judges: ${tasks.length} reviews `);
