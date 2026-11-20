@@ -5,18 +5,22 @@
 // harness.
 //
 // Reads BEDROCK_MODEL_ID + BEDROCK_REGION from env (set by template.yaml).
-// Hard-codes max_tokens at 2000 as the per-call abuse-prevention cap.
+// max_tokens is the per-call abuse-prevention cap. It is 4000, not 2000,
+// because Haiku 5.5 and later think by default and the thinking tokens count
+// against max_tokens; the answer itself is ~300 tokens.
 //
-// Body is deliberately minimal: no thinking, no sampling params
-// (temperature/top_p/top_k), no output_config, no cache_control. See spec
-// ai-recommendation-expectations.md section 10 for why each is absent.
+// Body is deliberately minimal: no sampling params (temperature/top_p/top_k),
+// no cache_control, no thinking block (the newer models run adaptive thinking
+// on their own). BEDROCK_EFFORT, when set, adds output_config.effort so the
+// eval can compare low/medium latency on the newer models; unset sends nothing.
+// See spec ai-recommendation-expectations.md section 10.
 
 import {
   BedrockRuntimeClient,
   InvokeModelCommand,
 } from '@aws-sdk/client-bedrock-runtime';
 
-const MAX_TOKENS = 2000;
+const MAX_TOKENS = 4000;
 
 // stop_reason values that mean the text is unusable. The caller's catch
 // falls back to the deterministic recommendation path.
@@ -71,6 +75,7 @@ export async function invokeRecommendations(
     messages: [
       { role: 'user', content: userMessage },
     ],
+    ...(process.env.BEDROCK_EFFORT ? { output_config: { effort: process.env.BEDROCK_EFFORT } } : {}),
   };
 
   const command = new InvokeModelCommand({

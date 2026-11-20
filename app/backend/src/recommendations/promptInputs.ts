@@ -25,6 +25,20 @@ export type FieldShape = 'flat' | 'mixed' | 'bad';
 export type Restriction = 'toddler' | 'child' | 'pregnancy' | 'wheelchair' | 'sensory';
 export type IdStyle = 'code' | 'uuid';
 
+/** Ride facts from ride metadata, read by the prompt as evidence (a water ride on a
+ *  hot day, an indoor queue in the rain, a short ride for a tired toddler). Null when
+ *  the metadata doc predates the 2026-11-18 seeder. */
+export interface RideFacts {
+  /** 'indoor' | 'outdoor' | 'mixed' queue, or null. */
+  queue: string | null;
+  water: boolean;
+  /** 1 (gentle) .. 5 (intense), or null. */
+  thrill: number | null;
+  durationMin: number | null;
+  /** Short editorial note, normalized to plain casing: "whitewater raft, soaking, 42in min". */
+  notes: string | null;
+}
+
 export interface RideLine {
   /** r1..rN, assigned nearest-first (walk asc, then name). */
   code: string;
@@ -60,6 +74,7 @@ export interface RideLine {
   window: { wait: number; at: string } | null;
   /** The ride nearest the guest (the "Near X" header ride). */
   isAnchor: boolean;
+  facts: RideFacts | null;
 }
 
 export interface RequestContext {
@@ -73,6 +88,8 @@ export interface RequestContext {
   field: FieldShape;
   /** e.g. "88F, feels like 92, clear", or null when unavailable. */
   weather: string | null;
+  /** Local sunset as "4:52 PM", computed from the resort's coordinates. */
+  sunset: string | null;
   anchor: { code: string; name: string } | null;
   batchSize: number;
 }

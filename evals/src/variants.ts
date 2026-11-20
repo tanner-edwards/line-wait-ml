@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 // Prompt variants. A variant turns a fixture into the exact system prompt + user message a given
 // version of the server would send, and maps the model's ids back to rides.
 //
@@ -20,6 +22,7 @@ import { BATCH } from './checks';
 // The spec rewrite (2026-11-17): the live backend's prompt and input builders.
 import { buildSystemPrompt as specSystem, buildUserMessage as specUser } from '../../app/backend/src/recommendations/promptBuilder';
 import { personaToText as specPersonaToText } from '../../app/backend/src/recommendations/persona';
+import { buildSystemPromptIntent, buildUserMessageIntent } from '../../app/backend/src/recommendations/promptIntent';
 import { applySkipGate, assignCodes, buildRequestContext, buildRideLines, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { IdStyle } from '../../app/backend/src/recommendations/promptInputs';
 import { cleanCopy, guardRankOne, guardSkipLast } from '../../app/backend/src/recommendations/handler';
@@ -57,7 +60,26 @@ export function toBackendRide(r: DerivedRide): Ride {
   } as unknown as Ride;
 }
 
-const metadataMap = (b: BuiltFixture) => new Map<string, RideMetadata>(b.rides.map(r => [r.id, { rideId: r.id, parkId: b.fx.park, name: r.name, lat: null, lng: null, source: 'manual' } as RideMetadata]));
+// Ride facts (queue type, water, thrill, duration, notes) come from the repo's ride_metadata.json by
+// name, the same source the Firestore seeder reads, so fixtures carry what the Lambda sees.
+const RIDE_FACTS: Map<string, Record<string, unknown>> = (() => {
+  try {
+    const raw = JSON.parse(readFileSync(join(__dirname, '..', '..', 'ride_metadata.json'), 'utf8')) as unknown;
+    const arr = (Array.isArray(raw) ? raw : Object.values(raw as Record<string, unknown[]>).flat()) as Record<string, unknown>[];
+    return new Map(arr.map(r => [String(r.name), r]));
+  } catch { return new Map(); }
+})();
+const metadataMap = (b: BuiltFixture) => new Map<string, RideMetadata>(b.rides.map(r => {
+  const f = RIDE_FACTS.get(r.name);
+  return [r.id, {
+    rideId: r.id, parkId: b.fx.park, name: r.name, lat: null, lng: null, source: 'manual',
+    thrillLevel: (f?.thrill_level as number | undefined) ?? r.thrillLevel ?? null,
+    queueType: (f?.queue_type as string | undefined) ?? null,
+    waterRide: (f?.water_ride as boolean | undefined) ?? false,
+    durationMin: (f?.duration_min as number | undefined) ?? null,
+    notes: (f?.notes as string | undefined) ?? null,
+  } as RideMetadata];
+}));
 
 const byId = (b: BuiltFixture) => new Map(b.rides.map(r => [r.id, r.name]));
 
@@ -110,7 +132,7 @@ function fixtureNow(b: BuiltFixture): Date {
 }
 
 /** The spec rewrite, rendered exactly as app/backend builds it from the same fixture. */
-function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
+function renderSpec(b: BuiltFixture, idStyle: IdStyle, prompt: 'rules' | 'intent' = 'rules'): Rendered {
   const anchor = b.rides.find(r => r.isAnchor)!;
   const now = fixtureNow(b);
   const candidates = b.rides
@@ -122,15 +144,15 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle): Rendered {
   const reopens = new Map<string, number>();
   for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
   const lines = buildRideLines(codeMap, {
-    persona: b.persona, reopens, anchorRideId: anchor.id, now, timeZone: parkTimeZone(b.fx.park),
+    persona: b.persona, metadata: metadataMap(b), reopens, anchorRideId: anchor.id, now, timeZone: parkTimeZone(b.fx.park),
   });
   const weather = b.fx.weather ? `${b.fx.weather.tempF}F, feels like ${b.fx.weather.feelsF}, ${b.fx.weather.conditions}` : null;
   const ctx = buildRequestContext({ parkSlug: b.fx.park, now, parkHours: b.fx.hours, lines, weather, batchSize: BATCH });
   const codes = new Map(lines.map(l => [l.code, l.name]));
   const ids = byId(b);
   return {
-    system: specSystem(specPersonaToText(b.persona, metadataMap(b)), BATCH, { idStyle }).join('\n\n'),
-    user: specUser(ctx, lines, { idStyle }),
+    system: (prompt === 'intent' ? buildSystemPromptIntent : specSystem)(specPersonaToText(b.persona, metadataMap(b)), BATCH, { idStyle }).join('\n\n'),
+    user: (prompt === 'intent' ? buildUserMessageIntent : specUser)(ctx, lines, { idStyle }),
     offered: lines.map(l => l.name),
     // The Lambda's parser runs cleanCopy (dashes to commas, "!" to ".") on every
     // caption and guardRankOne (a restricted, unwanted ride never leads) on the
@@ -158,7 +180,13 @@ const specUuid: Variant = {
   render: b => renderSpec(b, 'uuid'),
 };
 
-export const VARIANTS: Record<string, Variant> = { v1, 'spec-codes': specCodes, 'spec-uuid': specUuid };
+const intentCodes: Variant = {
+  id: 'intent-codes',
+  description: 'Intent prompt (2026-11-18): same inputs and output, rules replaced by intent; written for Haiku 5.5.',
+  render: b => renderSpec(b, 'code', 'intent'),
+};
+
+export const VARIANTS: Record<string, Variant> = { v1, 'spec-codes': specCodes, 'spec-uuid': specUuid, 'intent-codes': intentCodes };
 
 export function getVariant(id: string): Variant {
   const v = VARIANTS[id];

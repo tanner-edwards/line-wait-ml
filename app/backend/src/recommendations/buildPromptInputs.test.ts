@@ -2,6 +2,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 import {
   applySkipGate,
+  factsFor,
+  normalizeNotes,
+  sunsetFor,
   assignCodes,
   bucketsFor,
   buildRequestContext,
@@ -345,21 +348,21 @@ describe('buildRideLines + buildRequestContext', () => {
         verdict: 'neutral', reason: 'none', wanted: false, restricted: [],
         reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
         // 390 min out is beyond WINDOW_MAX_MIN, so the window is withheld from the model.
-        window: null, isAnchor: true,
+        window: null, isAnchor: true, facts: null,
       },
       {
         code: 'r2', rideId: 'uuid-space', name: 'Space Mountain',
         wait: 15, arrive: 16, usual: 45, ofUsual: 'far-below', vsUsual: -30, walk: 3,
         verdict: 'star', reason: 'rare-low', wanted: false, restricted: ['toddler'],
         reopenedMinAgo: 20, buckets: [15, 25, 35, 38, 40], trend: 'rising',
-        window: null, isAnchor: false,
+        window: null, isAnchor: false, facts: null,
       },
       {
         code: 'r3', rideId: 'uuid-mh', name: 'Matterhorn Bobsleds',
         wait: 25, arrive: 25, usual: null, ofUsual: null, vsUsual: null, walk: 8,
         verdict: 'neutral', reason: 'none', wanted: true, restricted: [],
         reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
-        window: null, isAnchor: false,
+        window: null, isAnchor: false, facts: null,
       },
     ]);
   });
@@ -379,6 +382,7 @@ describe('buildRideLines + buildRequestContext', () => {
       minutesUntilClose: 570,
       field: 'mixed',
       weather: '71F, feels like 71, clear',
+      sunset: expect.stringMatching(/^\d{1,2}:\d\d PM$/),
       anchor: { code: 'r1', name: 'Buzz Lightyear Astro Blasters' },
       batchSize: 6,
     });
@@ -426,5 +430,23 @@ describe('applySkipGate', () => {
     expect(gated).toBe(false);
     expect(pool).toHaveLength(5);
     expect(applySkipGate([], null)).toEqual({ pool: [], gated: false });
+  });
+});
+
+describe('ride facts and sunset', () => {
+  it('flattens the notes shorthand and reads the facts fields', () => {
+    expect(normalizeNotes('Whitewater raft; SOAKING; 42in min')).toBe('whitewater raft, soaking, 42in min');
+    expect(normalizeNotes('')).toBeNull();
+    expect(factsFor({ rideId: 'x', parkId: 'p', name: 'n', lat: null, lng: null, source: 'manual', queueType: 'indoor', waterRide: false, thrillLevel: 4, durationMin: 3, notes: 'Indoor coaster in the dark; 40in min' }))
+      .toEqual({ queue: 'indoor', water: false, thrill: 4, durationMin: 3, notes: 'indoor coaster in the dark, 40in min' });
+  });
+  it('returns null facts for a legacy metadata doc or no doc', () => {
+    expect(factsFor({ rideId: 'x', parkId: 'p', name: 'n', lat: null, lng: null, source: 'manual' })).toBeNull();
+    expect(factsFor(null)).toBeNull();
+  });
+  it('computes an Anaheim sunset within a few minutes of the almanac', () => {
+    // 2026-11-17: sunset in Anaheim is about 4:47 PM PST. 2026-06-21: about 8:05 PM PDT.
+    expect(sunsetFor(new Date('2026-11-17T20:00:00Z'), 'America/Los_Angeles')).toMatch(/^4:(4[4-9]|5[0-1]) PM$/);
+    expect(sunsetFor(new Date('2026-06-21T20:00:00Z'), 'America/Los_Angeles')).toMatch(/^8:0[2-8] PM$/);
   });
 });

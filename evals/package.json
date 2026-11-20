@@ -9,10 +9,13 @@
     "live": "tsx src/live.ts",
     "judge-check": "tsx src/judge-check.ts",
     "typecheck": "tsc --noEmit -p .",
-    "review-pack": "tsx src/review-pack.ts"
+    "review-pack": "tsx src/review-pack.ts",
+    "compare": "tsx src/compare.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-bedrock-runtime": "^3.1053.0"
+    "@anthropic-ai/sdk": "^1.10.0",
+    "@aws-sdk/client-bedrock-runtime": "^3.1053.0",
+    "openai": "^6.49.0"
   },
   "devDependencies": {
     "@types/node": "^25.8.0",

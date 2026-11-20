@@ -27,6 +27,7 @@ import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
 import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
 import { invokeRecommendations } from './bedrockClient';
 import { buildSystemPrompt, buildUserMessage } from './promptBuilder';
+import { buildSystemPromptIntent, buildUserMessageIntent } from './promptIntent';
 import { personaToText } from './persona';
 import { getParkHours, ParkHours } from './parkHours';
 import { loadRecentReopens } from '../recentReopens';
@@ -185,6 +186,7 @@ export async function prepareRecommendationInputs(
   const codeMap = assignCodes(pool);
   const lines = buildRideLines(codeMap, {
     persona: req.persona,
+    metadata: metadataMap,
     reopens,
     anchorRideId: currentRideId || null,
     now,
@@ -229,8 +231,16 @@ export async function buildRecommendations(
   // Build system prompt fresh per request so the persona block (last block)
   // reflects the calling user. When persona is null/empty, personaToText
   // returns DEFAULT_PERSONA.
-  const systemPrompt = buildSystemPrompt(personaToText(req.persona, metadataMap), batchSize);
-  const userMessage = buildUserMessage(inputs.requestContext, inputs.lines);
+  // PROMPT_VARIANT=intent selects the 2026-11-18 intent prompt (promptIntent.ts);
+  // anything else is the rules prompt. Both read the same inputs and return the
+  // same shape, so the switch is a Lambda env var, not a release.
+  const intent = process.env.PROMPT_VARIANT === 'intent';
+  const systemPrompt = intent
+    ? buildSystemPromptIntent(personaToText(req.persona, metadataMap), batchSize)
+    : buildSystemPrompt(personaToText(req.persona, metadataMap), batchSize);
+  const userMessage = intent
+    ? buildUserMessageIntent(inputs.requestContext, inputs.lines)
+    : buildUserMessage(inputs.requestContext, inputs.lines);
 
   let llmRecs: Recommendation[] | null = null;
   try {
@@ -248,7 +258,7 @@ export async function buildRecommendations(
       elapsedMs,
       preview: text.slice(0, 400),
     }));
-    llmRecs = guardSkipLast(guardRankOne(parseAndValidate(text, codeMap, candidates, batchSize), inputs.lines), inputs.lines, inputs.skipGated);
+    llmRecs = guardSkipLast(guardRankOne(guardNowOnly(parseAndValidate(text, codeMap, candidates, batchSize)), inputs.lines), inputs.lines, inputs.skipGated);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
     console.warn('Bedrock call failed; falling back to deterministic recs', err);
@@ -415,6 +425,31 @@ export function guardRankOne<T extends { rideId: string }>(recs: T[] | null, lin
   return [recs[i], ...recs.slice(0, i), ...recs.slice(i + 1)];
 }
 
+// Deterministic guard for hard rule 1 (intent prompt): every pick is actionable
+// in 30 minutes or less. A caption that tells the guest to wait, come back, or
+// aim for a later time is the one failure the product can't show (Tanner,
+// 2026-11-19), so the pick is dropped rather than reworded. A clock time on
+// its own is fine ("in line before 11:00 PM" is a reason to go now); only a
+// time or meal that the caption points the guest toward counts. The batch has six
+// and More to Consider refills, so a dropped pick costs little; an empty result
+// falls through to the deterministic fallback like any other bad answer.
+// Exported so the eval harness flags exactly what production would drop.
+export const DEFERS = new RegExp([
+  String.raw`(?<!\b(?:the|a|an|your|usual|posted|normal|short|long|minute|min) )\bwait (?:for|until|till|it out|a (?:bit|while|few)|on it)\b`,
+  String.raw`\b(?:come|swing|head|circle|loop) back\b`,
+  String.raw`\breturn (?:later|tonight|this|in)\b`,
+  String.raw`\blater (?:today|tonight|on|this (?:morning|afternoon|evening))\b`,
+  String.raw`\b(?:after|around|closer to|at|until|till) (?:dinner|lunch|dark|sunset|the parade|the fireworks|\d{1,2}:\d{2}\b|\d{1,2}\s?(?:am|pm)\b)`,
+].join('|'), 'i');
+
+export function guardNowOnly<T extends { oneLiner: string; rideId: string }>(recs: T[] | null): T[] | null {
+  if (!recs) return recs;
+  const kept = recs.filter(r => !DEFERS.test(r.oneLiner));
+  if (kept.length === recs.length) return recs;
+  console.log('[now-guard]', JSON.stringify({ dropped: recs.filter(r => DEFERS.test(r.oneLiner)).map(r => ({ rideId: r.rideId, oneLiner: r.oneLiner })) }));
+  return kept;
+}
+
 // Deterministic guard for the skip gate: when unwanted skips were removed from
 // the pool, any (wanted) skip-verdict pick ranks after every non-skip pick.
 // Stable, so the model's order within each group is kept.
@@ -432,12 +467,21 @@ export function guardSkipLast<T extends { rideId: string }>(recs: T[] | null, li
 // Deterministic guard for two copy rules Haiku breaks even when told not to
 // (spec section 9): em/en dashes become a comma, exclamation marks a period.
 // Collapses doubled spaces the substitution can leave behind.
+const NUMBER_WORDS: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+  thirteen: 13, fourteen: 14, fifteen: 15, twenty: 20, thirty: 30, forty: 40, 'forty-five': 45, sixty: 60,
+};
+
 export function cleanCopy(text: string): string {
   return text
     .replace(/\s*[\u2014\u2013]\s*/g, ', ')
     // "You wanted this one" reads as blame (Tanner, 2026-11-17); Haiku keeps
     // writing it despite the hard rule, so it becomes "one you had your eye on".
     .replace(/\b(y)ou (?:still )?want(?:ed)? this(?: one| ride)?\b/gi, (_m, y: string) => `${y === 'Y' ? 'O' : 'o'}ne you had your eye on`)
+    // Numbers read better as digits (Tanner, 2026-11-19); the prompt asks for digits and the
+    // model complies about half the time. Only a number word directly before "minute"/"min"
+    // is converted, so "one you had your eye on" and "a third" are untouched.
+    .replace(/\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty|thirty|forty|forty-five|sixty)(?=[- ]?min(?:ute)?s?\b)/gi, m => String(NUMBER_WORDS[m.toLowerCase()]))
     .replace(/!+/g, '.')
     .replace(/,\s*,/g, ',')
     .replace(/\s{2,}/g, ' ')

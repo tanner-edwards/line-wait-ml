@@ -13,6 +13,7 @@ import {
   PARKS,
   Persona,
   Ride,
+  RideMetadata,
   VerdictReasons,
 } from '../types';
 import {
@@ -23,6 +24,7 @@ import {
   OfUsual,
   RequestContext,
   Restriction,
+  RideFacts,
   RideForPrompt,
   SKIP_POOL_FRACTION,
   RideLine,
@@ -317,6 +319,8 @@ export function trendFor(wait: number | null, buckets: (number | null)[]): RideL
 
 export interface RideLineInputs {
   persona: Persona | null | undefined;
+  /** rideId → metadata, for the facts line. Optional so older callers and fixtures still build. */
+  metadata?: Map<string, RideMetadata>;
   /** rideId → minutes since reopen, from loadRecentReopens. */
   reopens: Map<string, number>;
   /** UUID of the nearest ride (the "Near X" header ride), or null. */
@@ -324,6 +328,44 @@ export interface RideLineInputs {
   now: Date;
   timeZone: string;
 }
+
+/** Ride facts for the prompt, or null when the metadata doc has none of them. */
+export function factsFor(meta: RideMetadata | null | undefined): RideFacts | null {
+  if (!meta) return null;
+  const has = meta.queueType != null || meta.waterRide != null || meta.durationMin != null || meta.notes != null || meta.thrillLevel != null;
+  if (!has) return null;
+  return {
+    queue: meta.queueType ?? null,
+    water: meta.waterRide === true,
+    thrill: meta.thrillLevel ?? null,
+    durationMin: meta.durationMin ?? null,
+    notes: normalizeNotes(meta.notes),
+  };
+}
+
+/** "Whitewater raft; SOAKING; 42in min" -> "whitewater raft, soaking, 42in min". The model
+ *  echoes casing and punctuation, so the shorthand is flattened before it is shown. */
+export function normalizeNotes(notes: string | null | undefined): string | null {
+  if (!notes) return null;
+  const out = notes.split(';').map(s => s.trim().toLowerCase()).filter(Boolean).join(', ');
+  return out || null;
+}
+
+/** Sunset at the resort as a local clock time. NOAA-style approximation, good to a few
+ *  minutes, which is all the prompt needs ("after dark" or not). */
+export function sunsetFor(now: Date, timeZone: string, lat = RESORT_LAT, lng = RESORT_LNG): string {
+  const rad = Math.PI / 180;
+  const dayOfYear = Math.floor((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) - Date.UTC(now.getUTCFullYear(), 0, 0)) / 86_400_000);
+  const gamma = (2 * Math.PI / 365) * (dayOfYear - 1 + (12 - 12) / 24);
+  const eqTime = 229.18 * (0.000075 + 0.001868 * Math.cos(gamma) - 0.032077 * Math.sin(gamma) - 0.014615 * Math.cos(2 * gamma) - 0.040849 * Math.sin(2 * gamma));
+  const decl = 0.006918 - 0.399912 * Math.cos(gamma) + 0.070257 * Math.sin(gamma) - 0.006758 * Math.cos(2 * gamma) + 0.000907 * Math.sin(2 * gamma) - 0.002697 * Math.cos(3 * gamma) + 0.00148 * Math.sin(3 * gamma);
+  const ha = Math.acos(Math.cos(90.833 * rad) / (Math.cos(lat * rad) * Math.cos(decl)) - Math.tan(lat * rad) * Math.tan(decl)) / rad;
+  const sunsetUtcMin = 720 - 4 * (lng - ha) - eqTime;
+  const sunset = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) + sunsetUtcMin * 60_000);
+  return formatLocalTime(sunset, timeZone).replace(/^\S+ /, '');
+}
+const RESORT_LAT = 33.81;
+const RESORT_LNG = -117.919;
 
 /** One RideLine per coded candidate, in code order. */
 export function buildRideLines(
@@ -360,6 +402,7 @@ export function buildRideLines(
         ? null
         : formatWindow(reasons, inputs.now, inputs.timeZone),
       isAnchor: inputs.anchorRideId !== null && ride.id === inputs.anchorRideId,
+      facts: factsFor(inputs.metadata?.get(ride.id) ?? null),
     });
   }
   return lines;
@@ -380,6 +423,7 @@ export function buildRequestContext(inputs: RequestContextInputs): RequestContex
   return {
     park: PARKS[inputs.parkSlug].name,
     localTime: formatLocalTime(inputs.now, tz),
+    sunset: sunsetFor(inputs.now, tz),
     closesAt: inputs.parkHours ? hhmmTo12h(inputs.parkHours.close) : null,
     minutesUntilClose: minutesUntilClose(inputs.parkHours, inputs.now, tz),
     field: fieldShape(inputs.lines),

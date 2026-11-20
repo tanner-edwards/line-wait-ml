@@ -776,6 +776,12 @@ describe('cleanCopy', () => {
   it('leaves clean copy alone', () => {
     expect(cleanCopy('Lines are long everywhere today, so this is the least bad move.')).toBe('Lines are long everywhere today, so this is the least bad move.');
   });
+  it('writes minute counts as digits and leaves other number words alone', () => {
+    expect(cleanCopy("It's only three minutes away.")).toBe("It's only 3 minutes away.");
+    expect(cleanCopy('A gentle five-minute ride, a 12 minute walk.')).toBe('A gentle 5-minute ride, a 12 minute walk.');
+    expect(cleanCopy('Twenty min walk')).toBe('20 min walk');
+    expect(cleanCopy('One you had your eye on, about a third of normal, one adult sits out.')).toBe('One you had your eye on, about a third of normal, one adult sits out.');
+  });
 });
 
 describe('guardRankOne', () => {
@@ -829,5 +835,39 @@ describe('cleanCopy wanted phrasing', () => {
   });
   it('leaves other copy alone', () => {
     expect(cleanCopy('One you had your eye on, and it won\'t get shorter today.')).toBe('One you had your eye on, and it won\'t get shorter today.');
+  });
+});
+
+describe('guardNowOnly', () => {
+  const { guardNowOnly, DEFERS } = jest.requireActual<typeof import('./handler')>('./handler');
+  const rec = (rideId: string, oneLiner: string) => ({ rideId, oneLiner });
+  it('drops picks whose caption defers to a later time', () => {
+    const recs = [
+      rec('tiana', 'Under normal, so maybe wait for a hotter afternoon.'),
+      rec('space', "It's dropping, so wait for the lower window closer to 1:45 PM."),
+      rec('pirates', 'Half the normal line and 3 minutes from you.'),
+      rec('thunder', 'Come back after dinner when it empties out.'),
+      rec('mansion', 'Later today it gets shorter, but go now.'),
+      rec('indy', 'It drops to 20 at 1:45 PM, so go now.'),
+      rec('splash', 'Shortest around 4:30 today.'),
+    ];
+    expect(guardNowOnly(recs)!.map(r => r.rideId)).toEqual(['pirates']);
+  });
+  it('keeps captions that only use wait as a noun or name a window as a thing', () => {
+    const ok = [
+      'Worth the wait for your group, and the queue is indoors.',
+      "Right in the nap window, and it's gentle.",
+      'Shorter than usual, and the line is falling.',
+      "Anyone in line at close still rides, so don't rush.",
+      "Bad time for it, but it's on your watchlist and the line won't get better today.",
+      "Longest line on this list, but it's falling and you'll still get on before 11:00 PM.",
+      'Be in line by 11 PM and you ride.',
+      "Half the usual wait for this one, and it's indoors.",
+      "It's indoor, so you can wait out the heat in the dark while you're in line.",
+    ];
+    for (const c of ok) expect(DEFERS.test(c)).toBe(false);
+    const recs = ok.map((c, i) => rec(`r${i}`, c));
+    expect(guardNowOnly(recs)).toBe(recs);
+    expect(guardNowOnly(null)).toBeNull();
   });
 });

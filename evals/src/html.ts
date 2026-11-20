@@ -5,6 +5,7 @@
 import { buildFixture } from './fixtures/derive';
 import { fixtureById } from './fixtures/scenarios';
 import { grade, Graded } from './grade';
+import { variety, VarietyMetrics } from './variety';
 import { CRITERIA, CriterionId, describeParty, Judgement } from './judge';
 import { pct } from './parse';
 import { BuiltFixture, RunRecord } from './types';
@@ -44,9 +45,10 @@ interface Analysis {
   fixtures: string[];
   metrics: { p50: number; p95: number; tokens: number; validPct: number; runPassPct: number; atBar: number; errors: number };
   judgePct: number;
+  variety: VarietyMetrics;
 }
 
-function analyse(d: RunData): Analysis {
+export function analyse(d: RunData): Analysis {
   const built = new Map<string, BuiltFixture>();
   const graded = d.records.map(r => {
     if (!built.has(r.fixture)) built.set(r.fixture, buildFixture(fixtureById(r.fixture)));
@@ -67,6 +69,7 @@ function analyse(d: RunData): Analysis {
       atBar, errors: d.records.length - ok.length,
     },
     judgePct: jr.length ? (100 * jr.filter(r => r!.pass).length) / jr.length : NaN,
+    variety: variety(graded.filter(g => g.recs).map(g => g.recs!.map(r => r.oneLiner))),
   };
 }
 
@@ -140,7 +143,9 @@ export function renderRun(d: RunData): string {
   H.push(tile('Output tokens', Number.isFinite(m.tokens) ? String(Math.round(m.tokens)) : '–', '', 'median per answer'));
   H.push(tile('Valid answers', pctStr(m.validPct), cls(m.validPct, 99, 95), `${m.errors} call errors`));
   H.push(tile('AI judge', pctStr(a.judgePct), cls(a.judgePct, 90, 70), d.judges.length ? 'questions passed (pointer, not proof)' : 'not run'));
+  H.push(tile('Variety', pctStr(100 * a.variety.distinctOpeners), cls(100 * a.variety.distinctOpeners, 80, 60), `distinct openers; ${pctStr(100 * a.variety.withinRepeat)} of captions repeat a phrase within their answer, ${pctStr(100 * a.variety.acrossRepeat)} reuse an opener across runs`));
   H.push('</div>');
+  if (a.variety.topPhrases.length) H.push(`<p class="small"><strong>Most repeated phrases:</strong> ${a.variety.topPhrases.map(p => `${esc(p.phrase)} <span class="muted">(${p.count})</span>`).join(' &middot; ')}</p>`);
 
   // ---- scenarios
   H.push('<h2>Scenarios</h2><div class="panel scroll"><table><tr><th>Scenario</th><th class="num">Runs passing</th><th>Most common failures</th><th class="num">AI judge</th><th class="num">Tokens</th><th class="num">Speed</th></tr>');

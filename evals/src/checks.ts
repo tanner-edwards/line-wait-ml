@@ -3,6 +3,8 @@
 // are style targets ("about a dozen words") or heuristics that the AI judge confirms.
 
 import { Severity, Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec } from './types';
+import { rideMeta } from './fixtures/derive';
+import { DEFERS } from '../../app/backend/src/recommendations/handler';
 
 export const BATCH = 6; // app's RECOMMENDATIONS_COUNT (spec section 3)
 
@@ -19,7 +21,7 @@ const ALIASES: Record<string, string[]> = {
   "Peter Pan's Flight": ['Peter Pan'],
   'Dumbo the Flying Elephant': ['Dumbo'],
   'Storybook Land Canal Boats': ['Storybook Land', 'Storybook', 'Canal Boats'],
-  'Mad Tea Party': ['Mad Tea Party', 'Tea Party', 'teacups', 'Teacups'],
+  'Mad Tea Party': ['Mad Tea Party', 'Tea Party'],
   'Mark Twain Riverboat': ['Mark Twain', 'Riverboat'],
   'Space Mountain': ['Space Mountain', 'Space'],
   'Matterhorn Bobsleds': ['Matterhorn'],
@@ -49,15 +51,15 @@ const stripRideNames = (text: string, b: BuiltFixture) => {
 /** Spec §8: never verdict, star, go, skip, badge, score, window, must-do, list. "go", "skip" and "star"
  *  are also plain English (the spec's own voice says "Go now" and "Skip Rise for now"), so they are
  *  banned only where they read as the app's labels ("star ride", "go verdict", "starred"). */
-const BANNED = /\b(verdicts?|badges?|scores?|windows?|must[- ]?dos?|lists?)\b/i;
+const BANNED = /\b(verdicts?|badges?|scores?|must[- ]?dos?)\b/i; // "list" and "window" allowed 2026-11-19: the user's watchlist, "nap window"
 // "go ride it" is plain English, so only star/skip pair with "ride".
 const BANNED_LABELS = /\b((star|go|skip)[- ]?(verdict|badge|rating|rated|label|pick)s?|(star|skip)[- ]?rides?|starred)\b/i;
 const POSITIVE_TIMING = /\b(great time|good time|good deal|great deal|rare|rarely|short line|best window|steal|bargain)\b/i;
 const PARTY_FACTOR = /(pregnan|expecting|sit (this|it) out|sits (this|it) out|one of you|rider swap|swap|height|tall enough|too short|under \d+ ?(in|inches)|toddler|little one|kid|child)/i;
 const POSITION = /\b(first|second|(?<!\b(?:a|one) )third|top (pick|choice|spot)|number one|#1|ranked)\b/i;
 // Spec: every pick is for right now; captions never order the picks into a route.
-const ROUTE = /\b(go next(?! door)|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on the way|on your way)\b/i;
-const COME_BACK = /\b(come back|swing back|head back|return (later|tonight|this)|later tonight|later today|wait until|after dinner)\b/i;
+const ROUTE = /\b(go next(?! door)|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on your way)\b/i; // "on the way" dropped 2026-11-19: usually a place, not a route
+const COME_BACK = DEFERS; // same pattern as the production now-guard, so a hit here is a pick prod would drop
 const BUSY_OPENING = /(busy|long (lines?|everywhere|wait)|lines are long|least bad|crowded|packed|every(thing|where)|won't get (any )?shorter|wanted|still want|eye on|hoping|radar|hurts the least|nothing is short|closest to (a )?normal|slammed|tough day|holiday)/i;
 
 const words = (s: string) => s.trim().split(/\s+/).filter(Boolean).length;
@@ -77,6 +79,8 @@ function allowedNumbers(b: BuiltFixture) {
   if (b.minutesUntilClose != null) hours.add(Math.floor(b.minutesUntilClose / 60));
   const loose = new Set<number>([...mins, ...hours, 1, 2, 3, 4, 5, 6]);
   for (const r of b.rides) if (r.heightMinIn) loose.add(r.heightMinIn);
+  // Ride facts the prompt shows (duration, thrill) are on the line, so they are grounded.
+  for (const r of b.rides) { const m = rideMeta(r.name) as { duration_min?: number | null; thrill_level?: number | null }; add(m.duration_min); if (m.thrill_level) loose.add(m.thrill_level); }
   const clock = [b.fx.localTime, b.fx.hours?.close ?? '', b.fx.hours?.open ?? ''].join(' ');
   for (const n of clock.match(/\d+/g) ?? []) loose.add(Number(n) % 12 || 12), loose.add(Number(n));
   if (b.fx.weather) [b.fx.weather.tempF, b.fx.weather.feelsF].forEach(n => loose.add(n));
@@ -106,14 +110,18 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
   add('reachable', 'Every pick reachable before close', 'hard',
     named.filter(r => ride(r) && !ride(r)!.reachableBeforeClose).map(r => r.ride).join(', ') || null);
 
-  add('own-name', "Caption never uses the ride's own name", 'hard',
-    recs.filter(r => r.ride && mentions(r.oneLiner, r.ride)).map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
+  // 2026-11-19: a name or nickname now and then is fine (Tanner); what reads badly is the
+  // template, so this flags an answer where two or more captions OPEN with their ride's name.
+  add('name-template', "Captions don't each open with their ride's name (two or more in one answer)", 'soft', (() => {
+    const opens = recs.filter(r => r.ride && [r.ride, ...(ALIASES[r.ride] ?? [])].some(n => new RegExp(`^${escRe(n)}('s)?\\b`, 'i').test(r.oneLiner.trim())));
+    return opens.length >= 2 ? opens.map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') : null;
+  })());
   add('rank3-no-others', 'Rank 3 and below name no other ride and no position', 'soft',
     recs.slice(2).map(r => {
       const other = b.rides.find(o => o.name !== r.ride && mentions(r.oneLiner, o.name));
       return other ? `names ${other.name}: "${r.oneLiner}"` : POSITION.test(r.oneLiner) ? `position word: "${r.oneLiner}"` : null;
     }).filter(Boolean).join(' | ') || null);
-  add('vocab', 'No app vocabulary (verdict, star, badge, score, window, must-do, list)', 'hard',
+  add('vocab', 'No app vocabulary (verdict, star, badge, score, window, must-do)', 'hard',
     caps.map(c => stripRideNames(c, b)).map((c, i) => (BANNED.test(c) || BANNED_LABELS.test(c) ? `"${caps[i]}"` : null)).filter(Boolean).join(' | ') || null);
   add('percent', 'No percentages', 'hard', caps.find(c => /%|\bpercent/i.test(c)) ?? null);
   add('em-dash', 'No em dashes', 'hard', caps.find(c => c.includes('—')) ?? null);
@@ -154,7 +162,7 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
     recs.filter(r => (r.restrictionNote ?? '').length > 60).map(r => `${r.restrictionNote!.length} chars`).join(', ') || null);
   add('skip-opening', 'Skip picks open with busy-day framing (heuristic)', 'soft',
     recs.filter(r => ride(r)?.verdict === 'skip' && !BUSY_OPENING.test(r.oneLiner.split(/[,;.]|\bbut\b|\band\b/)[0] ?? '')).map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
-  add('present-tense', 'No pick tells the guest to come back later (heuristic)', 'soft',
+  add('now-only', 'No pick tells the guest to wait, come back, or aim for a later time (prod drops these)', 'hard',
     recs.filter(r => COME_BACK.test(r.oneLiner)).map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
   return out;
 }

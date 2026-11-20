@@ -103,6 +103,13 @@ def build_records(metadata: dict) -> list[dict]:
         rec["pregnancyAdvisory"] = entry.get("pregnancy_advisory", False)
         rec["transferRequired"] = entry.get("transfer_required", False)
         rec["categories"] = entry.get("categories", [])
+        # Ride facts the AI recommendation prompt reads as evidence (2026-11-18):
+        # where the queue is, whether you get wet, how long it runs, and the
+        # short editorial note ("Whitewater raft; SOAKING; 42in min").
+        rec["queueType"] = entry.get("queue_type")
+        rec["waterRide"] = entry.get("water_ride", False)
+        rec["durationMin"] = entry.get("duration_min")
+        rec["notes"] = entry.get("notes")
         records.append(rec)
     log.info(
         "Built %d records; skipped %d (no themeparks_id), %d (unknown park)",

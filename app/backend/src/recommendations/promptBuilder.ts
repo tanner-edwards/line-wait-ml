@@ -78,8 +78,9 @@ Ride line fields. The server did the math; read the fields, never calculate.
 - buckets: forecast now, +30, +60, +90, +120 min. trend: falling, flat, or rising over those two hours.
 - window: lowest line later today and its clock time, or none.
 - anchor yes: the ride the guest is standing beside; a candidate like any other.
+- facts: where the queue is (indoor, outdoor, mixed), whether it gets you wet, how long the ride runs, thrill 1 (gentle) to 5 (intense), and a short note on what the ride is like.
 
-<context> gives time, closing, weather, and field: flat, mixed, or bad (busy everywhere).
+<context> gives time, closing, weather, sunset, and field: flat, mixed, or bad (busy everywhere).
 </role>`;
 
 const RANKING = `<ranking>
@@ -144,7 +145,7 @@ const HARD_RULES = `<hard_rules>
 15. Respond with JSON only.
 </hard_rules>`;
 
-function outputBlock(batchSize: number, idStyle: IdStyle): string {
+export function outputBlock(batchSize: number, idStyle: IdStyle): string {
   const idRule = idStyle === 'uuid'
     ? 'rideId is the ID that starts the ride line, copied exactly.'
     : 'rideId is the code and name exactly as they start the ride line, such as "r3 Example Ride Name".';
@@ -185,6 +186,17 @@ function rideId(line: RideLine, idStyle: IdStyle): string {
   return idStyle === 'uuid' ? line.rideId : line.code;
 }
 
+/** "indoor, 3 min, thrill 4, indoor coaster in the dark" (water only when true). */
+export function renderFacts(f: NonNullable<RideLine['facts']>): string {
+  const parts: string[] = [];
+  if (f.queue) parts.push(f.queue);
+  if (f.water) parts.push('gets you wet');
+  if (f.durationMin != null) parts.push(`${f.durationMin} min`);
+  if (f.thrill != null) parts.push(`thrill ${f.thrill}`);
+  if (f.notes) parts.push(f.notes);
+  return parts.join(', ') || 'none';
+}
+
 function renderLine(l: RideLine, idStyle: IdStyle): string {
   const parts = [
     `${rideId(l, idStyle)} ${l.name}`,
@@ -203,6 +215,7 @@ function renderLine(l: RideLine, idStyle: IdStyle): string {
   parts.push(`trend ${l.trend ?? 'unknown'}`);
   parts.push(`window ${l.window ? `${l.window.wait}min at ${l.window.at}` : 'none'}`);
   if (l.isAnchor) parts.push('anchor yes');
+  if (l.facts) parts.push(`facts ${renderFacts(l.facts)}`);
   return parts.join(' | ');
 }
 
@@ -224,7 +237,8 @@ export function buildUserMessage(ctx: RequestContext, lines: RideLine[], opts: P
       ? [`closing soon: anyone in line by ${ctx.closesAt} still rides. Every ride below is reachable in time; a long wait is not a reason to leave it out.`]
       : []),
   ];
-  if (ctx.weather) out.push(`weather: ${ctx.weather}`);
+  if (ctx.weather) out.push(`weather: ${ctx.weather}${ctx.sunset ? ` | sunset ${ctx.sunset}` : ''}`);
+  else if (ctx.sunset) out.push(`sunset ${ctx.sunset}`);
   if (ctx.anchor) {
     const anchorLine = lines.find(l => l.code === ctx.anchor!.code);
     const id = idStyle === 'uuid' && anchorLine ? anchorLine.rideId : ctx.anchor.code;

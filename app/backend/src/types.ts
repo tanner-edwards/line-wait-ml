@@ -269,6 +269,12 @@ export interface RideMetadata {
   transferRequired?: boolean;
   // Editorial hand-tags: any of 'iconic' | 'classic' | 'immersive'.
   categories?: string[];
+  // Ride facts the recommendation prompt reads as evidence (seeded 2026-11-18).
+  // Absent on docs written before the seeder was extended.
+  queueType?: 'indoor' | 'outdoor' | string | null;
+  waterRide?: boolean;
+  durationMin?: number | null;
+  notes?: string | null;
 }
 
 // --- v2 recommendations contract ---

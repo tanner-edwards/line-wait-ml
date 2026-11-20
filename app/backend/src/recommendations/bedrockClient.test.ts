@@ -51,16 +51,25 @@ describe('invokeRecommendations request body', () => {
     expect(sentBody().system).toEqual([{ type: 'text', text: 'whole prompt' }]);
   });
 
-  it('sends max_tokens 2000 and no thinking, sampling, or output_config keys', async () => {
+  it('sends max_tokens 4000 and no thinking, sampling, or output_config keys', async () => {
+    delete process.env.BEDROCK_EFFORT;
     respond(OK);
     await invokeRecommendations(['s'], 'hi');
     const body = sentBody();
-    expect(body.max_tokens).toBe(2000);
+    expect(body.max_tokens).toBe(4000);
     expect(body.anthropic_version).toBe('bedrock-2023-05-31');
     expect(body.messages).toEqual([{ role: 'user', content: 'hi' }]);
     for (const key of ['thinking', 'temperature', 'top_p', 'top_k', 'output_config']) {
       expect(body).not.toHaveProperty(key);
     }
+  });
+
+  it('adds output_config.effort only when BEDROCK_EFFORT is set', async () => {
+    process.env.BEDROCK_EFFORT = 'low';
+    respond(OK);
+    await invokeRecommendations(['s'], 'hi');
+    expect(sentBody().output_config).toEqual({ effort: 'low' });
+    delete process.env.BEDROCK_EFFORT;
   });
 });
 

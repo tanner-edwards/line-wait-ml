@@ -7,6 +7,10 @@
 //   npm run eval -- --rebuild-site            # re-render every saved run with the current checks
 //
 // Options: --runs n (default 5, the spec's protocol) | --fixtures S1,S2 | --model <bedrock id>
+//   --smoke [--live <park>]  five hard scenarios + live sample x 3 personas, 1 run, ~2 min
+//   --concurrency n (default 3) answer calls in flight
+//   --live <park> [--rides 8] [--seed n] [--personas default,toddler]  capture the park now, sample
+//     random rides, run every persona preset against the same set (default 1 run; needs Firebase env)
 //   --judges a,b (default config/judges.json) | --no-judge | --no-open | --site-dir <dir>
 
 import { spawn } from 'child_process';
@@ -14,7 +18,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { join } from 'path';
 import { arg, EVALS_ROOT, flag, PRODUCTION_MODEL, resolveRun, stamp } from './args';
 import { buildFixture } from './fixtures/derive';
-import { FIXTURES, fixtureById } from './fixtures/scenarios';
+import { FIXTURES, fixtureById, SMOKE_SCENARIOS } from './fixtures/scenarios';
 import { grade } from './grade';
 import { RunData, renderIndex, renderRun } from './html';
 import { isJudgement, JUDGE_VERSION, Judgement, JudgeFailure, judgeAnswer, pool } from './judge';
@@ -22,6 +26,9 @@ import { MOCK } from './llm';
 import { generate } from './run';
 import { RunRecord } from './types';
 import { getVariant } from './variants';
+import { captureLive, sampleLive, writeLiveFixture } from './live';
+import { presetsByKey } from './personas';
+import { ParkSlug } from '../../app/backend/src/types';
 
 const SITE = arg('site-dir', join(EVALS_ROOT, 'site'))!;
 
@@ -59,6 +66,7 @@ async function judgeAll(records: RunRecord[], judges: string[]): Promise<Judgeme
 }
 
 async function main() {
+  const t0 = Date.now();
   if (flag('rebuild-site')) {
     const all = loadSite();
     writeSite(all, all);
@@ -75,9 +83,27 @@ async function main() {
     console.log(`Using saved answers from ${source} (no new model calls)`);
   } else {
     const variant = getVariant(arg('variant', 'v1')!);
+    const smoke = flag('smoke');
     const wanted = arg('fixtures')?.split(',').map(s => s.trim());
-    const fixtures = wanted ? wanted.map(fixtureById) : FIXTURES;
-    const runs = Number(arg('runs', '5'));
+    // --smoke: the five hard scenarios plus a live sample with three personas, one run each.
+    // Directional in about two minutes; the full matrix is the decision.
+    let fixtures = wanted ? wanted.map(fixtureById) : smoke ? SMOKE_SCENARIOS.map(fixtureById) : FIXTURES;
+    const livePark = arg('live') ?? (smoke ? 'disneyland' : undefined);
+    if (livePark) {
+      // Live-random: capture the park now, sample --rides rides, one fixture per persona preset.
+      const park = livePark as ParkSlug;
+      const seed = Number(arg('seed', String(Date.now() % 1_000_000)));
+      const presets = presetsByKey((arg('personas') ?? (smoke ? 'default,toddler,thrills' : ''))?.split(',').map(s => s.trim()).filter(Boolean));
+      const base = await captureLive(park);
+      const live = sampleLive(base, { rides: Number(arg('rides', '8')), seed, presets }).map(fx => ({ ...fx, asserts: [] }));
+      for (const fx of live) writeLiveFixture(fx);
+      fixtures = smoke ? [...fixtures, ...live] : live;
+      const w = base.weather ? `, ${base.weather.tempF}F ${base.weather.conditions}` : '';
+      console.log(`Live ${park} at ${base.localTime}${w}: ${base.rides.length + 1} operating rides, anchor ${base.anchor.name}, closes ${base.hours?.close ?? 'unknown'}`);
+      console.log(`Sampled ${live[0].rides.length} rides (seed ${seed}): ${live[0].rides.map(r => r.name).join(', ')}`);
+      console.log(`Personas: ${presets.map(p => p.key).join(', ')}. Fixtures saved under evals/live/ as ${live[0].id.replace(/-[a-z-]+$/, '')}-<persona>.json`);
+    }
+    const runs = Number(arg('runs', livePark ? '1' : '5'));
     const model = arg('model', PRODUCTION_MODEL)!;
     console.log(`Running ${variant.id} on ${model}${MOCK ? ' [MOCK]' : ''}: ${fixtures.length} scenarios x ${runs} runs`);
     const g = await generate({ variant, fixtures, runs, model });
@@ -110,6 +136,7 @@ async function main() {
   const atBar = fixtures.filter(f => { const g = graded.filter(x => x.rec.fixture === f); return g.filter(x => x.passed).length >= Math.max(1, Math.ceil(g.length * 0.8)); });
   const missed = fixtures.filter(f => !atBar.includes(f));
   const page = join(SITE, 'runs', `${d.runId}.html`);
+  console.log(`\nElapsed ${Math.round((Date.now() - t0) / 1000)} s`);
   console.log(`\n${d.variant} on ${d.model}${d.mock ? ' [MOCK]' : ''}: ${atBar.length}/${fixtures.length} scenarios pass at least 4 of 5 runs${missed.length ? ` (missing: ${missed.join(', ')})` : ''}`);
   console.log(`Report: ${page}\nAll runs: ${join(SITE, 'index.html')}`);
   if (process.platform === 'darwin' && process.stdout.isTTY && !flag('no-open')) spawn('open', [page], { stdio: 'ignore', detached: true }).unref();

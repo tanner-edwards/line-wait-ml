@@ -9,7 +9,10 @@
 // The snapshot is the same data the Lambda would use (fetchPark, metadata, hours, reopens,
 // weather) reduced to the RideFact shape the harness derives fixtures from. It has no
 // scripted assertions; the hard code checks and the AI judge are the test.
-
+//
+// `npm run eval -- --live disneyland` uses captureLive + sampleLive instead: one capture,
+// a random subset of rides, one fixture per persona preset (src/personas.ts), all written
+// under evals/live/ so the run is reproducible and re-judgeable.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fetchPark } from '../../app/backend/src/handler';
@@ -22,9 +25,10 @@ import { loadWeatherLine } from '../../app/backend/src/weather';
 import { formatLocalTime, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { ParkSlug } from '../../app/backend/src/types';
 import { arg, EVALS_ROOT, stamp } from './args';
+import { PersonaPreset } from './personas';
 import { Fixture, RideFact } from './types';
 
-const HUBS: Record<ParkSlug, { lat: number; lng: number }> = {
+export const HUBS: Record<ParkSlug, { lat: number; lng: number }> = {
   'disneyland': { lat: 33.8121, lng: -117.9190 },
   'california-adventure': { lat: 33.8062, lng: -117.9209 },
 };
@@ -36,11 +40,12 @@ function minutesOfDay(d: Date, tz: string): number {
   return h * 60 + m;
 }
 
-async function main() {
-  const park = (arg('park', 'disneyland') as ParkSlug);
-  if (!HUBS[park]) throw new Error(`--park must be one of ${Object.keys(HUBS).join(', ')}`);
-  const lat = Number(arg('lat', String(HUBS[park].lat)));
-  const lng = Number(arg('lng', String(HUBS[park].lng)));
+/** A capture before it gets an id, title, and persona. */
+export type LiveBase = Omit<Fixture, 'asserts' | 'id' | 'title' | 'persona'> & { stamp: string };
+
+/** Everything the Lambda would see for this park right now, reduced to RideFacts. */
+export async function captureLive(park: ParkSlug, lat = HUBS[park].lat, lng = HUBS[park].lng): Promise<LiveBase> {
+  if (!HUBS[park]) throw new Error(`park must be one of ${Object.keys(HUBS).join(', ')}`);
   const now = new Date();
   const tz = parkTimeZone(park);
 
@@ -86,25 +91,86 @@ async function main() {
   if (!anchor) throw new Error('No operating rides to anchor on');
 
   const wm = weatherLine ? /^(-?\d+)F, feels like (-?\d+), (.+)$/.exec(weatherLine) : null;
-  const id = `LIVE-${park}-${stamp()}`;
-  const localTime = formatLocalTime(now, tz);
-  const fixture: Omit<Fixture, 'asserts'> = {
-    id,
-    title: `Live snapshot: ${park} at ${localTime}`,
+  return {
+    stamp: stamp(),
     tests: 'Real park data, no scripted expectation. Hard code checks and the AI judge decide.',
-    park, localTime, nowMin: minutesOfDay(now, tz),
+    park, localTime: formatLocalTime(now, tz), nowMin: minutesOfDay(now, tz),
     hours: hours ? { open: hours.open, close: hours.close } : null,
-    persona: null,
     anchor, rides: facts,
     weather: wm ? { tempF: Number(wm[1]), feelsF: Number(wm[2]), conditions: wm[3] } : undefined,
-    filled: ['Live snapshot: every value came from the backend at capture time; persona is the default guest with no wanted rides.'],
+    filled: ['Live snapshot: every value came from the backend at capture time.'],
     expectation: 'No scripted answer. Judge whether every pick is a sensible move to walk to right now given the waits, usual waits, forecast trend and walk; whether captions are grounded in the data and present-tense; and whether any skip-verdict pick is framed honestly as a busy-day or least-bad choice.',
     ideal: [], bad: [],
   };
-  mkdirSync(join(EVALS_ROOT, 'live'), { recursive: true });
-  const file = join(EVALS_ROOT, 'live', `${id}.json`);
-  writeFileSync(file, JSON.stringify(fixture, null, 2) + '\n');
-  console.log(`${id}\n${file}\n${facts.length + 1} operating rides, anchor ${anchor.name}, ${localTime}, closes ${hours?.close ?? 'unknown'}${weatherLine ? `, ${weatherLine}` : ''}`);
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+export function writeLiveFixture(fx: Omit<Fixture, 'asserts'>): string {
+  mkdirSync(join(EVALS_ROOT, 'live'), { recursive: true });
+  const file = join(EVALS_ROOT, 'live', `${fx.id}.json`);
+  writeFileSync(file, JSON.stringify(fx, null, 2) + '\n');
+  return file;
+}
+
+/** Small seeded RNG (mulberry32) so a sample can be reproduced from its printed seed. */
+export function rng(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function shuffle<T>(xs: T[], next: () => number): T[] {
+  const a = [...xs];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(next() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
+
+/**
+ * One random ride set, one fixture per persona preset. The anchor is always in. The wanted
+ * list is drawn once from the sample; preset k takes its first `wanted` entries, so every
+ * preset that wants rides wants the same ones. Returns the fixtures and the ids written.
+ */
+export function sampleLive(base: LiveBase, opts: { rides: number; seed: number; presets: PersonaPreset[] }): Omit<Fixture, 'asserts'>[] {
+  const next = rng(opts.seed);
+  const n = Math.min(opts.rides, base.rides.length);
+  const picked = shuffle(base.rides, next).slice(0, n);
+  const wantedPool = shuffle(picked, next).map(r => r.name);
+  const sampleNote = `Random sample: ${n} of ${base.rides.length} operating rides plus the anchor, seed ${opts.seed}.`;
+  return opts.presets.map(p => {
+    const wanted = new Set(wantedPool.slice(0, p.wanted));
+    const rides = picked.map(r => ({ ...r, wanted: wanted.has(r.name) }));
+    return {
+      ...base,
+      id: `LIVE-${base.park}-${base.stamp}-${p.key}`,
+      title: `Live ${base.park} at ${base.localTime}, ${p.label}`,
+      persona: p.persona,
+      anchor: { ...base.anchor, wanted: false },
+      rides,
+      filled: [...base.filled, sampleNote, `Persona preset "${p.key}": ${p.label}.`, wanted.size ? `Wanted: ${[...wanted].join(', ')}.` : 'No wanted rides.'],
+    };
+  }).map(({ stamp: _s, ...fx }) => fx);
+}
+
+async function main() {
+  const park = (arg('park', 'disneyland') as ParkSlug);
+  if (!HUBS[park]) throw new Error(`--park must be one of ${Object.keys(HUBS).join(', ')}`);
+  const lat = Number(arg('lat', String(HUBS[park].lat)));
+  const lng = Number(arg('lng', String(HUBS[park].lng)));
+  const { stamp: st, ...base } = await captureLive(park, lat, lng);
+  const id = `LIVE-${park}-${st}`;
+  const fixture: Omit<Fixture, 'asserts'> = {
+    ...base, id,
+    title: `Live snapshot: ${park} at ${base.localTime}`,
+    persona: null,
+    filled: [...base.filled, 'Persona is the default guest with no wanted rides.'],
+  };
+  const file = writeLiveFixture(fixture);
+  const w = base.weather ? `, ${base.weather.tempF}F, feels like ${base.weather.feelsF}, ${base.weather.conditions}` : '';
+  console.log(`${id}\n${file}\n${base.rides.length + 1} operating rides, anchor ${base.anchor.name}, ${base.localTime}, closes ${base.hours?.close ?? 'unknown'}${w}`);
+}
+
+if (require.main === module) main().catch(e => { console.error(e); process.exit(1); });

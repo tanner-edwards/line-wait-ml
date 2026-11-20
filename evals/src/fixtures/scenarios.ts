@@ -399,6 +399,9 @@ export const FIXTURES: Fixture[] = [
   },
 ];
 
+/** The hard cases for --smoke: restricted toddler, bad day + wanted, wanted skip, closing hour, reopened. */
+export const SMOKE_SCENARIOS = ['S2', 'S4', 'S5', 'S6', 'S7'];
+
 export const fixtureById = (id: string): Fixture => {
   const f = FIXTURES.find(x => x.id === id);
   if (f) return f;
