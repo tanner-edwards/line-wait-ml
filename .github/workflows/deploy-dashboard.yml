@@ -1,0 +1,36 @@
+name: Deploy dashboard
+
+# Auto-deploys only the admin dashboard (Cloud Run service club32-dashboard).
+# Deliberately narrow: changes to cron/ or the shared ml/ code do NOT trigger it,
+# so the prediction job and the rest of the app are never affected. Run it by
+# hand (Actions > Deploy dashboard > Run workflow) to pick those up.
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'dashboard/**'
+      - 'ml/dashboard/**'
+      - '.github/workflows/deploy-dashboard.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-dashboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Dedicated deploy service account, NOT the FIREBASE_SERVICE_ACCOUNT key
+      # that collect.yml uses to trigger predictions.
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.DASHBOARD_DEPLOY_SA_KEY }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Deploy
+        run: dashboard/deploy.sh

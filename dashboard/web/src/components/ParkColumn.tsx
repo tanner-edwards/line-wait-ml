@@ -38,11 +38,11 @@ export function ParkColumn({ park, horizon, live, tier }: {
         <Crowd crowd={park.crowd} domain={domain} />
         <TrendScorecard trend={g.trend} />
         <ProbabilityHonesty honesty={g.probability_honesty} />
-        <Anomalies items={park.anomalies} />
-        <Closures items={park.closures} />
         <Slices park={g} />
         <WorstMisses misses={g.worst_misses} />
         <RideAverages rows={park.ride_averages} />
+        <Closures items={park.closures} />
+        <Anomalies items={park.anomalies} />
       </div>
     </div>
   );
