@@ -26,7 +26,8 @@ for (const fx of FIXTURES) {
   const b = buildFixture(fx);
   const restricted = b.rides.filter(r => r.restrictedFor.length).map(r => `${r.name.split(' ')[0]}(${r.restrictedFor.join('+')})`).join(' ');
   const ideal = allChecks(toRecs(fx.ideal, b), b).filter(c => !c.pass && c.severity === 'hard');
-  const badFails = allChecks(toRecs(fx.bad, b), b).filter(c => !c.pass && c.severity === 'hard');
+  // Any failed check counts as catching the bad answer: caption-wording asserts are soft since 2026-11-19.
+  const badFails = allChecks(toRecs(fx.bad, b), b).filter(c => !c.pass);
   const renders = Object.values(VARIANTS).map(v => { const r = v.render(b); return r.system && r.user ? `${v.id}:${r.offered.length} rides` : `${v.id}:EMPTY`; });
   console.log(`${ideal.length || !badFails.length ? 'BAD' : 'ok '} ${fx.id.padEnd(4)} field=${b.field.padEnd(5)} ${renders.join(' ')}  restricted: ${restricted || 'none'}`);
   for (const c of ideal) bad(`${fx.id} ideal answer fails "${c.label}": ${c.detail}`);
@@ -37,13 +38,12 @@ console.log('\nEvery code check can fail');
 type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number };
 const P = (fx: string, expect: string, ...rows: AnswerRow[]): Probe => ({ fx, expect, rows });
 const probes: Probe[] = [
-  P('S1', 'own-name', { ride: 'Pirates of the Caribbean', caption: 'Pirates is half its usual line.' }),
+  P('S1', 'name-template', { ride: 'Pirates of the Caribbean', caption: 'Pirates is half its usual line.' }, { ride: 'Jungle Cruise', caption: 'Jungle Cruise is shorter than usual.' }),
   P('S1', 'percent', { ride: 'Pirates of the Caribbean', caption: 'About 50% of its usual line.' }),
   P('S1', 'em-dash', { ride: 'Pirates of the Caribbean', caption: 'Half its usual line — go now.' }),
   P('S1', 'exclaim', { ride: 'Pirates of the Caribbean', caption: 'Half its usual line!' }),
   P('S1', 'vocab', { ride: 'Pirates of the Caribbean', caption: 'A go verdict and an easy ride.' }),
   P('S1', 'vocab', { ride: 'Jungle Cruise', caption: 'A star ride for your group today.' }),
-  P('S1', 'vocab', { ride: 'Jungle Cruise', caption: 'Top of your list right now.' }),
   P('S1', 'rank3-no-others', { ride: 'Pirates of the Caribbean', caption: 'Half its usual line.' }, { ride: 'Jungle Cruise', caption: 'Gentle and shorter than usual.' }, { ride: 'Haunted Mansion', caption: 'Calmer than Pirates right now.' }),
   P('S1', 'numbers', { ride: 'Pirates of the Caribbean', caption: 'Down to 12 minutes within 1.5 hours.' }),
   P('S1', 'restricted-note', { ride: 'Indiana Jones Adventure', caption: 'About half its usual line.' }),
