@@ -58,6 +58,43 @@ Parameters:
       walkthrough). Doesn't have to be the same region as this CloudFormation
       stack but using us-west-2 across the board keeps latency lowest.
 
+  LlmProvider:
+    Type: String
+    Default: bedrock
+    AllowedValues: [bedrock, openai]
+    Description: >
+      Which model API answers /v2/recommendations. "bedrock" (default) calls
+      BedrockModelId only. "openai" calls OpenAiModelId through the OpenAI API
+      first (8 s, no retry) and falls back to Bedrock on any error. Added
+      2026-11-21 because GPT-6 Luna beat both Haiku models on the intent prompt
+      and Bedrock denies GPT-6 on this account.
+
+  OpenAiApiKey:
+    Type: String
+    NoEcho: true
+    Default: ''
+    Description: >
+      OpenAI API key, used only when LlmProvider is "openai". Passed from the
+      GitHub secret OPENAI_API_KEY (workflow) or the OPENAI_API_KEY env var /
+      keychain item openai-api-key-club32 (deploy.sh). Empty with
+      LlmProvider=openai means every call falls back to Bedrock (logged).
+
+  OpenAiModelId:
+    Type: String
+    Default: gpt-6-luna
+    Description: OpenAI model id for /v2/recommendations when LlmProvider is "openai".
+
+  PromptVariant:
+    Type: String
+    Default: rules
+    AllowedValues: [rules, intent]
+    Description: >
+      Which system prompt /v2/recommendations builds: "rules" (promptBuilder.ts,
+      the launch prompt, best on Haiku 4.5) or "intent" (promptIntent.ts,
+      2026-11-18, best on GPT-6 Luna). Same prompt for both providers,
+      including the Bedrock fallback. Was previously set by hand in the Lambda
+      console, which a stack deploy wiped.
+
   BedrockBudgetAlarmEmail:
     Type: String
     Default: ''
@@ -193,6 +230,10 @@ Resources:
           ALLOW_ANONYMOUS_PREMIUM: !Ref AllowAnonymousPremium
           BEDROCK_MODEL_ID: !Ref BedrockModelId
           BEDROCK_REGION: !Ref BedrockRegion
+          LLM_PROVIDER: !Ref LlmProvider
+          OPENAI_API_KEY: !Ref OpenAiApiKey
+          OPENAI_MODEL_ID: !Ref OpenAiModelId
+          PROMPT_VARIANT: !Ref PromptVariant
           APPLE_SHARED_SECRET: !Ref AppleSharedSecret
           APPLE_TEAM_ID: !Ref AppleTeamId
           APPLE_KEY_ID: !Ref AppleKeyId

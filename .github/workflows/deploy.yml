@@ -62,6 +62,8 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_KEY_ID: ${{ secrets.APPLE_KEY_ID }}
           APPLE_PRIVATE_KEY_PEM: ${{ secrets.APPLE_PRIVATE_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'bedrock' }}
         run: |
           FIREBASE_JSON_B64=$(echo "$FIREBASE_JSON" | base64 -w 0)
 
@@ -77,7 +79,24 @@ jobs:
             "AppleSharedSecret=${{ secrets.APPLE_SHARED_SECRET }}"
             "AllowAnonymousPremium=${{ github.event.inputs.allow_anonymous_premium }}"
             "BedrockModelId=${{ vars.BEDROCK_MODEL_ID || 'us.anthropic.claude-haiku-4-5-20251001-v1:0' }}"
+            # LLM provider + prompt, same rule: passed on every deploy so the
+            # template defaults (bedrock, rules) never win by omission. Repo
+            # variables LLM_PROVIDER, PROMPT_VARIANT, OPENAI_MODEL_ID; secret
+            # OPENAI_API_KEY. See operations.md "LLM provider and prompt".
+            "LlmProvider=$LLM_PROVIDER"
+            "PromptVariant=${{ vars.PROMPT_VARIANT || 'rules' }}"
+            "OpenAiModelId=${{ vars.OPENAI_MODEL_ID || 'gpt-6-luna' }}"
           )
+          echo "==> LLM provider: $LLM_PROVIDER, prompt: ${{ vars.PROMPT_VARIANT || 'rules' }}"
+
+          # SAM's shorthand rejects empty values, so the key is appended only
+          # when the secret exists. With LLM_PROVIDER=openai and no key, every
+          # call would fall back to Bedrock, so warn loudly.
+          if [[ -n "$OPENAI_API_KEY" ]]; then
+            PARAMS+=("OpenAiApiKey=$OPENAI_API_KEY")
+          elif [[ "$LLM_PROVIDER" == "openai" ]]; then
+            echo "==> WARNING: LLM_PROVIDER=openai but secret OPENAI_API_KEY is missing — every call will fall back to Bedrock."
+          fi
 
           # Sign in with Apple revocation (guideline 5.1.1(v)). These must be
           # passed on EVERY deploy: parameters left out of --parameter-overrides

@@ -25,7 +25,7 @@ import {
 } from '../types';
 import { ensureRideMetadataLoaded, lookupRideMetadata } from './rideMetadata';
 import { haversineMeters, walkingMinutes, walkingYards } from './walkingDistance';
-import { invokeRecommendations } from './bedrockClient';
+import { invokeLlm } from './llmClient';
 import { buildSystemPrompt, buildUserMessage } from './promptBuilder';
 import { buildSystemPromptIntent, buildUserMessageIntent } from './promptIntent';
 import { personaToText } from './persona';
@@ -203,7 +203,7 @@ export async function prepareRecommendationInputs(
 
 /**
  * Build a RecommendationsResponse for the given (park, currentRideId).
- * Always returns a 200-shaped response — Bedrock failure flips `degraded`
+ * Always returns a 200-shaped response — LLM failure flips `degraded`
  * to true and falls back to deterministic top-N. The caller wraps this in
  * the API Gateway response envelope.
  */
@@ -244,13 +244,14 @@ export async function buildRecommendations(
 
   let llmRecs: Recommendation[] | null = null;
   try {
-    const { text, usage, stopReason, elapsedMs } = await invokeRecommendations(systemPrompt, userMessage);
+    const { text, usage, stopReason, elapsedMs, provider } = await invokeLlm(systemPrompt, userMessage);
     // Stage timing: where a slow /v2/recommendations spends its time.
-    console.log('[recs-timing]', JSON.stringify({ loadMs: inputs.loadMs, bedrockMs: elapsedMs, totalMs: Date.now() - tStart }));
+    console.log('[recs-timing]', JSON.stringify({ loadMs: inputs.loadMs, bedrockMs: elapsedMs, totalMs: Date.now() - tStart, provider }));
     // TEMP DEBUG (remove once Bedrock path is verified): log the raw model
     // response so we can tell whether a degraded result came from a parse
     // failure vs an empty rec list vs all-filtered IDs.
     console.log('[bedrock-raw]', JSON.stringify({
+      provider,
       textLen: text.length,
       outputTokens: usage.outputTokens,
       inputTokens: usage.inputTokens,
@@ -261,7 +262,7 @@ export async function buildRecommendations(
     llmRecs = guardSkipLast(guardRankOne(guardNowOnly(parseAndValidate(text, codeMap, candidates, batchSize)), inputs.lines), inputs.lines, inputs.skipGated);
     console.log('[bedrock-parsed]', JSON.stringify({ count: llmRecs?.length ?? null }));
   } catch (err) {
-    console.warn('Bedrock call failed; falling back to deterministic recs', err);
+    console.warn('LLM call failed; falling back to deterministic recs', err);
   }
 
   if (llmRecs === null || llmRecs.length === 0) {
@@ -474,6 +475,10 @@ const NUMBER_WORDS: Record<string, number> = {
 
 export function cleanCopy(text: string): string {
   return text
+    // GPT-6 writes curly quotes; the guards (DEFERS) and the harness checks
+    // match straight ones, so normalize before anything else looks at the text.
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
     .replace(/\s*[\u2014\u2013]\s*/g, ', ')
     // "You wanted this one" reads as blame (Tanner, 2026-11-17); Haiku keeps
     // writing it despite the hard rule, so it becomes "one you had your eye on".
