@@ -52,7 +52,10 @@ cp "$STAGE/dashboard/Dockerfile" "$STAGE/Dockerfile"
 echo "staged $(du -sh "$STAGE" | cut -f1)"
 
 echo "== Building image"
-gcloud builds submit "$STAGE" --tag "$IMAGE" --project $PROJECT
+# In CI (GitHub sets CI=true) the deployer account can't stream logs from the
+# default logs bucket without project Viewer; gcloud would exit non-zero even on
+# a good build. --suppress-logs still waits and fails if the build fails.
+gcloud builds submit "$STAGE" --tag "$IMAGE" --project $PROJECT ${CI:+--suppress-logs}
 
 echo "== Deploying"
 gcloud run deploy $SERVICE --image "$IMAGE" --region $REGION --project $PROJECT \
