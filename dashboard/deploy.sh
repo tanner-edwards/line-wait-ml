@@ -52,10 +52,23 @@ cp "$STAGE/dashboard/Dockerfile" "$STAGE/Dockerfile"
 echo "staged $(du -sh "$STAGE" | cut -f1)"
 
 echo "== Building image"
-# In CI (GitHub sets CI=true) the deployer account can't stream logs from the
-# default logs bucket without project Viewer; gcloud would exit non-zero even on
-# a good build. --suppress-logs still waits and fails if the build fails.
-gcloud builds submit "$STAGE" --tag "$IMAGE" --project $PROJECT ${CI:+--suppress-logs}
+if [[ -n "${CI:-}" ]]; then
+  # GitHub Actions: the deployer has no project Viewer role, and gcloud fails a
+  # waiting `builds submit` (even with --suppress-logs) when it can't read the
+  # default logs bucket. So submit async and poll the build's status instead.
+  BUILD_ID="$(gcloud builds submit "$STAGE" --tag "$IMAGE" --project $PROJECT --async --format='value(id)')"
+  echo "build $BUILD_ID: https://console.cloud.google.com/cloud-build/builds/$BUILD_ID?project=$PROJECT"
+  while :; do
+    STATUS="$(gcloud builds describe "$BUILD_ID" --project $PROJECT --format='value(status)')"
+    case "$STATUS" in
+      SUCCESS) echo "build SUCCESS"; break ;;
+      QUEUED|PENDING|WORKING) sleep 10 ;;
+      *) echo "build $STATUS" >&2; exit 1 ;;
+    esac
+  done
+else
+  gcloud builds submit "$STAGE" --tag "$IMAGE" --project $PROJECT
+fi
 
 echo "== Deploying"
 gcloud run deploy $SERVICE --image "$IMAGE" --region $REGION --project $PROJECT \
