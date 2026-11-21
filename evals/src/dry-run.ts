@@ -35,7 +35,7 @@ for (const fx of FIXTURES) {
 }
 
 console.log('\nEvery code check can fail');
-type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number };
+type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number; youngestAge?: number };
 const P = (fx: string, expect: string, ...rows: AnswerRow[]): Probe => ({ fx, expect, rows });
 const probes: Probe[] = [
   P('S1', 'name-template', { ride: 'Pirates of the Caribbean', caption: 'Pirates is half its usual line.' }, { ride: 'Jungle Cruise', caption: 'Jungle Cruise is shorter than usual.' }),
@@ -55,9 +55,12 @@ const probes: Probe[] = [
   P('S4', 'skip-positive', { ride: 'Dumbo the Flying Elephant', caption: 'A great deal with a short line.' }),
   P('S7', 'reopen-not-rare', { ride: 'Space Mountain', caption: 'A great deal right next door.' }),
   { ...P('S6', 'reachable', { ride: 'Space Mountain', caption: 'Line up before close and you still ride.' }), nowMin: 22 * 60 + 50 },
+  // A 10-year-old (7-12 band) sent to Dumbo first: survey appeal for that band is below the bar.
+  { ...P('S2', 'age-fit', { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }), youngestAge: 10 },
 ];
 for (const p of probes) {
-  const fx = { ...fixtureById(p.fx), ...(p.nowMin ? { nowMin: p.nowMin } : {}) };
+  const base = fixtureById(p.fx);
+  const fx = { ...base, ...(p.nowMin ? { nowMin: p.nowMin } : {}), ...(p.youngestAge != null && base.persona ? { persona: { ...base.persona, youngestAge: p.youngestAge } } : {}) };
   const b = buildFixture(fx);
   const failed = codeChecks(toRecs(p.rows, b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
   const ok = failed.includes(p.expect);
