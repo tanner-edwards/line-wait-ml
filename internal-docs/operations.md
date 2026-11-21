@@ -85,6 +85,8 @@ cd app/backend && ./deploy.sh
 
 **Bedrock model (`BedrockModelId`).** Both deploy paths pass the model explicitly, so the template default never picks it by omission. The Deploy workflow reads the repo variable `BEDROCK_MODEL_ID` (GitHub > Settings > Secrets and variables > Actions > Variables) and falls back to Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) when it is unset; `./deploy.sh` reads the `BEDROCK_MODEL_ID` env var with the same fallback. To change the model, set the repo variable to the new inference profile ID and run the Deploy workflow, then check `[bedrock-raw]` in `/aws/lambda/club32-waits-handler` for `stopReason: end_turn`. To revert, delete the variable and redeploy.
 
+**Environment variable budget.** Lambda caps all environment variables at 4 KB combined, and every secret here is an environment variable. The Firebase credential ships trimmed to `project_id`, `client_email`, `private_key` (2.5 KB) for that reason; the full JSON plus the OpenAI variables failed a deploy at 4,297 bytes on 2026-11-21 (`UPDATE_ROLLBACK_COMPLETE`, "exceeded the 4KB limit"). Current total is about 3.6 KB. Before adding another variable, measure: `aws lambda get-function-configuration --function-name club32-waits-handler --query Environment.Variables` and sum name + value lengths. Past that, the next step is SSM Parameter Store for the big ones.
+
 **LLM provider and prompt (`LlmProvider`, `PromptVariant`, `OpenAiModelId`, `OpenAiApiKey`).** Since 2026-11-21 `/v2/recommendations` can answer from the OpenAI API (GPT-6 Luna) with Bedrock as the fallback. Both deploy paths pass all four on every deploy, so the template defaults (`bedrock`, `rules`) never win by omission.
 
 | Setting | Deploy workflow | `./deploy.sh` | Default |

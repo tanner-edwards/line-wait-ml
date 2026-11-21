@@ -65,7 +65,14 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           LLM_PROVIDER: ${{ vars.LLM_PROVIDER || 'bedrock' }}
         run: |
-          FIREBASE_JSON_B64=$(echo "$FIREBASE_JSON" | base64 -w 0)
+          # Lambda caps ALL environment variables at 4 KB combined, and the
+          # full service-account JSON (base64) was 3.2 KB of it: the first
+          # deploy with the OpenAI variables failed at 4,297 bytes
+          # (2026-11-21). firebase-admin's cert() reads only project_id,
+          # client_email and private_key, so only those ship (2.5 KB).
+          FIREBASE_JSON_B64=$(printf '%s' "$FIREBASE_JSON" \
+            | jq -ce '{project_id, client_email, private_key} | select(.project_id and .client_email and .private_key)' \
+            | base64 -w 0) || { echo "::error::FIREBASE_SERVICE_ACCOUNT secret is not a service-account JSON with project_id, client_email, private_key"; exit 1; }
 
           # BedrockModelId is passed explicitly on EVERY deploy: left out of
           # --parameter-overrides, the template default silently picks the

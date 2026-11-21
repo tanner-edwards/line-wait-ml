@@ -51,14 +51,20 @@ fi
 # Base64-encode so SAM CLI's --parameter-overrides parser doesn't choke on
 # the inner quotes / equals signs / etc in the JSON. The Lambda's
 # firestoreClient.ts decodes it on read. base64 keeps the value shell-safe
-# at the cost of ~33% length inflation (still well under SAM's limits).
+# at the cost of ~33% length inflation.
+#
+# Only project_id, client_email and private_key ship: firebase-admin's cert()
+# reads nothing else, and Lambda caps all environment variables at 4 KB
+# combined. The full JSON was 3.2 KB of that and the OpenAI variables pushed
+# the 2026-11-21 deploy over the limit; the trimmed one is 2.5 KB.
 FIREBASE_JSON_B64=$(python3 -c "
 import json, base64
 with open('$FIREBASE_KEY_PATH') as f:
-    minified = json.dumps(json.load(f))
-print(base64.b64encode(minified.encode('utf-8')).decode('ascii'))
+    d = json.load(f)
+keep = {k: d[k] for k in ('project_id', 'client_email', 'private_key')}
+print(base64.b64encode(json.dumps(keep, separators=(',', ':')).encode('utf-8')).decode('ascii'))
 " 2>/dev/null) || {
-  echo "Error: $FIREBASE_KEY_PATH did not parse as JSON. Aborting." >&2
+  echo "Error: $FIREBASE_KEY_PATH did not parse as a service-account JSON (project_id, client_email, private_key). Aborting." >&2
   exit 1
 }
 
