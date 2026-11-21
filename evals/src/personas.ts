@@ -20,6 +20,7 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
   { key: 'thrills', label: 'Two adults, thrills, two rides marked', persona: { ...base, youngestAge: 18, ridePreferences: ['thrills'], tripDuration: '1-day' }, wanted: 2 },
   { key: 'toddler', label: 'Toddler (3) with a stroller, one ride marked', persona: { ...base, youngestAge: 3, ridePreferences: ['kid-favorites'], accessibilityNeeds: ['stroller'], tripDuration: '2-days' }, wanted: 1 },
   { key: 'pregnant', label: 'Pregnant guest, partner likes thrills, one ride marked', persona: { ...base, youngestAge: 18, ridePreferences: ['thrills'], accessibilityNeeds: ['pregnant'] }, wanted: 1 },
+  { key: 'big-kid', label: 'Two adults and a 10-year-old, nothing marked', persona: { ...base, youngestAge: 10, tripDuration: '2-days' }, wanted: 0 },
   { key: 'first-visit', label: 'First visit, kid of 8, classics, one ride marked', persona: { ...base, youngestAge: 8, ridePreferences: ['first-time', 'classics'], tripDuration: '1-day' }, wanted: 1 },
   { key: 'wheelchair', label: 'Wheelchair in the party, immersive, one ride marked', persona: { ...base, youngestAge: 18, ridePreferences: ['immersive'], accessibilityNeeds: ['wheelchair'], tripDuration: '3-4-days' }, wanted: 1 },
 ];

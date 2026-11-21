@@ -5,6 +5,30 @@
 import { Severity, Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec } from './types';
 import { rideMeta } from './fixtures/derive';
 import { DEFERS } from '../../app/backend/src/recommendations/handler';
+import AGE_APPEAL from '../config/age-appeal.json';
+
+// ----------------------------------------------------------------- age fit
+// TouringPlans reader-survey appeal (0-5) per ride and age group (config/age-appeal.json).
+// The app's age bands map onto those groups; 7-12 sits between grade school and teens.
+type Appeal = { preschool?: number; gradeSchool?: number; teens?: number; youngAdult?: number; over30?: number };
+const APPEAL = (AGE_APPEAL as { rides: Record<string, Appeal> }).rides;
+/** A top-2 pick below this appeal for the party's age band is flagged. */
+export const AGE_FIT_MIN = 3.7;
+
+export function ageBand(youngestAge: number | null | undefined): { label: string; of: (a: Appeal) => number | undefined } {
+  const avg = (...xs: (number | undefined)[]) => { const v = xs.filter((x): x is number => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : undefined; };
+  if (youngestAge == null || youngestAge >= 18) return { label: 'adults', of: a => avg(a.youngAdult, a.over30) };
+  if (youngestAge >= 13) return { label: 'teens', of: a => a.teens };
+  if (youngestAge >= 7) return { label: '7-12', of: a => avg(a.gradeSchool, a.teens) };
+  return { label: 'under 7', of: a => a.preschool };
+}
+
+/** Appeal of a ride for this fixture's party, or undefined when the ride has no survey data. */
+export function ageAppeal(ride: string, b: BuiltFixture): number | undefined {
+  const a = APPEAL[ride];
+  return a ? ageBand(b.persona?.youngestAge).of(a) : undefined;
+}
+
 
 export const BATCH = 6; // app's RECOMMENDATIONS_COUNT (spec section 3)
 
@@ -154,6 +178,14 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
   add('restricted-wanted', 'A restricted wanted ride says who it affects', 'hard',
     recs.filter(r => { const d = ride(r); return d && d.restrictedFor.length && d.wanted && !PARTY_FACTOR.test(`${r.oneLiner} ${r.restrictionNote ?? ''}`); })
       .map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
+
+  // Age fit: the top two picks should appeal to the party's age band, unless the party asked
+  // for kid favorites or marked the ride as wanted (then a gentle ride is their call).
+  const band = ageBand(b.persona?.youngestAge).label;
+  const kidPref = (b.persona?.ridePreferences ?? []).includes('kid-favorites');
+  add('age-fit', `Top 2 picks appeal to the party's ages (survey appeal at least ${AGE_FIT_MIN} for ${band})`, 'soft',
+    kidPref ? null : recs.slice(0, 2).filter(r => { const d = ride(r); const v = r.ride ? ageAppeal(r.ride, b) : undefined; return d && !d.wanted && v != null && v < AGE_FIT_MIN; })
+      .map(r => `${r.ride} (${ageAppeal(r.ride!, b)!.toFixed(1)} for ${band})`).join(', ') || null);
 
   // soft
   add('length', 'Caption about a dozen words (flags over 18)', 'soft',

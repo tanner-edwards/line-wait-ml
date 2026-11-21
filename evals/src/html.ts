@@ -4,6 +4,7 @@
 
 import { buildFixture } from './fixtures/derive';
 import { fixtureById } from './fixtures/scenarios';
+import { ageAppeal } from './checks';
 import { grade, Graded } from './grade';
 import { variety, VarietyMetrics } from './variety';
 import { CRITERIA, CriterionId, describeParty, Judgement } from './judge';
@@ -46,6 +47,8 @@ interface Analysis {
   metrics: { p50: number; p95: number; tokens: number; validPct: number; runPassPct: number; atBar: number; errors: number };
   judgePct: number;
   variety: VarietyMetrics;
+  /** Share of answers passing the age-fit check, and mean survey appeal of top-3 picks for the party's age band. */
+  ageFit: { passPct: number; meanTop3: number };
 }
 
 export function analyse(d: RunData): Analysis {
@@ -70,6 +73,12 @@ export function analyse(d: RunData): Analysis {
     },
     judgePct: jr.length ? (100 * jr.filter(r => r!.pass).length) / jr.length : NaN,
     variety: variety(graded.filter(g => g.recs).map(g => g.recs!.map(r => r.oneLiner))),
+    ageFit: (() => {
+      const withRecs = graded.filter(g => g.recs);
+      const fit = withRecs.filter(g => g.checks.find(c => c.id === 'age-fit')?.pass !== false).length;
+      const vals = withRecs.flatMap(g => g.recs!.slice(0, 3).map(r => (r.ride ? ageAppeal(r.ride, built.get(g.rec.fixture)!) : undefined)).filter((v): v is number => v != null));
+      return { passPct: withRecs.length ? (100 * fit) / withRecs.length : NaN, meanTop3: vals.length ? vals.reduce((s, v) => s + v, 0) / vals.length : NaN };
+    })(),
   };
 }
 
@@ -143,12 +152,13 @@ export function renderRun(d: RunData): string {
   H.push(tile('Output tokens', Number.isFinite(m.tokens) ? String(Math.round(m.tokens)) : '–', '', 'median per answer'));
   H.push(tile('Valid answers', pctStr(m.validPct), cls(m.validPct, 99, 95), `${m.errors} call errors`));
   H.push(tile('AI judge', pctStr(a.judgePct), cls(a.judgePct, 90, 70), d.judges.length ? 'questions passed (pointer, not proof)' : 'not run'));
+  H.push(tile('Age fit', pctStr(a.ageFit.passPct), cls(a.ageFit.passPct, 90, 75), `answers whose top 2 suit the party's ages; top-3 picks average ${Number.isFinite(a.ageFit.meanTop3) ? a.ageFit.meanTop3.toFixed(2) : '–'}/5 survey appeal for that age`));
   H.push(tile('Variety', pctStr(100 * a.variety.distinctOpeners), cls(100 * a.variety.distinctOpeners, 80, 60), `distinct openers; ${pctStr(100 * a.variety.withinRepeat)} of captions repeat a phrase within their answer, ${pctStr(100 * a.variety.acrossRepeat)} reuse an opener across runs`));
   H.push('</div>');
   if (a.variety.topPhrases.length) H.push(`<p class="small"><strong>Most repeated phrases:</strong> ${a.variety.topPhrases.map(p => `${esc(p.phrase)} <span class="muted">(${p.count})</span>`).join(' &middot; ')}</p>`);
 
   // ---- scenarios
-  H.push('<h2>Scenarios</h2><div class="panel scroll"><table><tr><th>Scenario</th><th class="num">Runs passing</th><th>Most common failures</th><th class="num">AI judge</th><th class="num">Tokens</th><th class="num">Speed</th></tr>');
+  H.push('<h2>Scenarios</h2><div class="panel scroll"><table><tr><th>Scenario</th><th class="num">Runs passing</th><th>Most common failures</th><th class="num">Age fit</th><th class="num">AI judge</th><th class="num">Tokens</th><th class="num">Speed</th></tr>');
   for (const f of a.fixtures) {
     const g = n(f);
     const passed = g.filter(x => x.passed).length;
@@ -160,6 +170,7 @@ export function renderRun(d: RunData): string {
     H.push(`<tr><td><a href="#${esc(f)}">${esc(f)}</a> ${esc(fx.title)}${PROVISIONAL.has(f) ? ' <span class="badge warn">threshold being tuned</span>' : ''}</td>
 <td class="num ${passed >= barFor(g.length) ? 'good' : 'bad'}">${passed}/${g.length}</td>
 <td class="small">${[...fails].sort((x, y) => y[1] - x[1]).slice(0, 3).map(([l, k]) => `${esc(l)} <span class="muted">(${k})</span>`).join('<br>') || '<span class="muted">none</span>'}</td>
+<td class="num">${(() => { const w = g.filter(x => x.recs); const k = w.filter(x => x.checks.find(c => c.id === 'age-fit')?.pass !== false).length; return w.length ? `${k}/${w.length}` : '–'; })()}</td>
 <td class="num">${jr.length ? pctStr((100 * jr.filter(r => r!.pass).length) / jr.length) : '–'}</td>
 <td class="num">${Math.round(median(recs.map(r => r.outputTokens ?? NaN).filter(Number.isFinite))) || '–'}</td>
 <td class="num">${fmtS(median(recs.map(r => r.wallMs ?? NaN).filter(Number.isFinite)))}</td></tr>`);

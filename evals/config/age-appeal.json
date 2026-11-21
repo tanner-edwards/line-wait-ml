@@ -1,0 +1,321 @@
+{
+ "_source": "TouringPlans reader-survey appeal ratings by age group (0-5), from touringplans.com/<park>/attractions/<group>-appeal, fetched 2026-11-21. Rides with two seat versions are averaged; seasonal overlays use the base ride.",
+ "_groups": "preschool, gradeSchool, teens, youngAdult, over30",
+ "_noData": [
+  "Chip 'n' Dale's GADGETcoaster",
+  "Davy Crockett's Explorer Canoes",
+  "Mickey & Minnie's Runaway Railway",
+  "Silly Symphony Swings",
+  "Tiana's Bayou Adventure"
+ ],
+ "rides": {
+  "Alice in Wonderland": {
+   "preschool": 4.3,
+   "gradeSchool": 4.0,
+   "teens": 3.3,
+   "youngAdult": 3.6,
+   "over30": 3.7
+  },
+  "Astro Orbitor": {
+   "preschool": 4.3,
+   "gradeSchool": 4.0,
+   "teens": 3.4,
+   "youngAdult": 2.9,
+   "over30": 2.9
+  },
+  "Autopia": {
+   "preschool": 4.2,
+   "gradeSchool": 4.2,
+   "teens": 3.6,
+   "youngAdult": 3.0,
+   "over30": 3.0
+  },
+  "Big Thunder Mountain Railroad": {
+   "preschool": 3.5,
+   "gradeSchool": 4.7,
+   "teens": 4.8,
+   "youngAdult": 4.8,
+   "over30": 4.7
+  },
+  "Buzz Lightyear Astro Blasters": {
+   "preschool": 4.3,
+   "gradeSchool": 4.4,
+   "teens": 4.1,
+   "youngAdult": 4.0,
+   "over30": 4.0
+  },
+  "Casey Jr. Circus Train": {
+   "preschool": 4.5,
+   "gradeSchool": 3.7,
+   "teens": 2.7,
+   "youngAdult": 2.9,
+   "over30": 3.2
+  },
+  "Dumbo the Flying Elephant": {
+   "preschool": 4.7,
+   "gradeSchool": 4.1,
+   "teens": 3.2,
+   "youngAdult": 3.3,
+   "over30": 3.4
+  },
+  "Finding Nemo Submarine Voyage": {
+   "preschool": 4.0,
+   "gradeSchool": 3.8,
+   "teens": 3.3,
+   "youngAdult": 3.1,
+   "over30": 3.1
+  },
+  "Golden Zephyr": {
+   "preschool": 3.9,
+   "gradeSchool": 3.6,
+   "teens": 3.3,
+   "youngAdult": 3.4,
+   "over30": 3.2
+  },
+  "Grizzly River Run": {
+   "preschool": 3.5,
+   "gradeSchool": 4.5,
+   "teens": 4.7,
+   "youngAdult": 4.4,
+   "over30": 4.4
+  },
+  "Guardians of the Galaxy – Mission: BREAKOUT!": {
+   "preschool": 2.3,
+   "gradeSchool": 4.1,
+   "teens": 4.8,
+   "youngAdult": 4.8,
+   "over30": 4.7
+  },
+  "Guardians of the Galaxy – Monsters After Dark": {
+   "preschool": 2.3,
+   "gradeSchool": 4.1,
+   "teens": 4.8,
+   "youngAdult": 4.8,
+   "over30": 4.7
+  },
+  "Haunted Mansion": {
+   "preschool": 3.1,
+   "gradeSchool": 4.0,
+   "teens": 4.3,
+   "youngAdult": 4.5,
+   "over30": 4.6
+  },
+  "Incredicoaster": {
+   "preschool": 2.2,
+   "gradeSchool": 4.5,
+   "teens": 4.9,
+   "youngAdult": 4.9,
+   "over30": 4.7
+  },
+  "Indiana Jones Adventure": {
+   "preschool": 2.1,
+   "gradeSchool": 4.0,
+   "teens": 4.6,
+   "youngAdult": 4.7,
+   "over30": 4.5
+  },
+  "Inside Out Emotional Whirlwind": {
+   "preschool": 4.1,
+   "gradeSchool": 3.5,
+   "teens": 2.8,
+   "youngAdult": 2.8,
+   "over30": 2.9
+  },
+  "Jessie's Critter Carousel": {
+   "preschool": 4.6,
+   "gradeSchool": 3.8,
+   "teens": 2.9,
+   "youngAdult": 3.2,
+   "over30": 3.1
+  },
+  "Jumpin' Jellyfish": {
+   "preschool": 3.9,
+   "gradeSchool": 3.5,
+   "teens": 2.7,
+   "youngAdult": 2.7,
+   "over30": 2.7
+  },
+  "Jungle Cruise": {
+   "preschool": 4.0,
+   "gradeSchool": 3.9,
+   "teens": 3.8,
+   "youngAdult": 4.0,
+   "over30": 4.1
+  },
+  "King Arthur Carrousel": {
+   "preschool": 4.7,
+   "gradeSchool": 4.1,
+   "teens": 3.4,
+   "youngAdult": 3.4,
+   "over30": 3.5
+  },
+  "Luigi's Rollickin' Roadsters": {
+   "preschool": 4.2,
+   "gradeSchool": 3.8,
+   "teens": 3.4,
+   "youngAdult": 3.6,
+   "over30": 3.6
+  },
+  "Mad Tea Party": {
+   "preschool": 4.5,
+   "gradeSchool": 4.4,
+   "teens": 4.1,
+   "youngAdult": 4.0,
+   "over30": 3.8
+  },
+  "Mater's Junkyard Jamboree": {
+   "preschool": 4.4,
+   "gradeSchool": 4.3,
+   "teens": 3.8,
+   "youngAdult": 3.8,
+   "over30": 3.8
+  },
+  "Matterhorn Bobsleds": {
+   "preschool": 2.8,
+   "gradeSchool": 4.2,
+   "teens": 4.4,
+   "youngAdult": 4.3,
+   "over30": 3.9
+  },
+  "Millennium Falcon: Smugglers Run": {
+   "preschool": 3.5,
+   "gradeSchool": 4.5,
+   "teens": 4.6,
+   "youngAdult": 4.5,
+   "over30": 4.3
+  },
+  "Monsters, Inc. Mike & Sulley to the Rescue!": {
+   "preschool": 4.2,
+   "gradeSchool": 3.8,
+   "teens": 3.5,
+   "youngAdult": 3.6,
+   "over30": 3.6
+  },
+  "Mr. Toad's Wild Ride": {
+   "preschool": 3.6,
+   "gradeSchool": 3.6,
+   "teens": 3.4,
+   "youngAdult": 3.6,
+   "over30": 3.6
+  },
+  "Peter Pan's Flight": {
+   "preschool": 4.6,
+   "gradeSchool": 4.3,
+   "teens": 3.9,
+   "youngAdult": 4.1,
+   "over30": 4.3
+  },
+  "Pinocchio's Daring Journey": {
+   "preschool": 3.6,
+   "gradeSchool": 3.4,
+   "teens": 3.1,
+   "youngAdult": 3.2,
+   "over30": 3.3
+  },
+  "Pirates of the Caribbean": {
+   "preschool": 3.8,
+   "gradeSchool": 4.3,
+   "teens": 4.5,
+   "youngAdult": 4.6,
+   "over30": 4.7
+  },
+  "Pixar Pal-A-Round": {
+   "preschool": 3.7,
+   "gradeSchool": 3.75,
+   "teens": 3.85,
+   "youngAdult": 3.6,
+   "over30": 3.65
+  },
+  "Radiator Springs Racers": {
+   "preschool": 4.2,
+   "gradeSchool": 4.8,
+   "teens": 4.8,
+   "youngAdult": 4.8,
+   "over30": 4.9
+  },
+  "Roger Rabbit's Car Toon Spin": {
+   "preschool": 3.4,
+   "gradeSchool": 3.7,
+   "teens": 3.4,
+   "youngAdult": 3.5,
+   "over30": 3.3
+  },
+  "Snow White's Enchanted Wish": {
+   "preschool": 3.6,
+   "gradeSchool": 3.5,
+   "teens": 3.3,
+   "youngAdult": 3.5,
+   "over30": 3.6
+  },
+  "Soarin' Around the World": {
+   "preschool": 4.2,
+   "gradeSchool": 4.6,
+   "teens": 4.5,
+   "youngAdult": 4.5,
+   "over30": 4.6
+  },
+  "Space Mountain": {
+   "preschool": 2.8,
+   "gradeSchool": 4.4,
+   "teens": 4.8,
+   "youngAdult": 4.8,
+   "over30": 4.7
+  },
+  "Star Tours – The Adventures Continue": {
+   "preschool": 4.0,
+   "gradeSchool": 4.4,
+   "teens": 4.5,
+   "youngAdult": 4.4,
+   "over30": 4.4
+  },
+  "Star Wars: Rise of the Resistance": {
+   "preschool": 3.8,
+   "gradeSchool": 4.8,
+   "teens": 4.9,
+   "youngAdult": 4.9,
+   "over30": 4.9
+  },
+  "Storybook Land Canal Boats": {
+   "preschool": 4.1,
+   "gradeSchool": 3.7,
+   "teens": 3.1,
+   "youngAdult": 3.3,
+   "over30": 3.6
+  },
+  "The Little Mermaid – Ariel's Undersea Adventure": {
+   "preschool": 4.6,
+   "gradeSchool": 3.9,
+   "teens": 3.4,
+   "youngAdult": 3.7,
+   "over30": 3.7
+  },
+  "The Many Adventures of Winnie the Pooh": {
+   "preschool": 4.6,
+   "gradeSchool": 3.8,
+   "teens": 3.3,
+   "youngAdult": 3.4,
+   "over30": 3.5
+  },
+  "Toy Story Midway Mania!": {
+   "preschool": 4.3,
+   "gradeSchool": 4.7,
+   "teens": 4.6,
+   "youngAdult": 4.6,
+   "over30": 4.6
+  },
+  "WEB SLINGERS: A Spider-Man Adventure": {
+   "preschool": 4.1,
+   "gradeSchool": 4.6,
+   "teens": 4.4,
+   "youngAdult": 4.3,
+   "over30": 4.2
+  },
+  "it's a small world": {
+   "preschool": 4.6,
+   "gradeSchool": 3.9,
+   "teens": 3.4,
+   "youngAdult": 3.6,
+   "over30": 4.0
+  }
+ }
+}
