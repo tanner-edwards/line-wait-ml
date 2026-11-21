@@ -11,6 +11,9 @@ Three tables, all from the cleaned, walk-on-normalized collector cache:
            Feeds morning_crowd_index_live, which reads the ride filter from _meta.
 - hour_bands: P10/P90 of OPERATING waits per ride_name|day_type|hour, for the
            "unusual vs typical" anomaly.
+- ride_tiers: per ride_name, how often the wait moves >= move_min within
+           window_min (move_rate), and the steady / moderate / volatile tier
+           the dashboard's ride filter uses. Cutoffs in config.json ride_tiers.
 
 The model never reads this file. Re-run whenever the caches are refreshed.
 """
@@ -66,6 +69,28 @@ def hour_bands(df: pd.DataFrame, min_samples: int) -> dict:
     }
 
 
+def ride_tiers(df: pd.DataFrame, cfg: dict) -> dict:
+    """{ride_name: {move_rate, n, tier}}: share of OPERATING polls whose wait
+    moved >= move_min by the poll nearest T+window_min (within 5 min).
+    Historical on purpose: tiering by today's movement would pick exactly the
+    rides where persistence happened to fail."""
+    op = df.loc[(df["status"] == "OPERATING") & df["wait_minutes"].notna(),
+                ["ride_name", "timestamp_utc", "wait_minutes"]].sort_values("timestamp_utc")
+    later = op.rename(columns={"timestamp_utc": "target_at", "wait_minutes": "later"})
+    m = pd.merge_asof(op.assign(target_at=op["timestamp_utc"] + pd.Timedelta(minutes=cfg["window_min"])),
+                      later, on="target_at", by="ride_name", direction="nearest",
+                      tolerance=pd.Timedelta(minutes=5)).dropna(subset=["later"])
+    moved = (m["later"] - m["wait_minutes"]).abs() >= cfg["move_min"]
+    stats = moved.groupby(m["ride_name"]).agg(["mean", "size"])
+    stats = stats[stats["size"] >= cfg["min_samples"]]
+
+    def tier(rate):
+        return "steady" if rate < cfg["steady_below"] else "volatile" if rate >= cfg["volatile_from"] else "moderate"
+
+    return {name: {"move_rate": round(float(r["mean"]), 3), "n": int(r["size"]), "tier": tier(r["mean"])}
+            for name, r in stats.iterrows()}
+
+
 def build(df: pd.DataFrame, config: dict) -> dict:
     every_row = pd.Series(True, index=df.index)
     return {
@@ -82,6 +107,7 @@ def build(df: pd.DataFrame, config: dict) -> dict:
             ride_filter=crowd_features.headliner_ride_ids(df, every_row),
         ),
         "hour_bands": hour_bands(df, config["hour_band_min_samples"]),
+        "ride_tiers": ride_tiers(df, config["ride_tiers"]),
     }
 
 
@@ -99,6 +125,8 @@ def main() -> None:
     Path(args.out).write_text(json.dumps(out, indent=1, sort_keys=True) + "\n")
     print(f"wrote {args.out}: {len(out['crowd']) - 1} crowd keys, {len(out['morning']) - 1} morning keys, "
           f"{len(out['hour_bands'])} hour bands, range {out['_meta']['range']}")
+    counts = pd.Series([t["tier"] for t in out["ride_tiers"].values()]).value_counts()
+    print("ride tiers: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
 
 
 if __name__ == "__main__":

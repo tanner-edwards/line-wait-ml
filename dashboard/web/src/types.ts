@@ -45,16 +45,32 @@ export interface Bellwether {
   mae?: Record<string, number | null>;
 }
 
+export interface DvoScore {
+  rides: number; n: number;
+  mae_disney: number | null; mae_ours: number | null;
+  bias_disney: number | null; bias_ours: number | null;
+  ours_closer_pct: number | null;
+}
+
+/** Past days only: Disney's day forecast vs ours (rebuilt as of park open) vs actual. */
+export interface DisneyVsOurs {
+  scorecard: { all: DvoScore; blocks: (DvoScore & { block: string })[] };
+  rides: { ride_id: string; ride_name: string | null; has_disney: boolean;
+           hours: { hour: number; disney: number | null; ours: number | null; actual: number | null }[] }[];
+  model_version: string;
+  temp_high_f: number;
+  weather_fallback: boolean;
+  disney_snapshot_hours: string[];
+}
+
 export interface Miss { ride_id: string; ride_name: string; at: string; horizon: number; forecast: number; actual: number; err: number }
 
-export interface ParkGrade {
-  park_id: string;
-  park_name: string;
-  runs: number;
-  first_poll: string | null;
-  last_poll: string | null;
-  model_versions: string[];
-  deploy_markers: { model_version: string; at: string }[];
+/** Ride filter. Tiers come from baselines.json (historical 30-min move rate). */
+export type Tier = 'moving' | 'volatile' | 'moderate' | 'steady' | 'all';
+
+/** Every card that scores forecasts. ParkGrade carries it for all rides, by_tier per tier. */
+export interface Graded {
+  rides: number;
   headline: HorizonScore[];
   by_model_version: { model_version: string; headline: HorizonScore[] }[];
   slices: { closing: HorizonScore[]; post_reopen: HorizonScore[] };
@@ -62,11 +78,23 @@ export interface ParkGrade {
   probability_honesty: Partial<Record<'p_fall_30' | 'p_rise_30', ReliabilityBin[]>>;
   error_by_hour: HourError[];
   worst_misses: Miss[];
+}
+
+export interface ParkGrade extends Graded {
+  park_id: string;
+  park_name: string;
+  runs: number;
+  first_poll: string | null;
+  last_poll: string | null;
+  model_versions: string[];
+  deploy_markers: { model_version: string; at: string }[];
+  by_tier: Partial<Record<Exclude<Tier, 'all'>, Graded>>;
   crowd: { ratio: { at: string; ratio: number | null }[]; morning_index: number | null };
   anomalies: Anomaly[];
   closures: Closure[];
   bellwethers: Bellwether[];
-  ride_averages: { ride_id: string; ride_name: string; avg: number; max: number; min: number; polls: number }[];
+  ride_averages: { ride_id: string; ride_name: string; avg: number; max: number; min: number; polls: number; tier: string }[];
+  disney_vs_ours?: DisneyVsOurs | null;
 }
 
 export interface DayGrade {

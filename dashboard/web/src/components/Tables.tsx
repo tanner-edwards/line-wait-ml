@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import { fmtTime, num, signed } from '../format';
-import type { ParkGrade } from '../types';
+import type { Graded, ParkGrade } from '../types';
 import { Card, Empty } from './Card';
 import { HorizonTable } from './Headline';
 
-export function Slices({ park }: { park: ParkGrade }) {
+export function Slices({ park }: { park: Graded }) {
   const [which, setWhich] = useState<'closing' | 'post_reopen' | 'version'>('closing');
   const versions = park.by_model_version;
   return (
@@ -62,11 +62,12 @@ export function RideAverages({ rows }: { rows: ParkGrade['ride_averages'] }) {
         <>
           <div className="table-wrap">
             <table>
-              <thead><tr><th>Ride</th><th className="n">Avg</th><th className="n">Min</th><th className="n">Max</th></tr></thead>
+              <thead><tr><th>Ride</th><th>Tier</th><th className="n">Avg</th><th className="n">Min</th><th className="n">Max</th></tr></thead>
               <tbody>
                 {shown.map((r) => (
                   <tr key={r.ride_id}>
-                    <td>{r.ride_name}</td><td className="n">{num(r.avg, 0)}</td>
+                    <td>{r.ride_name}</td><td className="sub" style={{ textTransform: 'capitalize' }}>{r.tier}</td>
+                    <td className="n">{num(r.avg, 0)}</td>
                     <td className="n">{num(r.min, 0)}</td><td className="n">{num(r.max, 0)}</td>
                   </tr>
                 ))}

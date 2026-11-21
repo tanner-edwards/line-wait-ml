@@ -16,6 +16,7 @@ export interface ChartTheme {
   forecast: string;    // slot 2 — slate blue
   persistence: string; // slot 3 — amber
   typical: string;     // reference lines (not a series)
+  disney: string;      // Disney's own forecast (Disney vs ours card); plum, CVD dE >= 11 vs actual/forecast
 }
 
 const LIGHT: ChartTheme = {
@@ -29,6 +30,7 @@ const LIGHT: ChartTheme = {
   forecast: '#3A63C9',
   persistence: '#C07A00',
   typical: '#8A9E98',
+  disney: '#7A2E6E',
 };
 
 const DARK: ChartTheme = {
@@ -42,6 +44,7 @@ const DARK: ChartTheme = {
   forecast: '#6C88E8',
   persistence: '#C4871C',
   typical: '#7E918B',
+  disney: '#D9A0CC',
 };
 
 const query = () => window.matchMedia?.('(prefers-color-scheme: dark)');
