@@ -180,7 +180,7 @@ export const FIXTURES: Fixture[] = [
   // ------------------------------------------------------------------ S4
   {
     id: 'S4', title: 'Bad field, wanted ride high and staying high',
-    tests: 'Honest framing; a wanted ride with a weak window is not oversold; always at least one recommendation.',
+    tests: 'Honest framing; a wanted ride with a weak window is not oversold; always at least one recommendation; the lead pick suits the youngest (6).',
     park: 'disneyland', localTime: 'Saturday 12:30 PM', nowMin: SAT(12, 30), hours: DL_HOURS,
     persona: { tripDuration: null, youngestAge: 6, ridePreferences: [], mustDoRideIds: [], accessibilityNeeds: [] },
     anchor: { name: 'Mad Tea Party', wait: 40, usual: 25, verdict: 'skip', reason: 'busy-no-relief', walk: 0 },
@@ -190,16 +190,17 @@ export const FIXTURES: Fixture[] = [
       { name: "Peter Pan's Flight", wait: 75, usual: 50, verdict: 'skip', reason: 'busy-no-relief', walk: 3, wanted: true, buckets: [75, 72, 70, 70, 70, 70] },
       { name: 'Space Mountain', wait: 80, usual: 45, verdict: 'skip', reason: 'busy-no-relief', walk: 10 },
     ],
-    filled: ['Anchor Mad Tea Party: wait 40, usual 25, skip', 'Walk: Matterhorn 6, Dumbo 3, Peter Pan 3, Space 10 (from the draft)', 'Party: two adults, kids 6 and 9 (youngestAge 6)', 'Verdict reasons busy-no-relief', 'Hours 8:00 AM to 11:00 PM', 'Peter Pan forecast 75, 72, 70, 70, 70, 70; others flat'],
+    filled: ['Anchor Mad Tea Party: wait 40, usual 25, skip', 'Walk: Matterhorn 6, Dumbo 3, Peter Pan 3, Space 10 (from the draft)', 'Party: two adults, kids 6 and 9 (youngestAge 6)', 'Verdict reasons busy-no-relief', 'Hours 8:00 AM to 11:00 PM', 'Peter Pan forecast 75, 72, 70, 70, 70, 70; others flat', 'Decision 2026-11-21 (Tanner): Matterhorn should not lead for a 6-year-old (preschool survey appeal 2.8); it may appear lower'],
     asserts: [
+      A.notRank1('Matterhorn Bobsleds'),
       A.present("Peter Pan's Flight"),
       A.captionIf("Peter Pan's Flight", WONT_SHORTER, "says honestly it won't get shorter"),
     ],
-    expectation: "At least one recommendation. Every skip-verdict pick's caption opens with busy-day framing (first clause). Peter Pan's Flight appears with honest copy (one you had your eye on, and it won't get shorter), never positive-timing words. Space Mountain may be omitted.",
+    expectation: "At least one recommendation. The lead pick suits the youngest (6): Matterhorn, a rough coaster young kids rate low, does not lead but may appear lower for the older kid. Every skip-verdict pick's caption opens with busy-day framing (first clause). Peter Pan's Flight appears with honest copy (one you had your eye on, and it won't get shorter), never positive-timing words. Space Mountain may be omitted.",
     ideal: [
-      { ride: 'Matterhorn Bobsleds', caption: "Everything's busy today, and this line is closest to normal." },
       { ride: 'Dumbo the Flying Elephant', caption: 'Lines are long everywhere, and this one is a short walk for the kids.' },
       { ride: "Peter Pan's Flight", caption: "You wanted to ride this one, and the line is staying long this afternoon." },
+      { ride: 'Matterhorn Bobsleds', caption: 'Closest to its normal line, a good one for your older kid.' },
     ],
     bad: [{ ride: "Peter Pan's Flight", caption: 'Great time to ride, the line is moving fast.' }],
   },

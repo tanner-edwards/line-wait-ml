@@ -1,7 +1,7 @@
 {
   "id": "S4",
   "title": "Bad field, everything is busy and the pick is the least bad option",
-  "tests": "honest framing; wanted ride with weak window not oversold; always returns a rec; skip picks open with the busy-day framing",
+  "tests": "honest framing; wanted ride with weak window not oversold; always returns a rec; skip picks open with the busy-day framing. The lead pick suits the youngest (6): Matterhorn may appear but does not lead (decision 2026-11-21).",
   "persona": "two adults, two kids (6 and 9), not first-timers, Peter Pan wanted",
   "context": {
     "park": "Disneyland",
@@ -151,8 +151,8 @@
   "assert": {
     "minRecs": 1,
     "rank1": [
-      "faaa8be9-cc1e-4535-ac20-04a535654bd0",
-      "c23af6ba-8515-406a-8a48-d0818ba0bfc9"
+      "c23af6ba-8515-406a-8a48-d0818ba0bfc9",
+      "cc980e8e-192f-48b6-848c-27784084e54b"
     ],
     "mayOmit": [
       "9167db1d-e5e7-46da-a07f-ae30a87bc4c4"
