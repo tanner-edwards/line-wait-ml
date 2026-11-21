@@ -439,7 +439,10 @@ export const DEFERS = new RegExp([
   String.raw`(?<!\b(?:the|a|an|your|usual|posted|normal|short|long|minute|min) )\bwait (?:for|until|till|it out|a (?:bit|while|few)|on it)\b`,
   String.raw`\b(?:come|swing|head|circle|loop) back\b`,
   String.raw`\breturn (?:later|tonight|this|in)\b`,
-  String.raw`\blater (?:today|tonight|on|this (?:morning|afternoon|evening))\b`,
+  // A negated verb within four words ("won't drop later today", "isn't getting
+  // shorter later on") is a reason to go now, not a deferral (false positive seen
+  // in prod 2026-11-21).
+  String.raw`(?<!\b(?:won't|wont|not|never|doesn't|isn't|aren't|can't)\s(?:[\w']+\s){0,4})\blater (?:today|tonight|on|this (?:morning|afternoon|evening))\b`,
   String.raw`\b(?:after|around|closer to|at|until|till) (?:dinner|lunch|dark|sunset|the parade|the fireworks|\d{1,2}:\d{2}\b|\d{1,2}\s?(?:am|pm)\b)`,
 ].join('|'), 'i');
 

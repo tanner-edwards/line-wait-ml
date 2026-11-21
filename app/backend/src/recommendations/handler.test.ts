@@ -882,6 +882,20 @@ describe('guardNowOnly', () => {
     ];
     expect(guardNowOnly(recs)!.map(r => r.rideId)).toEqual(['pirates']);
   });
+  it('keeps captions where "later" is negated, since that is a reason to go now', () => {
+    for (const text of [
+      "About normal, but it's a big dark coaster and won't drop later today. Go if thrills matter.",
+      "The line isn't getting any shorter later on, so now is as good as it gets.",
+      "This one's not going to be better later tonight.",
+      "It never really thins out later this afternoon.",
+    ]) expect(DEFERS.test(text)).toBe(false);
+    for (const text of [
+      'Later today it drops to normal, so hold off.',
+      'Come back later today when the line settles.',
+      "It'll be shorter later tonight.",
+    ]) expect(DEFERS.test(text)).toBe(true);
+  });
+
   it('keeps captions that only use wait as a noun or name a window as a thing', () => {
     const ok = [
       'Worth the wait for your group, and the queue is indoors.',
