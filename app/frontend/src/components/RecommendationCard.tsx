@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { AlertTriangle, ChevronRight } from 'lucide-react-native';
+import { AlertTriangle, ChevronRight, Footprints } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
@@ -22,7 +22,7 @@ import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
-import { fitWaitLabel, hasShortForms, useMetaRowFit } from './metaRowFit';
+import { fitWaitLabel, hasShortForms, useMetaRowFit, walkOnMode } from './metaRowFit';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 import { NO_POSTED_WAIT } from '../grouping';
@@ -150,7 +150,8 @@ interface MetaRowProps {
  */
 export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaRowProps): React.ReactElement {
   const items = [badge, waitLabel, walkMinutes !== null].filter(Boolean).length;
-  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(META_GAP, items);
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit, avail } = useMetaRowFit(META_GAP, items);
+  const mode = walkOnMode(fit, avail);
   const shown = waitLabel ? fitWaitLabel(waitLabel, fit) : waitLabel;
   const labelStyle = [styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel];
 
@@ -163,14 +164,24 @@ export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaR
       ) : null}
       {waitLabel ? (
         <>
-          <WaitPill style={walkOn ? [styles.waitShrink, styles.walkOnPill] : styles.waitShrink}>
-            <Text numberOfLines={1} ellipsizeMode="tail" style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+          <WaitPill style={styles.waitShrink}>
+            {walkOn && mode !== 'text' ? <Footprints size={13} color={colors.go} /> : null}
+            {!walkOn || mode !== 'icon' ? (
+              <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+            ) : null}
           </WaitPill>
           {/* Off-screen copy of the full-label pill, measured at natural width. */}
           <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`rec-meta-measure-${rideId}`}>
-            <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+            <WaitPill>
+              {walkOn ? <Footprints size={13} color={colors.go} /> : null}
+              <Text style={labelStyle}>{waitLabel}</Text>
+            </WaitPill>
           </View>
-          {hasShortForms(waitLabel) ? (
+          {walkOn ? (
+            <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`rec-meta-measure-short-${rideId}`}>
+              <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+            </View>
+          ) : hasShortForms(waitLabel) ? (
             <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`rec-meta-measure-short-${rideId}`}>
               <WaitPill><Text style={labelStyle}>{fitWaitLabel(waitLabel, 'short')}</Text></WaitPill>
             </View>
@@ -242,8 +253,6 @@ const styles = StyleSheet.create({
   },
   noShrink: { flexShrink: 0 },
   waitShrink: { flexShrink: 1 },
-  // Never collapse to a bare "…" dot — keep a few letters visible.
-  walkOnPill: { minWidth: 68 },
   measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnLabel: { color: colors.go },
   noWaitLabel: { color: colors.textSecondary, fontWeight: '500' },

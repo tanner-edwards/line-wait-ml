@@ -18,7 +18,7 @@ import { colors, spacing, typography } from '../theme/tokens';
 import { VerdictBadge } from './VerdictBadge';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
-import { fitWaitLabel, useMetaRowFit } from './metaRowFit';
+import { fitWaitLabel, useMetaRowFit, walkOnMode } from './metaRowFit';
 import { RideIcon } from './icons/RideIcon';
 import { isWalkOnRide } from '../utils/walkOn';
 import { rideWaitLabel, walkMinsTo } from '../grouping';
@@ -47,18 +47,22 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
-  // "N min wait" steps down to "N min", then "Nm"; Walk On drops its icon
-  // first, then ellipsizes.
+  // "N min wait" steps down to "N min", then "Nm"; Walk On drops its icon,
+  // then ellipsizes, then shows only the icon.
   const waitText = isOperating && !walkOn && ride.currentWait !== null ? `${ride.currentWait} min wait` : null;
   const items = [badge, true, walkMins != null].filter(Boolean).length;
-  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(spacing.md, items);
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit, avail } = useMetaRowFit(spacing.md, items);
+
+  const walkOnShown = walkOnMode(fit, avail);
 
   // Waits (incl. Walk On / No posted wait) get the white pill; Down / Closed /
   // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
-    <WaitPill style={[styles.waitShrink, styles.walkOnPill]} testID="badge-walk-on">
-      {fit === 'full' ? <Footprints size={13} color={colors.go} /> : null}
-      <Text numberOfLines={1} style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
+    <WaitPill style={styles.waitShrink} testID="badge-walk-on">
+      {walkOnShown !== 'text' ? <Footprints size={13} color={colors.go} /> : null}
+      {walkOnShown !== 'icon' ? (
+        <Text numberOfLines={1} style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
+      ) : null}
     </WaitPill>
   ) : isOperating && ride.currentWait !== null ? (
     <WaitPill style={styles.waitShrink}>
@@ -169,8 +173,6 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   waitShrink: { flexShrink: 1 },
-  // Never collapse to a bare "…" dot — keep a few letters visible.
-  walkOnPill: { minWidth: 68 },
   noShrink: { flexShrink: 0 },
   measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnText: { color: colors.go },

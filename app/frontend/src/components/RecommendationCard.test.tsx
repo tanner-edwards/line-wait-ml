@@ -40,9 +40,25 @@ describe('MetaRow wait label', () => {
     expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('120m');
   });
 
-  it('leaves Walk On alone even when tight', () => {
-    render(<MetaRow {...props} waitLabel="Walk On" walkOn />);
-    measure(100, 110, 60, 54);
-    expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('Walk On');
+  describe('Walk On', () => {
+    const walkOnProps = { ...props, waitLabel: 'Walk On', walkOn: true };
+
+    it('shows icon and text when it fits', () => {
+      render(<MetaRow {...walkOnProps} />);
+      measure(400, 110, 100, 54, 80);
+      expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('Walk On');
+    });
+
+    it('keeps the text when only the icon has to go', () => {
+      render(<MetaRow {...walkOnProps} />);
+      measure(260, 110, 100, 54, 80); // 110 + 54 + 20 = 184 → 76 left: text pill fits (80)? no, but ≥ 68
+      expect(screen.getByTestId('rec-meta-wait-r1')).toHaveTextContent('Walk On');
+    });
+
+    it('collapses to the icon alone rather than a bare ellipsis', () => {
+      render(<MetaRow {...walkOnProps} />);
+      measure(220, 110, 100, 54, 80); // 36 left
+      expect(screen.queryByTestId('rec-meta-wait-r1')).toBeNull();
+    });
   });
 });
