@@ -8,6 +8,7 @@ import { codeChecks, scenarioChecks } from './checks';
 import { buildFixture } from './fixtures/derive';
 import { FIXTURES, fixtureById } from './fixtures/scenarios';
 import { AnswerRow, BuiltFixture, ResolvedRec } from './types';
+import { Persona } from '../../app/backend/src/types';
 import { decodeCodeName, VARIANTS } from './variants';
 
 let problems = 0;
@@ -35,7 +36,7 @@ for (const fx of FIXTURES) {
 }
 
 console.log('\nEvery code check can fail');
-type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number; youngestAge?: number };
+type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number; youngestAge?: number; prefs?: Persona['ridePreferences'] };
 const P = (fx: string, expect: string, ...rows: AnswerRow[]): Probe => ({ fx, expect, rows });
 const probes: Probe[] = [
   P('S1', 'name-template', { ride: 'Pirates of the Caribbean', caption: 'Pirates is half its usual line.' }, { ride: 'Jungle Cruise', caption: 'Jungle Cruise is shorter than usual.' }),
@@ -55,17 +56,29 @@ const probes: Probe[] = [
   P('S4', 'skip-positive', { ride: 'Dumbo the Flying Elephant', caption: 'A great deal with a short line.' }),
   P('S7', 'reopen-not-rare', { ride: 'Space Mountain', caption: 'A great deal right next door.' }),
   { ...P('S6', 'reachable', { ride: 'Space Mountain', caption: 'Line up before close and you still ride.' }), nowMin: 22 * 60 + 50 },
-  // A 10-year-old (7-12 band) sent to Dumbo first: survey appeal for that band is below the bar.
+  // A 10-year-old (10-12 band) sent to Dumbo first: survey appeal for that band is below the bar.
   { ...P('S2', 'age-fit', { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }), youngestAge: 10 },
+  // A toddler party asking for kid favorites is still flagged for Big Thunder: under 7, the
+  // low-appeal rides are the intense ones, so the kid-favorites pass does not apply.
+  { ...P('S2', 'age-fit', { ride: 'Big Thunder Mountain Railroad', caption: 'Shorter than usual right now.' }), prefs: ['kid-favorites'] },
 ];
 for (const p of probes) {
   const base = fixtureById(p.fx);
-  const fx = { ...base, ...(p.nowMin ? { nowMin: p.nowMin } : {}), ...(p.youngestAge != null && base.persona ? { persona: { ...base.persona, youngestAge: p.youngestAge } } : {}) };
+  const persona = base.persona ? { ...base.persona, ...(p.youngestAge != null ? { youngestAge: p.youngestAge } : {}), ...(p.prefs ? { ridePreferences: p.prefs } : {}) } : base.persona;
+  const fx = { ...base, ...(p.nowMin ? { nowMin: p.nowMin } : {}), persona };
   const b = buildFixture(fx);
   const failed = codeChecks(toRecs(p.rows, b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
   const ok = failed.includes(p.expect);
   console.log(`${ok ? 'ok ' : 'BAD'} ${p.expect.padEnd(18)} ${p.fx}`);
   if (!ok) bad(`check "${p.expect}" did not fire (fired: ${failed.join(', ') || 'none'})`);
+}
+// Must NOT fire: an 8-year-old (7-9 band, grade-school rating alone) sent to Dumbo is fine (4.1).
+{
+  const base = fixtureById('S2');
+  const b = buildFixture({ ...base, persona: { ...base.persona!, youngestAge: 8 } });
+  const f = codeChecks(toRecs([{ ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }], b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
+  console.log(`${f.includes('age-fit') ? 'BAD' : 'ok '} Dumbo is fine for an 8-year-old`);
+  if (f.includes('age-fit')) bad('Dumbo was flagged for an 8-year-old (grade-school appeal 4.1)');
 }
 // Must NOT fire: a ride name containing "Star" is not app vocabulary.
 {

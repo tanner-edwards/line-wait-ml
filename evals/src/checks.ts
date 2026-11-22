@@ -9,7 +9,8 @@ import AGE_APPEAL from '../config/age-appeal.json';
 
 // ----------------------------------------------------------------- age fit
 // TouringPlans reader-survey appeal (0-5) per ride and age group (config/age-appeal.json).
-// The app's age bands map onto those groups; 7-12 sits between grade school and teens.
+// The app's age bands map onto those groups: 7-9 is grade school, 10-12 sits between grade
+// school and teens (Tanner, 2026-11-21).
 type Appeal = { preschool?: number; gradeSchool?: number; teens?: number; youngAdult?: number; over30?: number };
 const APPEAL = (AGE_APPEAL as { rides: Record<string, Appeal> }).rides;
 /** A top-2 pick below this appeal for the party's age band is flagged. */
@@ -19,7 +20,8 @@ export function ageBand(youngestAge: number | null | undefined): { label: string
   const avg = (...xs: (number | undefined)[]) => { const v = xs.filter((x): x is number => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : undefined; };
   if (youngestAge == null || youngestAge >= 18) return { label: 'adults', of: a => avg(a.youngAdult, a.over30) };
   if (youngestAge >= 13) return { label: 'teens', of: a => a.teens };
-  if (youngestAge >= 7) return { label: '7-12', of: a => avg(a.gradeSchool, a.teens) };
+  if (youngestAge >= 10) return { label: '10-12', of: a => avg(a.gradeSchool, a.teens) };
+  if (youngestAge >= 7) return { label: '7-9', of: a => a.gradeSchool };
   return { label: 'under 7', of: a => a.preschool };
 }
 
@@ -179,10 +181,12 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
     recs.filter(r => { const d = ride(r); return d && d.restrictedFor.length && d.wanted && !PARTY_FACTOR.test(`${r.oneLiner} ${r.restrictionNote ?? ''}`); })
       .map(r => `${r.ride}: "${r.oneLiner}"`).join(' | ') || null);
 
-  // Age fit: the top two picks should appeal to the party's age band, unless the party asked
-  // for kid favorites or marked the ride as wanted (then a gentle ride is their call).
+  // Age fit: the top two picks should appeal to the party's age band, unless the ride is wanted
+  // (then it is their call) or the party asked for kid favorites and is 7 or over (a gentle ride
+  // is the point). Under 7 the low-appeal rides are the intense ones, so kid favorites never
+  // excuses them.
   const band = ageBand(b.persona?.youngestAge).label;
-  const kidPref = (b.persona?.ridePreferences ?? []).includes('kid-favorites');
+  const kidPref = band !== 'under 7' && (b.persona?.ridePreferences ?? []).includes('kid-favorites');
   add('age-fit', `Top 2 picks appeal to the party's ages (survey appeal at least ${AGE_FIT_MIN} for ${band})`, 'soft',
     kidPref ? null : recs.slice(0, 2).filter(r => { const d = ride(r); const v = r.ride ? ageAppeal(r.ride, b) : undefined; return d && !d.wanted && v != null && v < AGE_FIT_MIN; })
       .map(r => `${r.ride} (${ageAppeal(r.ride!, b)!.toFixed(1)} for ${band})`).join(', ') || null);

@@ -1,6 +1,6 @@
 #!/usr/bin/env zsh
 # Three-model comparison on the intent prompt (Tanner, 2026-11-20): GPT-6 Luna, Haiku 5.5, Haiku 4.5.
-# Each model runs the 14 scenarios x 5 and the six live personas x 3 on one live sample (same seed),
+# Each model runs the 14 scenarios x 5 and the seven live personas x 3 on one live sample (same seed),
 # judged by Llama 3.3 70B and Sonnet 4.6. Then prints the side-by-side table.
 #
 # Before running: `aws login` (Bedrock: Haiku 4.5 + judges), keychain items anthropic-api-key and
@@ -12,7 +12,7 @@ export FIREBASE_SERVICE_ACCOUNT_JSON="$(cat ../firebase-key.json)"
 export NODE_EXTRA_CA_CERTS="$HOME/.zscaler-ca.pem"
 SEED="${1:-4242}"
 JUDGES=us.meta.llama3-3-70b-instruct-v1:0,us.anthropic.claude-sonnet-4-6
-PERSONAS=default,toddler,thrills,pregnant,first-visit,wheelchair
+PERSONAS=default,toddler,thrills,pregnant,big-kid,first-visit,wheelchair
 typeset -a CELLS
 CELLS=(
   "gpt-6-luna --reasoning none"

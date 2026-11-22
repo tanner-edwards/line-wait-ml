@@ -215,8 +215,9 @@ export const FIXTURES: Fixture[] = [
       { name: 'Space Mountain', wait: 55, usual: 40, verdict: 'skip', reason: 'busy-no-relief', walk: 3, wanted: true, buckets: [55, 57, 58, 60, 58, 57] },
       { name: 'Matterhorn Bobsleds', wait: 20, usual: 35, verdict: 'go', reason: 'below-usual', walk: 8 },
       { name: 'Big Thunder Mountain Railroad', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
+      { name: "Pinocchio's Daring Journey", wait: 5, usual: 15, verdict: 'go', reason: 'below-usual', walk: 9 },
     ],
-    filled: [BUZZ_NOTE, 'Party: two adults, kids 9 and 12 (youngestAge 9)', 'Space forecast 55, 57, 58, 60, 58, 57; others flat'],
+    filled: [BUZZ_NOTE, 'Party: two adults, kids 9 and 12 (youngestAge 9)', 'Space forecast 55, 57, 58, 60, 58, 57; others flat', 'Pinocchio at 5 (usual 15) added 2026-11-21 as the age-fit trap: a walk-on too young for 9 and 12 (grade-school appeal 3.4)'],
     // Skip gate (2026-11-17): under 80% of this pool is skip, so Space Mountain stays only
     // because it is wanted, and the server ranks it after every non-skip pick.
     asserts: [
@@ -246,6 +247,7 @@ export const FIXTURES: Fixture[] = [
       { name: 'Space Mountain', wait: 55, usual: 40, verdict: 'skip', reason: 'dropping-soon', walk: 3, wanted: true, buckets: [55, 45, 40, 40, 40, 40], window: { wait: 40, inMin: 60 } },
       { name: 'Matterhorn Bobsleds', wait: 20, usual: 35, verdict: 'go', reason: 'below-usual', walk: 8 },
       { name: 'Big Thunder Mountain Railroad', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
+      { name: "Pinocchio's Daring Journey", wait: 5, usual: 15, verdict: 'go', reason: 'below-usual', walk: 9 },
     ],
     filled: ['Same as S5; Space forecast 55, 45, 40, 40, 40, 40 with a best window of 40 in 60 minutes'],
     asserts: [
@@ -273,9 +275,10 @@ export const FIXTURES: Fixture[] = [
       { name: 'Space Mountain', wait: 60, usual: 45, verdict: 'neutral', reason: 'none', walk: 14, buckets: [60, 45, 40, 40, 40, 40] },
       { name: 'Big Thunder Mountain Railroad', wait: 40, usual: 35, verdict: 'neutral', reason: 'none', walk: 6, buckets: [40, 25, 25, 25, 25, 25] },
       { name: 'Matterhorn Bobsleds', wait: 30, usual: 35, verdict: 'go', reason: 'below-usual', walk: 10 },
+      { name: 'Dumbo the Flying Elephant', wait: 5, usual: 20, verdict: 'go', reason: 'below-usual', walk: 7 },
     ],
     weather: { tempF: 62, feelsF: 62, conditions: 'clear' },
-    filled: ['Anchor Pirates: wait 20, usual 20, neutral', 'Party: two adults and a 15-year-old (youngestAge 15)', 'Space forecast 60, 45, 40, 40, 40, 40 (spec: about 40 by 10:50)', 'Big Thunder forecast 40, 25, 25... (spec: about 25 within 30 minutes)', 'Weather 62F clear'],
+    filled: ['Anchor Pirates: wait 20, usual 20, neutral', 'Party: two adults and a 15-year-old (youngestAge 15)', 'Space forecast 60, 45, 40, 40, 40, 40 (spec: about 40 by 10:50)', 'Big Thunder forecast 40, 25, 25... (spec: about 25 within 30 minutes)', 'Weather 62F clear', 'Dumbo at 5 (usual 20) added 2026-11-21 as the age-fit trap: a walk-on the 15-year-old would not thank you for (teen appeal 3.2)'],
     asserts: [
       A.rank1('Haunted Mansion'),
       A.present('Space Mountain'),
@@ -303,8 +306,9 @@ export const FIXTURES: Fixture[] = [
       { name: 'Space Mountain', wait: 15, usual: 45, verdict: 'star', reason: 'rare-low', walk: 1, minutesSinceReopen: 20, buckets: [15, 25, 35, 38, 40, 40] },
       { name: 'Matterhorn Bobsleds', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 8 },
       { name: 'Big Thunder Mountain Railroad', wait: 30, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
+      { name: 'Casey Jr. Circus Train', wait: 5, usual: 15, verdict: 'go', reason: 'below-usual', walk: 9 },
     ],
-    filled: [BUZZ_NOTE, 'Party: two adults, kids 10 and 12 (youngestAge 10)', 'Space forecast 15, 25, 35, 38, 40, 40 (spec 6.13 example)'],
+    filled: [BUZZ_NOTE, 'Party: two adults, kids 10 and 12 (youngestAge 10)', 'Space forecast 15, 25, 35, 38, 40, 40 (spec 6.13 example)', 'Casey Jr at 5 (usual 15) added 2026-11-21 as the age-fit trap: a walk-on that is too young for 10 and 12 (appeal 3.2 for 10-12)'],
     asserts: [
       A.rank1('Space Mountain'),
       A.captionIf('Space Mountain', /((real|actual) line|longer than (posted|it looks|shown)|posted|just reopened|reopened)/i, 'warns the real line may be longer'),
@@ -327,6 +331,7 @@ export const FIXTURES: Fixture[] = [
       { name: 'Space Mountain', wait: 15, usual: 45, verdict: 'star', reason: 'rare-low', walk: 1, minutesSinceReopen: 5, buckets: [15, 25, 35, 38, 40, 40] },
       { name: 'Matterhorn Bobsleds', wait: 25, usual: 35, verdict: 'go', reason: 'below-usual', walk: 8 },
       { name: 'Big Thunder Mountain Railroad', wait: 30, usual: 35, verdict: 'go', reason: 'below-usual', walk: 12 },
+      { name: 'Casey Jr. Circus Train', wait: 5, usual: 15, verdict: 'go', reason: 'below-usual', walk: 9 },
     ],
     filled: ['Same as S7 with minutesSinceReopen 5. The reopen threshold is still being tuned (spec 6.6): report separately.'],
     asserts: [
