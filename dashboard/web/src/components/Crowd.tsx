@@ -27,13 +27,22 @@ export function Crowd({ crowd, domain }: { crowd: ParkGrade['crowd']; domain: [n
         </table>
       )}
     >
-      <p className="sub" style={{ margin: '0 0 8px' }}>
-        {latest ? `Live ${num(latest.ratio, 2)} at ${fmtTime(latest.at)}` : 'Live ratio starts after 10am'}
-        {' · '}
-        {crowd.morning_index == null
-          ? 'morning index after the first 2 h'
-          : `morning index ${num(crowd.morning_index, 2)} (${describe(crowd.morning_index)})`}
-      </p>
+      <div className="tiles" style={{ marginTop: 0, marginBottom: 12 }}>
+        <div className="tile">
+          <div className="label">Live ratio</div>
+          <div className="value">{latest ? num(latest.ratio, 2) : '—'}</div>
+          <div className="delta" style={{ color: 'var(--text-2)' }}>
+            {latest ? `${describe(latest.ratio)} · ${fmtTime(latest.at)}` : 'after 10am'}
+          </div>
+        </div>
+        <div className="tile">
+          <div className="label">Morning index</div>
+          <div className="value">{num(crowd.morning_index, 2)}</div>
+          <div className="delta" style={{ color: 'var(--text-2)' }}>
+            {crowd.morning_index == null ? '2 h after open' : `first 2 h, ${describe(crowd.morning_index)}`}
+          </div>
+        </div>
+      </div>
       {graded.length < 2 ? (
         <Empty>The live ratio starts at 10am, once 8+ rides are reporting.</Empty>
       ) : (
