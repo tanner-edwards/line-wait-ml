@@ -47,8 +47,8 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
-  // Only "N min wait" has short forms — "N min", then "Nm" — rather than
-  // ellipsizing.
+  // "N min wait" steps down to "N min", then "Nm"; Walk On drops its icon
+  // first, then ellipsizes.
   const waitText = isOperating && !walkOn && ride.currentWait !== null ? `${ride.currentWait} min wait` : null;
   const items = [badge, true, walkMins != null].filter(Boolean).length;
   const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(spacing.md, items);
@@ -57,8 +57,8 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
     <WaitPill style={styles.waitShrink} testID="badge-walk-on">
-      <Footprints size={13} color={colors.go} />
-      <Text style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
+      {fit === 'full' ? <Footprints size={13} color={colors.go} /> : null}
+      <Text numberOfLines={1} style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
     </WaitPill>
   ) : isOperating && ride.currentWait !== null ? (
     <WaitPill style={styles.waitShrink}>
@@ -92,14 +92,18 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
               </View>
             ) : null}
             {status}
-            {waitText ? (
+            {waitText || walkOn ? (
               // Off-screen copies of the full and short pills, measured at natural width.
+              // Walk On's short form is the same pill without its icon.
               <>
                 <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`ride-meta-measure-${ride.id}`}>
-                  <WaitPill><Text style={styles.statusText}>{waitText}</Text></WaitPill>
+                  <WaitPill>
+                    {walkOn ? <Footprints size={13} color={colors.go} /> : null}
+                    <Text style={styles.statusText}>{walkOn ? 'Walk On' : waitText}</Text>
+                  </WaitPill>
                 </View>
                 <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`ride-meta-measure-short-${ride.id}`}>
-                  <WaitPill><Text style={styles.statusText}>{fitWaitLabel(waitText, 'short')}</Text></WaitPill>
+                  <WaitPill><Text style={styles.statusText}>{walkOn ? 'Walk On' : fitWaitLabel(waitText!, 'short')}</Text></WaitPill>
                 </View>
               </>
             ) : null}
