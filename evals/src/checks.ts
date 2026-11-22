@@ -5,6 +5,7 @@
 import { Severity, Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec } from './types';
 import { rideMeta } from './fixtures/derive';
 import { DEFERS } from '../../app/backend/src/recommendations/handler';
+import { RideCategory } from '../../app/backend/src/types';
 import AGE_APPEAL from '../config/age-appeal.json';
 
 // ----------------------------------------------------------------- age fit
@@ -115,6 +116,23 @@ function allowedNumbers(b: BuiltFixture) {
 
 // ----------------------------------------------------------------- generic checks
 
+// Preference categories. Thrills means thrill 3 and up (Matterhorn, Big Thunder, Space); kid
+// favorites is thrill 1, the rides the prompt itself names (carousels, Dumbo, Casey Jr.), so
+// Pirates and Haunted Mansion do not count (tightened 2026-11-21: thrill 2 covered 13 of 21
+// rides and the check could not fail); classics and immersive use the ride_metadata tags;
+// first-time is the catch-all and fits every ride.
+export function fitsCategory(d: DerivedRide, p: RideCategory): boolean {
+  if (p === 'thrills') return d.thrillLevel != null && d.thrillLevel >= 3;
+  if (p === 'kid-favorites') return d.thrillLevel === 1;
+  if (p === 'classics') return d.categories.includes('classic');
+  if (p === 'immersive') return d.categories.includes('immersive');
+  return true; // first-time
+}
+/** A ride fits the party when it fits any selected category. No selection: nothing fits (the check is off). */
+export function fitsPreference(d: DerivedRide, prefs: readonly RideCategory[]): boolean {
+  return prefs.some(p => fitsCategory(d, p));
+}
+
 export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered: string[], parseError?: string): CheckResult[] {
   const out: CheckResult[] = [];
   const add = (id: string, label: string, severity: 'hard' | 'soft', fail: string | null | undefined) =>
@@ -190,6 +208,46 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
   add('age-fit', `Top 2 picks appeal to the party's ages (survey appeal at least ${AGE_FIT_MIN} for ${band})`, 'soft',
     kidPref ? null : recs.slice(0, 2).filter(r => { const d = ride(r); const v = r.ride ? ageAppeal(r.ride, b) : undefined; return d && !d.wanted && v != null && v < AGE_FIT_MIN; })
       .map(r => `${r.ride} (${ageAppeal(r.ride!, b)!.toFixed(1)} for ${band})`).join(', ') || null);
+
+  // Preference fit (2026-11-21, Tanner): the selected categories are a boost of one step, not
+  // a filter. A ride fits the party when it fits any selected category (fitsPreference above);
+  // a top-two pick is held against the preferences only when it fits none of them while a
+  // fitting ride, unrestricted, not a skip, with a verdict at least as good as the pick's, was
+  // left out of the top two (a star beats a fitting go; a go does not beat a fitting go). The
+  // boost earns one slot, not both: once any top-two pick fits, the other is free (S6: Haunted
+  // Mansion first, then Big Thunder before close, Tanner 2026-11-21). Selecting nothing, or
+  // first-time, turns the check off by itself. Wanted rides are their call.
+  const prefs = b.persona?.ridePreferences ?? [];
+  const fitsParty = (d: DerivedRide) => fitsPreference(d, prefs);
+  const top2 = recs.slice(0, 2).map(ride).filter((d): d is DerivedRide => !!d);
+  const tier: Record<string, number> = { skip: 0, neutral: 1, go: 2, star: 3 };
+  const prefFails = (top2.some(fitsParty) ? [] : top2.filter(d => !d.wanted && !fitsParty(d))).flatMap(d => {
+    const leftOut = b.rides.filter(x => !x.ridden && fitsParty(x) && !x.restrictedFor.length && x.verdict !== 'skip' && tier[x.verdict] >= tier[d.verdict] && !top2.includes(x));
+    return leftOut.length ? [`${d.name} (thrill ${d.thrillLevel}${d.categories.length ? ', ' + d.categories.join('/') : ''}, ${d.verdict}) over ${leftOut.map(x => `${x.name} (${x.verdict})`).join(', ')}`] : [];
+  });
+  add('pref-fit', `Top 2 picks fit what the party asked for (${prefs.join(', ') || 'nothing selected'}) when the field allows`, 'soft', prefFails.join(' | ') || null);
+
+  // Walk fit (2026-11-21, Tanner): saving time is the goal, so a ride is scored on net minutes
+  // saved: how far under usual its line is, minus the walk. A line that is long now but drops
+  // within 30 minutes counts at the dropping wait, so a clearly falling line is still a deal. A
+  // top-two pick is held against this only when a ride at least 5 minutes closer was left out
+  // of the top two with the same or better net score, and that closer ride is a real option for
+  // this party: unrestricted, not a skip, fits what they asked for, and not below the age floor.
+  // A great deal far away still leads (its net score carries the walk); the same deal closer
+  // wins. Wanted rides are their call.
+  const netSaved = (d: DerivedRide): number | null => {
+    if (d.usual == null) return null;
+    const soon = Math.min(d.wait, d.buckets[1] ?? d.wait);
+    return Math.round(d.usual - soon - d.walk);
+  };
+  const ageOk = (d: DerivedRide) => { const v = ageAppeal(d.name, b); return kidPref || v == null || v >= AGE_FIT_MIN; };
+  const walkFails = top2.flatMap(d => {
+    const mine = netSaved(d);
+    if (d.wanted || mine == null) return [];
+    const closer = b.rides.filter(x => !x.ridden && !top2.includes(x) && !x.restrictedFor.length && x.verdict !== 'skip' && (!prefs.length || fitsParty(x)) && ageOk(x) && x.walk + 5 <= d.walk && netSaved(x) != null && netSaved(x)! >= mine);
+    return closer.length ? [`${d.name} (walk ${d.walk}, net ${mine}) over ${closer.map(x => `${x.name} (walk ${x.walk}, net ${netSaved(x)})`).join(', ')}`] : [];
+  });
+  add('walk-fit', 'Top 2 picks do not walk past a closer ride with the same or better net minutes saved', 'soft', walkFails.join(' | ') || null);
 
   // soft
   add('length', 'Caption about a dozen words (flags over 18)', 'soft',

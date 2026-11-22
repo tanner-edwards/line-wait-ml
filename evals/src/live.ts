@@ -25,6 +25,7 @@ import { loadWeatherLine } from '../../app/backend/src/weather';
 import { formatLocalTime, parkTimeZone } from '../../app/backend/src/recommendations/buildPromptInputs';
 import { ParkSlug } from '../../app/backend/src/types';
 import { arg, EVALS_ROOT, stamp } from './args';
+import { rideMeta } from './fixtures/derive';
 import { PersonaPreset } from './personas';
 import { Fixture, RideFact } from './types';
 
@@ -32,6 +33,40 @@ export const HUBS: Record<ParkSlug, { lat: number; lng: number }> = {
   'disneyland': { lat: 33.8121, lng: -117.9190 },
   'california-adventure': { lat: 33.8062, lng: -117.9209 },
 };
+
+/**
+ * Starting-spot playbook (Tanner, 2026-11-21): fixed places the guest stands, so live runs
+ * are a benchmark that can be compared across days, not just one hub. `hub` is the park's
+ * central hub; every other spot is a ride, and the guest stands at its coordinates (so it is
+ * the anchor when it is operating). Keys carry no hyphens: they go into fixture ids.
+ */
+export const START_SPOTS: Record<ParkSlug, Record<string, string | null>> = {
+  'disneyland': {
+    hub: null,
+    fantasyland: 'King Arthur Carrousel',
+    tomorrowland: 'Space Mountain',
+    neworleans: 'Pirates of the Caribbean',
+    frontierland: 'Big Thunder Mountain Railroad',
+    galaxysedge: 'Star Wars: Rise of the Resistance',
+  },
+  'california-adventure': {
+    hub: null,
+    pixarpier: 'Toy Story Midway Mania!',
+    carsland: 'Radiator Springs Racers',
+    avengers: 'WEB SLINGERS: A Spider-Man Adventure',
+    grizzlypeak: "Soarin' Around the World",
+  },
+};
+
+/** Coordinates and a label for a playbook spot. */
+export function startSpot(park: ParkSlug, key: string): { lat: number; lng: number; label: string } {
+  const spots = START_SPOTS[park];
+  if (!spots || !(key in spots)) throw new Error(`--start must be one of ${Object.keys(spots ?? {}).join(', ')} for ${park}`);
+  const ride = spots[key];
+  if (!ride) return { ...HUBS[park], label: 'the central hub' };
+  const m = rideMeta(ride);
+  return { lat: m.lat, lng: m.lng, label: `${ride} (${m.land})` };
+}
 
 function minutesOfDay(d: Date, tz: string): number {
   const parts = new Intl.DateTimeFormat('en-US', { timeZone: tz, hour: 'numeric', minute: 'numeric', hour12: false }).formatToParts(d);
@@ -41,7 +76,7 @@ function minutesOfDay(d: Date, tz: string): number {
 }
 
 /** A capture before it gets an id, title, and persona. */
-export type LiveBase = Omit<Fixture, 'asserts' | 'id' | 'title' | 'persona'> & { stamp: string };
+export type LiveBase = Omit<Fixture, 'asserts' | 'id' | 'title' | 'persona'> & { stamp: string; start?: string };
 
 /** Everything the Lambda would see for this park right now, reduced to RideFacts. */
 export async function captureLive(park: ParkSlug, lat = HUBS[park].lat, lng = HUBS[park].lng): Promise<LiveBase> {
@@ -145,21 +180,22 @@ export function sampleLive(base: LiveBase, opts: { rides: number; seed: number; 
     const rides = picked.map(r => ({ ...r, wanted: wanted.has(r.name) }));
     return {
       ...base,
-      id: `LIVE-${base.park}-${base.stamp}-${p.key}`,
-      title: `Live ${base.park} at ${base.localTime}, ${p.label}`,
+      id: `LIVE-${base.park}-${base.stamp}${base.start ? `-${base.start}` : ''}-${p.key}`,
+      title: `Live ${base.park} at ${base.localTime}${base.start ? `, from ${base.start}` : ''}, ${p.label}`,
       persona: p.persona,
       anchor: { ...base.anchor, wanted: false },
       rides,
       filled: [...base.filled, sampleNote, `Persona preset "${p.key}": ${p.label}.`, wanted.size ? `Wanted: ${[...wanted].join(', ')}.` : 'No wanted rides.'],
     };
-  }).map(({ stamp: _s, ...fx }) => fx);
+  }).map(({ stamp: _s, start: _st, ...fx }) => fx);
 }
 
 async function main() {
   const park = (arg('park', 'disneyland') as ParkSlug);
   if (!HUBS[park]) throw new Error(`--park must be one of ${Object.keys(HUBS).join(', ')}`);
-  const lat = Number(arg('lat', String(HUBS[park].lat)));
-  const lng = Number(arg('lng', String(HUBS[park].lng)));
+  const spot = startSpot(park, arg('start', 'hub')!);
+  const lat = Number(arg('lat', String(spot.lat)));
+  const lng = Number(arg('lng', String(spot.lng)));
   const { stamp: st, ...base } = await captureLive(park, lat, lng);
   const id = `LIVE-${park}-${st}`;
   const fixture: Omit<Fixture, 'asserts'> = {

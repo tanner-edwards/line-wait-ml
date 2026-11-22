@@ -23,6 +23,11 @@ export const PERSONA_PRESETS: PersonaPreset[] = [
   { key: 'big-kid', label: 'Two adults and a 10-year-old, nothing marked', persona: { ...base, youngestAge: 10, tripDuration: '2-days' }, wanted: 0 },
   { key: 'first-visit', label: 'First visit, kid of 8, classics, one ride marked', persona: { ...base, youngestAge: 8, ridePreferences: ['first-time', 'classics'], tripDuration: '1-day' }, wanted: 1 },
   { key: 'wheelchair', label: 'Wheelchair in the party, immersive, one ride marked', persona: { ...base, youngestAge: 18, ridePreferences: ['immersive'], accessibilityNeeds: ['wheelchair'], tripDuration: '3-4-days' }, wanted: 1 },
+  // Added 2026-11-21: one preference each, no restriction attached, so the preference check and
+  // the preference-lift comparison against `default` can actually see the boost.
+  { key: 'classics', label: 'Two adults, classics, nothing marked', persona: { ...base, youngestAge: 18, ridePreferences: ['classics'], tripDuration: '1-day' }, wanted: 0 },
+  { key: 'immersive', label: 'Two adults, immersive, nothing marked', persona: { ...base, youngestAge: 18, ridePreferences: ['immersive'], tripDuration: '2-days' }, wanted: 0 },
+  { key: 'kid-fav-9', label: 'Two adults and a 9-year-old, kid favorites, nothing marked', persona: { ...base, youngestAge: 9, ridePreferences: ['kid-favorites'], tripDuration: '2-days' }, wanted: 0 },
 ];
 
 export function presetsByKey(keys?: string[]): PersonaPreset[] {

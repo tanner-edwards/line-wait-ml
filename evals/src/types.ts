@@ -19,6 +19,8 @@ export interface RideFact {
   p90?: number;
   minutesSinceReopen?: number | null;
   wanted?: boolean;
+  /** Marked "Rode it" in the app this trip: the server drops it from the pool (excludeRideIds), so the model never sees it. */
+  ridden?: boolean;
 }
 
 /** A frozen scenario from the spec (section 11). */
@@ -69,6 +71,8 @@ export interface DerivedRide extends RideFact {
   land: string;
   heightMinIn: number | null;
   thrillLevel: number | null;
+  /** ride_metadata tags: classic, iconic, immersive (31 of 59 rides carry any). */
+  categories: string[];
   pregnancyAdvisory: boolean;
   transferRequired: boolean;
   isAnchor: boolean;

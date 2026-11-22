@@ -60,7 +60,7 @@ export function situationLines(b: BuiltFixture, offered?: string[]): string[] {
   if (hidden.length) L.splice(3, 0, `NOT SHOWN TO THE MODEL (removed by this prompt version, so it could not pick them; do not penalize the answer for leaving them out): ${hidden.join(', ')}.`);
   for (const r of b.rides) {
     const fc = r.buckets.slice(1, 4).map((w, i) => `${w} at ${clock(b.fx.nowMin + 30 * (i + 1))}`).join(', ');
-    const notes = [hidden.includes(r.name) ? 'NOT shown to the model' : '', r.isAnchor ? 'guest is here' : '', r.minutesSinceReopen != null ? `reopened ${r.minutesSinceReopen} min ago` : '', r.window ? `best later: ${r.window.wait} at ${clock(b.fx.nowMin + r.window.inMin)}` : '', r.reachableBeforeClose ? '' : 'cannot reach before close'].filter(Boolean).join('; ');
+    const notes = [hidden.includes(r.name) ? 'NOT shown to the model' : '', r.isAnchor ? 'guest is here' : '', r.ridden ? 'already ridden this trip' : '', r.minutesSinceReopen != null ? `reopened ${r.minutesSinceReopen} min ago` : '', r.window ? `best later: ${r.window.wait} at ${clock(b.fx.nowMin + r.window.inMin)}` : '', r.reachableBeforeClose ? '' : 'cannot reach before close'].filter(Boolean).join('; ');
     L.push(`${r.name} | ${r.wait} | ${r.usual ?? '?'} | ${r.ofUsual ?? '?'} (${r.vsUsual != null && r.vsUsual > 0 ? '+' : ''}${r.vsUsual ?? '?'}) | ${r.walk} min | ${r.verdict} | ${r.wanted ? 'yes' : 'no'} | ${r.restrictedFor.join(', ') || 'none'} | ${notes || '-'} | ${fc}`);
   }
   return L;

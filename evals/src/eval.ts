@@ -9,7 +9,7 @@
 // Options: --runs n (default 5, the spec's protocol) | --fixtures S1,S2 | --model <bedrock id>
 //   --smoke [--live <park>]  five hard scenarios + live sample x 3 personas, 1 run, ~2 min
 //   --concurrency n (default 3) answer calls in flight
-//   --live <park> [--rides 8] [--seed n] [--personas default,toddler]  capture the park now, sample
+//   --live <park> [--start hub] [--rides 8] [--seed n] [--personas default,toddler]  capture the park now, sample
 //     random rides, run every persona preset against the same set (default 1 run; needs Firebase env)
 //   --judges a,b (default config/judges.json) | --no-judge | --no-open | --site-dir <dir>
 
@@ -26,7 +26,7 @@ import { MOCK } from './llm';
 import { generate } from './run';
 import { RunRecord } from './types';
 import { getVariant } from './variants';
-import { captureLive, sampleLive, writeLiveFixture } from './live';
+import { captureLive, sampleLive, startSpot, writeLiveFixture } from './live';
 import { presetsByKey } from './personas';
 import { ParkSlug } from '../../app/backend/src/types';
 
@@ -94,12 +94,15 @@ async function main() {
       const park = livePark as ParkSlug;
       const seed = Number(arg('seed', String(Date.now() % 1_000_000)));
       const presets = presetsByKey((arg('personas') ?? (smoke ? 'default,toddler,thrills' : ''))?.split(',').map(s => s.trim()).filter(Boolean));
-      const base = await captureLive(park);
+      const startKey = arg('start', 'hub')!;
+      const spot = startSpot(park, startKey);
+      const captured = await captureLive(park, spot.lat, spot.lng);
+      const base = { ...captured, start: startKey, filled: [...captured.filled, `Guest is standing at ${spot.label} (playbook spot "${startKey}").`] };
       const live = sampleLive(base, { rides: Number(arg('rides', '8')), seed, presets }).map(fx => ({ ...fx, asserts: [] }));
       for (const fx of live) writeLiveFixture(fx);
       fixtures = smoke ? [...fixtures, ...live] : live;
       const w = base.weather ? `, ${base.weather.tempF}F ${base.weather.conditions}` : '';
-      console.log(`Live ${park} at ${base.localTime}${w}: ${base.rides.length + 1} operating rides, anchor ${base.anchor.name}, closes ${base.hours?.close ?? 'unknown'}`);
+      console.log(`Live ${park} at ${base.localTime}${w}, from ${spot.label}: ${base.rides.length + 1} operating rides, anchor ${base.anchor.name}, closes ${base.hours?.close ?? 'unknown'}`);
       console.log(`Sampled ${live[0].rides.length} rides (seed ${seed}): ${live[0].rides.map(r => r.name).join(', ')}`);
       console.log(`Personas: ${presets.map(p => p.key).join(', ')}. Fixtures saved under evals/live/ as ${live[0].id.replace(/-[a-z-]+$/, '')}-<persona>.json`);
     }

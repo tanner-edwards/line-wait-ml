@@ -7,7 +7,7 @@ import { join } from 'path';
 import { EVALS_ROOT } from '../args';
 import { BuiltFixture, DerivedRide, Fixture, RideFact } from '../types';
 
-interface Meta { name: string; themeparks_id: string; land: string; height_min_in: number | null; thrill_level: number | null; pregnancy_advisory: boolean; transfer_required: boolean }
+interface Meta { name: string; themeparks_id: string; land: string; lat: number; lng: number; height_min_in: number | null; thrill_level: number | null; pregnancy_advisory: boolean; transfer_required: boolean; categories?: string[] }
 
 let metaCache: Map<string, Meta> | null = null;
 export function rideMeta(name: string): Meta {
@@ -71,6 +71,7 @@ export function buildFixture(fx: Fixture): BuiltFixture {
       land: m.land,
       heightMinIn: m.height_min_in,
       thrillLevel: m.thrill_level,
+      categories: m.categories ?? [],
       pregnancyAdvisory: !!m.pregnancy_advisory,
       transferRequired: !!m.transfer_required,
       isAnchor,
