@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { AlertTriangle, ChevronRight, Footprints } from 'lucide-react-native';
+import { AlertTriangle, Bell, ChevronRight, Footprints } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
@@ -22,6 +22,8 @@ import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
+import { useIsWatching } from '../context/PersonaContext';
+import { useTrip } from '../context/TripContext';
 import { fitWaitLabel, hasShortForms, useMetaRowFit, walkOnMode } from './metaRowFit';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
@@ -83,6 +85,8 @@ export function RecommendationCard({
   onRetire,
   isFirst,
 }: RecommendationCardProps): React.ReactElement {
+  const isWatching = useIsWatching(rec.rideId);
+  const { hasActiveTrip } = useTrip();
   if (!ride) {
     return (
       <View style={styles.skeleton} testID={`rec-card-${rec.rideId}`}>
@@ -110,6 +114,9 @@ export function RecommendationCard({
                   <Text style={styles.rideName}>{ride.name}</Text>
                   {rec.restrictionNote ? (
                     <AlertTriangle size={13} color={colors.star} />
+                  ) : null}
+                  {isWatching && hasActiveTrip ? (
+                    <View style={styles.bellEnd}><Bell size={12} color={colors.star} /></View>
                   ) : null}
                 </View>
                 {badge || waitLabel || rec.walkMinutes !== null ? (
@@ -222,6 +229,8 @@ const styles = StyleSheet.create({
   // Pushes the walk pill to the right edge of the text column, which ends
   // where the chevron's gap begins. Never shrinks — the wait label gives way.
   walkEnd: { marginLeft: 'auto', flexShrink: 0 },
+  // Right edge of the text column, same as Discover rows.
+  bellEnd: { marginLeft: 'auto' },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
