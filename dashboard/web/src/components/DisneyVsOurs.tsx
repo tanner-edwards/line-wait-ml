@@ -9,12 +9,13 @@ import { axisProps, tooltipProps } from './tooltip';
  *  For watching who is closer over a few weeks; nothing acts on it. */
 export function DisneyVsOurs({ data }: { data: Data }) {
   const t = useChartTheme();
+  const yTop = Math.ceil(Math.max(10, ...data.rides.flatMap((r) => r.hours.flatMap((h) => [h.disney ?? 0, h.ours ?? 0, h.actual ?? 0]))) / 10) * 10;
   const snap = data.disney_snapshot_hours.map((h) => fmtClockHour(+h)).join(', ') || '—';
   return (
     <Card
       title="Disney's forecast vs ours"
       sub={`Day forecasts as of park open (Disney's ${snap} snapshot; ours rebuilt with model ${data.model_version}`
-        + `${data.weather_fallback ? ', weather unknown' : ''}) vs the hourly mean posted wait`}
+        + `${data.weather_fallback ? ', weather unknown' : ''}) vs the hourly mean posted wait. Every ride shares one scale (0–${yTop} min).`}
       className="span-all"
       table={() => <DvoTable data={data} />}
     >
@@ -25,7 +26,7 @@ export function DisneyVsOurs({ data }: { data: Data }) {
         { label: 'Actual', color: t.actual },
       ]} />
       <div className="mini-grid">
-        {data.rides.map((r) => <Mini key={r.ride_id} ride={r} />)}
+        {data.rides.map((r) => <Mini key={r.ride_id} ride={r} yTop={yTop} />)}
       </div>
     </Card>
   );
@@ -58,7 +59,7 @@ function Scorecard({ data }: { data: Data }) {
   );
 }
 
-function Mini({ ride }: { ride: Data['rides'][number] }) {
+function Mini({ ride, yTop }: { ride: Data['rides'][number]; yTop: number }) {
   const t = useChartTheme();
   const rows = ride.hours.map((h) => ({ ...h, label: fmtClockHour(h.hour) }));
   return (
@@ -75,13 +76,13 @@ function Mini({ ride }: { ride: Data['rides'][number] }) {
             <ComposedChart data={rows} barGap={2} barCategoryGap="20%" margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid vertical={false} stroke={t.grid} />
               <XAxis dataKey="label" {...axisProps(t)} interval="preserveStartEnd" minTickGap={8} />
-              <YAxis width={30} {...axisProps(t)} axisLine={false} allowDecimals={false} />
+              <YAxis width={30} domain={[0, yTop]} {...axisProps(t)} axisLine={false} allowDecimals={false} />
               <Tooltip {...tooltipProps(t)} cursor={{ fill: t.grid }}
                        formatter={(v, name) => [v == null ? '—' : `${num(v as number)} min`, name]} />
               {ride.has_disney && (
-                <Bar dataKey="disney" name="Disney" fill={t.disney} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+                <Bar dataKey="disney" name="Disney" fill={t.disney} isAnimationActive={false} />
               )}
-              <Bar dataKey="ours" name="Ours" fill={t.forecast} radius={[4, 4, 0, 0]} isAnimationActive={false} />
+              <Bar dataKey="ours" name="Ours" fill={t.forecast} isAnimationActive={false} />
               <Line dataKey="actual" name="Actual" stroke={t.actual} strokeWidth={2} connectNulls={false}
                     dot={{ r: 3, fill: t.actual, stroke: t.surface, strokeWidth: 1 }}
                     activeDot={{ r: 4, stroke: t.surface, strokeWidth: 2 }} isAnimationActive={false} />

@@ -1,8 +1,9 @@
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { num, pct, signed } from '../format';
 import { useChartTheme } from '../theme';
 import type { HorizonScore } from '../types';
-import { Card, Empty, Legend } from './Card';
+import { Card, Empty } from './Card';
+import { endLabel } from './chartLabels';
 import { axisProps, tooltipProps } from './tooltip';
 
 /** The one hero number per park: MAE at the selected horizon vs "wait stays the same". */
@@ -10,12 +11,16 @@ export function Headline({ scores, horizon }: { scores: HorizonScore[]; horizon:
   const t = useChartTheme();
   const graded = scores.filter((s) => s.n > 0);
   const sel = scores.find((s) => s.horizon === horizon);
-  const data = graded.map((s) => ({ name: `t${s.horizon}`, model: s.mae, persistence: s.mae_persistence }));
+  const data = graded.map((s) => ({ horizon: s.horizon, model: s.mae, persistence: s.mae_persistence }));
+  const lift = sel?.lift_pct;
+  const title = sel && sel.n > 0 && lift != null
+    ? `Model ${lift >= 0 ? 'beats' : 'trails'} "wait stays the same" by ${Math.abs(Math.round(lift))}% at t${horizon}`
+    : 'Forecast accuracy';
 
   return (
     <Card
-      title="Forecast accuracy"
-      sub="Mean absolute error in minutes, on the same rows as the persistence baseline"
+      title={title}
+      sub="Forecast accuracy: mean absolute error in minutes, on the same rows as the persistence baseline"
       className="span-all"
       table={() => <HorizonTable scores={scores} />}
     >
@@ -51,21 +56,23 @@ export function Headline({ scores, horizon }: { scores: HorizonScore[]; horizon:
         </>
       )}
       {data.length > 1 && (
-        <div style={{ marginTop: 16 }}>
-          <Legend items={[{ label: 'Model', color: t.forecast }, { label: 'Persistence', color: t.persistence }]} />
-          <div className="chart small">
-            <ResponsiveContainer>
-              <BarChart data={data} barGap={2} barCategoryGap="30%">
-                <CartesianGrid vertical={false} stroke={t.grid} />
-                <XAxis dataKey="name" {...axisProps(t)} />
-                <YAxis width={32} {...axisProps(t)} axisLine={false} />
-                <Tooltip {...tooltipProps(t)} cursor={{ fill: t.grid }}
-                         formatter={(v) => `${num(v as number)} min`} />
-                <Bar dataKey="model" name="Model" fill={t.forecast} maxBarSize={24} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="persistence" name="Persistence" fill={t.persistence} maxBarSize={24} radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+        <div className="chart small" style={{ marginTop: 16 }}>
+          <ResponsiveContainer>
+            <LineChart data={data} margin={{ top: 6, right: 84, bottom: 0, left: 0 }}>
+              <CartesianGrid vertical={false} stroke={t.grid} />
+              <XAxis dataKey="horizon" type="number" domain={['dataMin', 'dataMax']}
+                     ticks={data.map((d) => d.horizon)} tickFormatter={(h) => `t${h}`} {...axisProps(t)} />
+              <YAxis width={32} domain={[0, 'auto']} {...axisProps(t)} axisLine={false} />
+              <Tooltip {...tooltipProps(t)} labelFormatter={(h) => `t${h}`}
+                       formatter={(v, name) => [`${num(v as number)} min`, name]} />
+              <Line dataKey="persistence" name="Persistence" stroke={t.persistence} strokeWidth={2}
+                    dot={{ r: 4, fill: t.persistence, stroke: t.surface, strokeWidth: 2 }} isAnimationActive={false}
+                    label={endLabel('Persistence', t.persistence, data.length - 1)} />
+              <Line dataKey="model" name="Model" stroke={t.forecast} strokeWidth={2}
+                    dot={{ r: 4, fill: t.forecast, stroke: t.surface, strokeWidth: 2 }} isAnimationActive={false}
+                    label={endLabel('Model', t.forecast, data.length - 1)} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
       )}
     </Card>

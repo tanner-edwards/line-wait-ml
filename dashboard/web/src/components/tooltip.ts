@@ -6,10 +6,9 @@ export function tooltipProps(t: ChartTheme) {
     contentStyle: {
       background: t.surface,
       border: `1px solid ${t.axis}`,
-      borderRadius: 10,
+      borderRadius: 4,
       fontSize: 13,
       color: t.ink,
-      boxShadow: '0 4px 16px rgba(0,0,0,0.08)',
     },
     labelStyle: { color: t.inkSecondary, marginBottom: 4 },
     itemStyle: { color: t.ink, padding: 0 },

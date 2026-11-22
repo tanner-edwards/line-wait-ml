@@ -14,10 +14,16 @@ interface Props {
 
 export function Bellwethers({ rides, horizon, domain }: Props) {
   const t = useChartTheme();
+  // One y scale for every ride, so a 3-minute wiggle can't look like a 40-minute swing.
+  const yMax = Math.max(10, ...rides.flatMap((r) => [
+    ...r.actual.map((p) => (p.status === 'OPERATING' ? p.wait ?? 0 : 0)),
+    ...(r.forecasts[String(horizon)] ?? []).map((p) => p.value ?? 0),
+  ]));
+  const yTop = Math.ceil(yMax / 10) * 10;
   return (
     <Card
       title="Bellwethers"
-      sub={`Posted wait vs the t${horizon} forecast, drawn at the time it was forecast for`}
+      sub={`Posted wait vs the t${horizon} forecast, drawn at the time it was forecast for. Every ride shares one scale (0–${yTop} min).`}
       className="span-all"
       table={() => <BellwetherTable rides={rides} />}
     >
@@ -26,13 +32,15 @@ export function Bellwethers({ rides, horizon, domain }: Props) {
         { label: `t${horizon} forecast`, color: t.forecast },
       ]} />
       <div className="mini-grid">
-        {rides.map((r) => <Mini key={r.ride_id} ride={r} horizon={horizon} domain={domain} />)}
+        {rides.map((r) => <Mini key={r.ride_id} ride={r} horizon={horizon} domain={domain} yTop={yTop} />)}
       </div>
     </Card>
   );
 }
 
-function Mini({ ride, horizon, domain }: { ride: Bellwether; horizon: number; domain: [number, number] | null }) {
+function Mini({ ride, horizon, domain, yTop }: {
+  ride: Bellwether; horizon: number; domain: [number, number] | null; yTop: number;
+}) {
   const t = useChartTheme();
   const actual = ride.actual.map((p) => ({ x: ms(p.at), y: p.status === 'OPERATING' ? p.wait : null }));
   const forecast = (ride.forecasts[String(horizon)] ?? []).map((p) => ({ x: ms(p.at), y: p.value }));
@@ -53,7 +61,7 @@ function Mini({ ride, horizon, domain }: { ride: Bellwether; horizon: number; do
               <XAxis dataKey="x" type="number" domain={domain ?? ['dataMin', 'dataMax']}
                      ticks={domain ? hourTicks(domain, 4) : undefined}
                      tickFormatter={fmtHourTick} {...axisProps(t)} allowDuplicatedCategory={false} />
-              <YAxis width={30} {...axisProps(t)} axisLine={false} allowDecimals={false} />
+              <YAxis width={30} domain={[0, yTop]} {...axisProps(t)} axisLine={false} allowDecimals={false} />
               <Tooltip {...tooltipProps(t)} labelFormatter={(v) => fmtTime(v as number)}
                        formatter={(v, name) => [`${num(v as number)} min`, name]} />
               <Line data={actual} dataKey="y" name="Actual" stroke={t.actual} strokeWidth={2} dot={false}

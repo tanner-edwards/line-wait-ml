@@ -1,4 +1,4 @@
-import { Area, AreaChart, CartesianGrid, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { fmtHourTick, fmtTime, hourTicks, ms, num } from '../format';
 import { useChartTheme } from '../theme';
 import type { ParkGrade } from '../types';
@@ -18,8 +18,8 @@ export function Crowd({ crowd, domain }: { crowd: ParkGrade['crowd']; domain: [n
 
   return (
     <Card
-      title="Crowd level"
-      sub="Summed waits over the last 2 h vs a typical day at this hour (1.0 = typical)"
+      title={latest ? `Crowd is ${describe(latest.ratio)}` : 'Crowd level'}
+      sub="Crowd level: summed waits over the last 2 h vs a typical day at this hour (1.0 = typical)"
       table={() => (
         <table>
           <thead><tr><th>Time</th><th className="n">Ratio</th></tr></thead>
@@ -27,28 +27,19 @@ export function Crowd({ crowd, domain }: { crowd: ParkGrade['crowd']; domain: [n
         </table>
       )}
     >
-      <div className="tiles" style={{ marginTop: 0, marginBottom: 12 }}>
-        <div className="tile">
-          <div className="label">Live ratio</div>
-          <div className="value">{latest ? num(latest.ratio, 2) : '—'}</div>
-          <div className="delta" style={{ color: 'var(--text-2)' }}>
-            {latest ? `${describe(latest.ratio)} · ${fmtTime(latest.at)}` : 'after 10am'}
-          </div>
-        </div>
-        <div className="tile">
-          <div className="label">Morning index</div>
-          <div className="value">{num(crowd.morning_index, 2)}</div>
-          <div className="delta" style={{ color: 'var(--text-2)' }}>
-            {crowd.morning_index == null ? '2 h after open' : `first 2 h, ${describe(crowd.morning_index)}`}
-          </div>
-        </div>
-      </div>
+      <p className="sub" style={{ margin: '0 0 8px' }}>
+        {latest ? `Live ${num(latest.ratio, 2)} at ${fmtTime(latest.at)}` : 'Live ratio starts after 10am'}
+        {' · '}
+        {crowd.morning_index == null
+          ? 'morning index after the first 2 h'
+          : `morning index ${num(crowd.morning_index, 2)} (${describe(crowd.morning_index)})`}
+      </p>
       {graded.length < 2 ? (
         <Empty>The live ratio starts at 10am, once 8+ rides are reporting.</Empty>
       ) : (
         <div className="chart small">
           <ResponsiveContainer>
-            <AreaChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
+            <LineChart data={data} margin={{ top: 6, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid vertical={false} stroke={t.grid} />
               <XAxis dataKey="x" type="number" domain={domain ?? ['dataMin', 'dataMax']}
                      ticks={domain ? hourTicks(domain) : undefined}
@@ -59,10 +50,10 @@ export function Crowd({ crowd, domain }: { crowd: ParkGrade['crowd']; domain: [n
                        formatter={(v) => [num(v as number, 2), 'Crowd ratio']} />
               <ReferenceLine y={1} stroke={t.typical}
                              label={{ value: 'typical', fill: t.muted, fontSize: 11, position: 'insideTopRight' }} />
-              <Area dataKey="ratio" stroke={t.actual} strokeWidth={2} fill={t.actual} fillOpacity={0.1}
+              <Line dataKey="ratio" stroke={t.actual} strokeWidth={2} dot={false}
                     connectNulls={false} isAnimationActive={false}
                     activeDot={{ r: 4, stroke: t.surface, strokeWidth: 2 }} />
-            </AreaChart>
+            </LineChart>
           </ResponsiveContainer>
         </div>
       )}
