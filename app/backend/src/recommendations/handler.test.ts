@@ -15,6 +15,7 @@ import { Ride, ParkData, RideMetadata, HistoricalBucket } from '../types';
 import * as mainHandler from '../handler';
 import * as rideMetadataModule from './rideMetadata';
 import * as bedrockClient from './bedrockClient';
+import * as openaiClient from './openaiClient';
 
 // Mock the dependencies that hit external services so the test stays offline.
 jest.mock('../handler', () => {
@@ -32,11 +33,13 @@ jest.mock('./bedrockClient', () => {
   const actual = jest.requireActual<typeof import('./bedrockClient')>('./bedrockClient');
   return { ...actual, invokeRecommendations: jest.fn() };
 });
+jest.mock('./openaiClient', () => ({ invokeRecommendationsOpenAi: jest.fn() }));
 
 const mockFetchPark = mainHandler.fetchPark as jest.MockedFunction<typeof mainHandler.fetchPark>;
 const mockFreshEnough = mainHandler.parkCacheIsFreshEnough as jest.MockedFunction<typeof mainHandler.parkCacheIsFreshEnough>;
 const mockEnsureMeta = rideMetadataModule.ensureRideMetadataLoaded as jest.MockedFunction<typeof rideMetadataModule.ensureRideMetadataLoaded>;
 const mockInvoke = bedrockClient.invokeRecommendations as jest.MockedFunction<typeof bedrockClient.invokeRecommendations>;
+const mockOpenAi = openaiClient.invokeRecommendationsOpenAi as jest.MockedFunction<typeof openaiClient.invokeRecommendationsOpenAi>;
 const mockHours = parkHoursModule.getParkHours as jest.MockedFunction<typeof parkHoursModule.getParkHours>;
 const mockReopens = recentReopensModule.loadRecentReopens as jest.MockedFunction<typeof recentReopensModule.loadRecentReopens>;
 const mockWeather = weatherModule.loadWeatherLine as jest.MockedFunction<typeof weatherModule.loadWeatherLine>;
@@ -578,6 +581,28 @@ describe('buildRecommendations — degraded paths', () => {
     expect(res.recommendations[0].oneLiner).toBe('Recommended based on current waits.');
   });
 
+  it('answers from the Bedrock mock, not degraded, when LLM_PROVIDER=openai and OpenAI fails', async () => {
+    const rides = [
+      makeRide('curr', 'Current', null),
+      makeRide('a', 'A', 10, 3),
+      makeRide('b', 'B', 20, 5),
+    ];
+    mockFetchPark.mockResolvedValue(makeParkData(rides));
+    mockEnsureMeta.mockResolvedValue(currMeta());
+    mockOpenAi.mockRejectedValue(new Error('Request timed out.'));
+    mockInvoke.mockResolvedValue(bedrockOk(JSON.stringify({ recommendations: [{ rideId: 'a', oneLiner: 'Bedrock answered.' }] })));
+    process.env.LLM_PROVIDER = 'openai';
+    try {
+      const res = await buildRecommendations({ park: 'disneyland', userLat: USER_LAT, userLng: USER_LNG });
+      expect(res.degraded).toBe(false);
+      expect(res.recommendations.map(r => r.rideId)).toEqual(['a']);
+      expect(mockOpenAi).toHaveBeenCalledTimes(1);
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+    } finally {
+      delete process.env.LLM_PROVIDER;
+    }
+  });
+
   it('falls back when Bedrock returns malformed JSON', async () => {
     const rides = [
       makeRide('curr', 'Current', null),
@@ -776,6 +801,10 @@ describe('cleanCopy', () => {
   it('leaves clean copy alone', () => {
     expect(cleanCopy('Lines are long everywhere today, so this is the least bad move.')).toBe('Lines are long everywhere today, so this is the least bad move.');
   });
+  it('straightens curly quotes (GPT-6 writes them; DEFERS and the harness match straight ones)', () => {
+    expect(cleanCopy('It\u2019s only 3 minutes from you, and the line\u2019s way under normal.')).toBe("It's only 3 minutes from you, and the line's way under normal.");
+    expect(cleanCopy('\u201CJust reopened,\u201D so the sign\u2019s behind.')).toBe('"Just reopened," so the sign\'s behind.');
+  });
   it('writes minute counts as digits and leaves other number words alone', () => {
     expect(cleanCopy("It's only three minutes away.")).toBe("It's only 3 minutes away.");
     expect(cleanCopy('A gentle five-minute ride, a 12 minute walk.')).toBe('A gentle 5-minute ride, a 12 minute walk.');
@@ -853,6 +882,20 @@ describe('guardNowOnly', () => {
     ];
     expect(guardNowOnly(recs)!.map(r => r.rideId)).toEqual(['pirates']);
   });
+  it('keeps captions where "later" is negated, since that is a reason to go now', () => {
+    for (const text of [
+      "About normal, but it's a big dark coaster and won't drop later today. Go if thrills matter.",
+      "The line isn't getting any shorter later on, so now is as good as it gets.",
+      "This one's not going to be better later tonight.",
+      "It never really thins out later this afternoon.",
+    ]) expect(DEFERS.test(text)).toBe(false);
+    for (const text of [
+      'Later today it drops to normal, so hold off.',
+      'Come back later today when the line settles.',
+      "It'll be shorter later tonight.",
+    ]) expect(DEFERS.test(text)).toBe(true);
+  });
+
   it('keeps captions that only use wait as a noun or name a window as a thing', () => {
     const ok = [
       'Worth the wait for your group, and the queue is indoors.',

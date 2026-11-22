@@ -7,7 +7,7 @@ import { join } from 'path';
 import { EVALS_ROOT } from '../args';
 import { BuiltFixture, DerivedRide, Fixture, RideFact } from '../types';
 
-interface Meta { name: string; themeparks_id: string; land: string; height_min_in: number | null; thrill_level: number | null; pregnancy_advisory: boolean; transfer_required: boolean }
+interface Meta { name: string; themeparks_id: string; land: string; lat: number; lng: number; height_min_in: number | null; thrill_level: number | null; pregnancy_advisory: boolean; transfer_required: boolean; categories?: string[] }
 
 let metaCache: Map<string, Meta> | null = null;
 export function rideMeta(name: string): Meta {
@@ -31,6 +31,17 @@ export function typicalHeightInches(age: number): number {
 }
 
 const clockToMin = (hhmm: string) => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+// Same rule as the backend's minutesUntilClose (kept separate on purpose, see the header): a
+// close at or before the open ("00:00", "01:00") is after midnight, and a capture taken after
+// midnight on such a day is still the same operating day. The old `close - now` went negative
+// at a midnight close and emptied every live pool (2026-11-21).
+function minutesToClose(hours: { open: string; close: string }, nowMin: number): number {
+  const open = clockToMin(hours.open);
+  let close = clockToMin(hours.close);
+  if (close <= open) close += 1440;
+  if (close > 1440 && nowMin < close - 1440) nowMin += 1440;
+  return Math.max(0, close - nowMin);
+}
 
 export function ofUsual(wait: number, usual: number | null): DerivedRide['ofUsual'] {
   if (usual == null || usual <= 0) return null;
@@ -39,7 +50,7 @@ export function ofUsual(wait: number, usual: number | null): DerivedRide['ofUsua
 }
 
 export function buildFixture(fx: Fixture): BuiltFixture {
-  const minutesUntilClose = fx.hours ? clockToMin(fx.hours.close) - fx.nowMin : null;
+  const minutesUntilClose = fx.hours ? minutesToClose(fx.hours, fx.nowMin) : null;
   const persona = fx.persona;
   const derive = (r: RideFact, isAnchor: boolean): DerivedRide => {
     const m = rideMeta(r.name);
@@ -60,6 +71,7 @@ export function buildFixture(fx: Fixture): BuiltFixture {
       land: m.land,
       heightMinIn: m.height_min_in,
       thrillLevel: m.thrill_level,
+      categories: m.categories ?? [],
       pregnancyAdvisory: !!m.pregnancy_advisory,
       transferRequired: !!m.transfer_required,
       isAnchor,

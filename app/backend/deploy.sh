@@ -51,14 +51,20 @@ fi
 # Base64-encode so SAM CLI's --parameter-overrides parser doesn't choke on
 # the inner quotes / equals signs / etc in the JSON. The Lambda's
 # firestoreClient.ts decodes it on read. base64 keeps the value shell-safe
-# at the cost of ~33% length inflation (still well under SAM's limits).
+# at the cost of ~33% length inflation.
+#
+# Only project_id, client_email and private_key ship: firebase-admin's cert()
+# reads nothing else, and Lambda caps all environment variables at 4 KB
+# combined. The full JSON was 3.2 KB of that and the OpenAI variables pushed
+# the 2026-11-21 deploy over the limit; the trimmed one is 2.5 KB.
 FIREBASE_JSON_B64=$(python3 -c "
 import json, base64
 with open('$FIREBASE_KEY_PATH') as f:
-    minified = json.dumps(json.load(f))
-print(base64.b64encode(minified.encode('utf-8')).decode('ascii'))
+    d = json.load(f)
+keep = {k: d[k] for k in ('project_id', 'client_email', 'private_key')}
+print(base64.b64encode(json.dumps(keep, separators=(',', ':')).encode('utf-8')).decode('ascii'))
 " 2>/dev/null) || {
-  echo "Error: $FIREBASE_KEY_PATH did not parse as JSON. Aborting." >&2
+  echo "Error: $FIREBASE_KEY_PATH did not parse as a service-account JSON (project_id, client_email, private_key). Aborting." >&2
   exit 1
 }
 
@@ -96,7 +102,22 @@ BEDROCK_MODEL_ID="${BEDROCK_MODEL_ID:-us.anthropic.claude-haiku-4-5-20251001-v1:
 BEDROCK_REGION="${BEDROCK_REGION:-us-west-2}"
 BEDROCK_BUDGET_ALARM_EMAIL="${BEDROCK_BUDGET_ALARM_EMAIL:-}"
 
+# LLM provider + prompt (2026-11-21). Defaults match the template: Bedrock
+# only, rules prompt. LLM_PROVIDER=openai sends /v2/recommendations to
+# OPENAI_MODEL_ID through the OpenAI API with Bedrock as the fallback. The key
+# comes from OPENAI_API_KEY, else the keychain item openai-api-key-club32
+# (a prod key, separate from the eval key):
+#   security add-generic-password -a "$USER" -s openai-api-key-club32 -w
+LLM_PROVIDER="${LLM_PROVIDER:-bedrock}"
+PROMPT_VARIANT="${PROMPT_VARIANT:-rules}"
+OPENAI_MODEL_ID="${OPENAI_MODEL_ID:-gpt-6-luna}"
+OPENAI_API_KEY="${OPENAI_API_KEY:-}"
+if [[ -z "$OPENAI_API_KEY" ]]; then
+  OPENAI_API_KEY=$(security find-generic-password -s openai-api-key-club32 -w 2>/dev/null || true)
+fi
+
 echo "==> Bedrock model: $BEDROCK_MODEL_ID (region $BEDROCK_REGION)"
+echo "==> LLM provider: $LLM_PROVIDER, prompt: $PROMPT_VARIANT, OpenAI model: $OPENAI_MODEL_ID"
 if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
   echo "==> Budget alarm will notify: $BEDROCK_BUDGET_ALARM_EMAIL"
 else
@@ -113,7 +134,18 @@ PARAMETER_OVERRIDES=(
   "FirebaseServiceAccountJson=$FIREBASE_JSON_B64"
   "BedrockModelId=$BEDROCK_MODEL_ID"
   "BedrockRegion=$BEDROCK_REGION"
+  "LlmProvider=$LLM_PROVIDER"
+  "PromptVariant=$PROMPT_VARIANT"
+  "OpenAiModelId=$OPENAI_MODEL_ID"
 )
+# Empty values are rejected by SAM's shorthand, so the key is appended only
+# when present. Without it, LLM_PROVIDER=openai falls back to Bedrock on
+# every call (logged as [recs-provider] fallbackReason).
+if [[ -n "$OPENAI_API_KEY" ]]; then
+  PARAMETER_OVERRIDES+=("OpenAiApiKey=$OPENAI_API_KEY")
+elif [[ "$LLM_PROVIDER" == "openai" ]]; then
+  echo "==> WARNING: LLM_PROVIDER=openai but no OpenAI key (env OPENAI_API_KEY or keychain openai-api-key-club32) — every call will fall back to Bedrock."
+fi
 if [[ -n "$BEDROCK_BUDGET_ALARM_EMAIL" ]]; then
   PARAMETER_OVERRIDES+=("BedrockBudgetAlarmEmail=$BEDROCK_BUDGET_ALARM_EMAIL")
 fi

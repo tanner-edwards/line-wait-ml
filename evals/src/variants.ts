@@ -78,6 +78,7 @@ const metadataMap = (b: BuiltFixture) => new Map<string, RideMetadata>(b.rides.m
     waterRide: (f?.water_ride as boolean | undefined) ?? false,
     durationMin: (f?.duration_min as number | undefined) ?? null,
     notes: (f?.notes as string | undefined) ?? null,
+    categories: r.categories,
   } as RideMetadata];
 }));
 
@@ -87,7 +88,7 @@ const v1: Variant = {
   id: 'v1',
   description: 'Production prompt before the 2026-11-16 spec (UUID ids, anchor and skip rides removed).',
   render(b) {
-    const candidates = b.rides.filter(r => !r.isAnchor && r.verdict !== 'skip');
+    const candidates = b.rides.filter(r => !r.isAnchor && !r.ridden && r.verdict !== 'skip');
     const anchor = b.rides.find(r => r.isAnchor)!;
     const ctx: V1Context = {
       park: PARK_NAME[b.fx.park],
@@ -135,8 +136,9 @@ function fixtureNow(b: BuiltFixture): Date {
 function renderSpec(b: BuiltFixture, idStyle: IdStyle, prompt: 'rules' | 'intent' = 'rules'): Rendered {
   const anchor = b.rides.find(r => r.isAnchor)!;
   const now = fixtureNow(b);
+  // Rides marked ridden leave the pool here, as excludeRideIds does in the Lambda (the anchor included).
   const candidates = b.rides
-    .filter(r => r.reachableBeforeClose)
+    .filter(r => r.reachableBeforeClose && !r.ridden)
     .map(r => ({ ride: toBackendRide(r), walkMinutes: r.walk, walkYards: r.walk * 90 }));
   // The Lambda's skip gate: unwanted skip rides leave the pool unless the day is bad.
   const { pool, gated: skipGated } = applySkipGate(candidates, b.persona);
@@ -145,6 +147,7 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle, prompt: 'rules' | 'intent
   for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
   const lines = buildRideLines(codeMap, {
     persona: b.persona, metadata: metadataMap(b), reopens, anchorRideId: anchor.id, now, timeZone: parkTimeZone(b.fx.park),
+    minutesUntilClose: b.minutesUntilClose,
   });
   const weather = b.fx.weather ? `${b.fx.weather.tempF}F, feels like ${b.fx.weather.feelsF}, ${b.fx.weather.conditions}` : null;
   const ctx = buildRequestContext({ parkSlug: b.fx.park, now, parkHours: b.fx.hours, lines, weather, batchSize: BATCH });

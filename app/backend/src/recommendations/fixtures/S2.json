@@ -27,10 +27,12 @@
       "ofUsual": "below",
       "vsUsual": -5,
       "walk": 0,
+      "saves": 5,
       "verdict": "neutral",
       "reason": "none",
       "wanted": false,
       "restricted": [],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         10,
@@ -53,10 +55,12 @@
       "ofUsual": "far-below",
       "vsUsual": -15,
       "walk": 3,
+      "saves": 12,
       "verdict": "go",
       "reason": "below-usual",
       "wanted": false,
       "restricted": [],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         20,
@@ -79,10 +83,12 @@
       "ofUsual": "far-below",
       "vsUsual": -25,
       "walk": 4,
+      "saves": 21,
       "verdict": "go",
       "reason": "below-usual",
       "wanted": false,
       "restricted": [],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         25,
@@ -105,10 +111,12 @@
       "ofUsual": "below",
       "vsUsual": -10,
       "walk": 5,
+      "saves": 5,
       "verdict": "neutral",
       "reason": "none",
       "wanted": false,
       "restricted": [],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         15,
@@ -131,12 +139,14 @@
       "ofUsual": "below",
       "vsUsual": -5,
       "walk": 8,
+      "saves": -3,
       "verdict": "go",
       "reason": "below-usual",
       "wanted": false,
       "restricted": [
         "toddler"
       ],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         25,
@@ -159,12 +169,14 @@
       "ofUsual": "far-below",
       "vsUsual": -35,
       "walk": 14,
+      "saves": 21,
       "verdict": "star",
       "reason": "rare-low",
       "wanted": false,
       "restricted": [
         "toddler"
       ],
+      "ageFit": null,
       "reopenedMinAgo": null,
       "buckets": [
         40,

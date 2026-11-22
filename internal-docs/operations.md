@@ -85,6 +85,19 @@ cd app/backend && ./deploy.sh
 
 **Bedrock model (`BedrockModelId`).** Both deploy paths pass the model explicitly, so the template default never picks it by omission. The Deploy workflow reads the repo variable `BEDROCK_MODEL_ID` (GitHub > Settings > Secrets and variables > Actions > Variables) and falls back to Haiku 4.5 (`us.anthropic.claude-haiku-4-5-20251001-v1:0`) when it is unset; `./deploy.sh` reads the `BEDROCK_MODEL_ID` env var with the same fallback. To change the model, set the repo variable to the new inference profile ID and run the Deploy workflow, then check `[bedrock-raw]` in `/aws/lambda/club32-waits-handler` for `stopReason: end_turn`. To revert, delete the variable and redeploy.
 
+**Environment variable budget.** Lambda caps all environment variables at 4 KB combined, and every secret here is an environment variable. The Firebase credential ships trimmed to `project_id`, `client_email`, `private_key` (2.5 KB) for that reason; the full JSON plus the OpenAI variables failed a deploy at 4,297 bytes on 2026-11-21 (`UPDATE_ROLLBACK_COMPLETE`, "exceeded the 4KB limit"). Current total is about 3.6 KB. Before adding another variable, measure: `aws lambda get-function-configuration --function-name club32-waits-handler --query Environment.Variables` and sum name + value lengths. Past that, the next step is SSM Parameter Store for the big ones.
+
+**LLM provider and prompt (`LlmProvider`, `PromptVariant`, `OpenAiModelId`, `OpenAiApiKey`).** Since 2026-11-21 `/v2/recommendations` can answer from the OpenAI API (GPT-6 Luna) with Bedrock as the fallback. Both deploy paths pass all four on every deploy, so the template defaults (`bedrock`, `rules`) never win by omission.
+
+| Setting | Deploy workflow | `./deploy.sh` | Default |
+|---|---|---|---|
+| Provider | repo variable `LLM_PROVIDER` | env `LLM_PROVIDER` | `bedrock` |
+| Prompt | repo variable `PROMPT_VARIANT` | env `PROMPT_VARIANT` | `rules` |
+| OpenAI model | repo variable `OPENAI_MODEL_ID` | env `OPENAI_MODEL_ID` | `gpt-6-luna` |
+| OpenAI key | repo secret `OPENAI_API_KEY` | env `OPENAI_API_KEY`, else keychain `openai-api-key-club32` | none |
+
+To go live on Luna: add the secret, set `LLM_PROVIDER=openai` and `PROMPT_VARIANT=intent`, run the Deploy workflow, then check `[recs-provider]` in `/aws/lambda/club32-waits-handler`: every line should say `"provider":"openai"`; a line with `fallbackReason` means OpenAI failed (timeout after 8 s, auth, 5xx) and Bedrock answered that request. One prompt serves both providers, including the fallback. To roll back, delete the two variables and redeploy; the secret can stay. OpenAI spend shows in the OpenAI dashboard, not the Bedrock budget alarm, so set a monthly budget there before flipping.
+
 ### Cloud Run Job (cron image)
 Used by: ML predictions (`predict.py`), closure profile rebuild (`build_closure_profiles.py`).
 

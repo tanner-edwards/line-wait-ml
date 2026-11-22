@@ -48,7 +48,7 @@ export type { IdStyle, RideForPrompt };
  */
 export const DEFAULT_PERSONA = `Name: Club 32 Generic Guest.
 
-The guest is traveling with a physically capable party and any kids are 8+ and happy to keep pace. Mobility and walking distance are not limiting factors; do not deprioritize a ride for being a few minutes farther.
+The guest is traveling with a physically capable party and any kids are 8+ and happy to keep pace. Walking is no hardship for them, but it's still time: a farther ride needs a better line to be worth the trip.
 
 They've been to the park before but it's been a while, likely 4 to 5 years since their last visit. They know the park and its signature attractions, but they are not experts on current wait patterns, optimal ride ordering, what's new, or how to optimize a day. They're using the app for exactly that, an expert friend who tells them what to do next. Say why to go now, not what the ride is.
 
@@ -70,15 +70,16 @@ You are Club 32's park expert, a friend who knows this Disney park cold. The gue
 Ride line fields. The server did the math; read the fields, never calculate.
 - wait: posted minutes. arrive: expected wait on arrival.
 - usual: the normal line for right now. ofUsual: far-below to far-above. vsUsual: minutes over usual, negative means under.
-- walk: minutes to walk there.
+- walk: minutes to walk there. saves: minutes saved versus a normal day with the walk already taken out; the size of the deal.
 - verdict: the app's own read, with its reason. Evidence, not orders.
 - wanted yes: a ride the guest had their eye on for this trip.
 - restricted: who in the party this ride does not suit, or none.
+- fit low: this party's age group rates the ride poorly in rider surveys. Shown only when it applies.
 - reopened N min ago: the sign may be behind the real line.
 - buckets: forecast now, +30, +60, +90, +120 min. trend: falling, flat, or rising over those two hours.
 - window: lowest line later today and its clock time, or none.
 - anchor yes: the ride the guest is standing beside; a candidate like any other.
-- facts: where the queue is (indoor, outdoor, mixed), whether it gets you wet, how long the ride runs, thrill 1 (gentle) to 5 (intense), and a short note on what the ride is like.
+- facts: where the queue is (indoor, outdoor, mixed), whether it gets you wet, how long the ride runs, thrill 1 (gentle) to 5 (intense), the app's tags (classic, iconic, immersive), and a short note on what the ride is like.
 
 <context> gives time, closing, weather, sunset, and field: flat, mixed, or bad (busy everywhere).
 </role>`;
@@ -155,7 +156,7 @@ Respond with this JSON and nothing else. No markdown fences, no commentary.
 {"recommendations":[{"rideId":"${example}","oneLiner":"<caption>","restrictionNote":null}]}
 - ${idRule}
 - Array order is rank, best first. Up to ${batchSize} entries.
-- Before writing each caption, check it sends the guest there now. If the honest caption would say come back later, drop that ride instead.
+- Before writing each caption, check it sends the guest there now. If the honest caption would say come back later, drop that ride instead, but never drop them all: while rides are open the answer has at least one pick, even on a weak field.
 </output>`;
 }
 
@@ -186,13 +187,15 @@ function rideId(line: RideLine, idStyle: IdStyle): string {
   return idStyle === 'uuid' ? line.rideId : line.code;
 }
 
-/** "indoor, 3 min, thrill 4, indoor coaster in the dark" (water only when true). */
+/** "indoor, 3 min, thrill 4, tags classic/iconic, indoor coaster in the dark" (water only when
+ *  true; tags only when any). Tags are slash-joined so they read as one item beside the notes. */
 export function renderFacts(f: NonNullable<RideLine['facts']>): string {
   const parts: string[] = [];
   if (f.queue) parts.push(f.queue);
   if (f.water) parts.push('gets you wet');
   if (f.durationMin != null) parts.push(`${f.durationMin} min`);
   if (f.thrill != null) parts.push(`thrill ${f.thrill}`);
+  if (f.tags?.length) parts.push(`tags ${f.tags.join('/')}`);
   if (f.notes) parts.push(f.notes);
   return parts.join(', ') || 'none';
 }
@@ -206,10 +209,12 @@ function renderLine(l: RideLine, idStyle: IdStyle): string {
     `ofUsual ${l.ofUsual ?? 'unknown'}`,
     `vsUsual ${num(l.vsUsual)}`,
     `walk ${num(l.walk)}`,
+    `saves ${num(l.saves)}`,
     `verdict ${l.verdict}${l.reason !== 'none' ? ` ${l.reason}` : ''}`,
     `wanted ${l.wanted ? 'yes' : 'no'}`,
     `restricted ${l.restricted.length ? l.restricted.join(',') : 'none'}`,
   ];
+  if (l.ageFit === 'low') parts.push('fit low');
   if (l.reopenedMinAgo !== null) parts.push(`reopened ${l.reopenedMinAgo} min ago`);
   parts.push(`buckets ${l.buckets.map(b => (b === null ? '-' : b)).join(',')}`);
   parts.push(`trend ${l.trend ?? 'unknown'}`);

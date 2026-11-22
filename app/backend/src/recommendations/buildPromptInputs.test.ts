@@ -18,6 +18,7 @@ import {
   ofUsual,
   reachableBeforeClose,
   restrictedFor,
+  savesFor,
   TYPICAL_HEIGHT_IN,
   typicalHeightInches,
   vsUsual,
@@ -344,23 +345,25 @@ describe('buildRideLines + buildRequestContext', () => {
     expect(lines).toEqual([
       {
         code: 'r1', rideId: 'uuid-buzz', name: 'Buzz Lightyear Astro Blasters',
-        wait: 25, arrive: 25, usual: 30, ofUsual: 'below', vsUsual: -5, walk: 1,
-        verdict: 'neutral', reason: 'none', wanted: false, restricted: [],
+        wait: 25, arrive: 25, usual: 30, ofUsual: 'below', vsUsual: -5, walk: 1, saves: 4,
+        verdict: 'neutral', reason: 'none', wanted: false, restricted: [], ageFit: null,
         reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
         // 390 min out is beyond WINDOW_MAX_MIN, so the window is withheld from the model.
         window: null, isAnchor: true, facts: null,
       },
       {
         code: 'r2', rideId: 'uuid-space', name: 'Space Mountain',
-        wait: 15, arrive: 16, usual: 45, ofUsual: 'far-below', vsUsual: -30, walk: 3,
-        verdict: 'star', reason: 'rare-low', wanted: false, restricted: ['toddler'],
+        // saves: usual 45 minus the arrival wait 16 (under the +30 bucket of 25) minus the walk.
+        wait: 15, arrive: 16, usual: 45, ofUsual: 'far-below', vsUsual: -30, walk: 3, saves: 26,
+        // Preschoolers rate Space Mountain under AGE_FIT_MIN in the survey (youngest is 3).
+        verdict: 'star', reason: 'rare-low', wanted: false, restricted: ['toddler'], ageFit: 'low',
         reopenedMinAgo: 20, buckets: [15, 25, 35, 38, 40], trend: 'rising',
         window: null, isAnchor: false, facts: null,
       },
       {
         code: 'r3', rideId: 'uuid-mh', name: 'Matterhorn Bobsleds',
-        wait: 25, arrive: 25, usual: null, ofUsual: null, vsUsual: null, walk: 8,
-        verdict: 'neutral', reason: 'none', wanted: true, restricted: [],
+        wait: 25, arrive: 25, usual: null, ofUsual: null, vsUsual: null, walk: 8, saves: null,
+        verdict: 'neutral', reason: 'none', wanted: true, restricted: [], ageFit: 'low',
         reopenedMinAgo: null, buckets: [null, null, null, null, null], trend: null,
         window: null, isAnchor: false, facts: null,
       },
@@ -433,12 +436,57 @@ describe('applySkipGate', () => {
   });
 });
 
+describe('savesFor (minutes saved after the walk)', () => {
+  it('is usual minus the arrival wait minus the walk', () => {
+    expect(savesFor(30, 12, 10, null, 4)).toBe(14);
+  });
+  it('counts a line that drops within 30 minutes at the dropping wait', () => {
+    expect(savesFor(60, 55, 55, 35, 5)).toBe(20);
+  });
+  it('is negative when the walk eats the deal (a 5-minute line on a 10 usual, 9 away)', () => {
+    expect(savesFor(10, 5, 5, 5, 9)).toBe(-4);
+  });
+  it('falls back to the posted wait without arrive, and to no walk without one', () => {
+    expect(savesFor(30, null, 20, null, null)).toBe(10);
+  });
+  it('is null without a usual or any wait', () => {
+    expect(savesFor(null, 10, 10, 10, 1)).toBeNull();
+    expect(savesFor(30, null, null, null, 1)).toBeNull();
+  });
+});
+
+describe('fit low and the window past close', () => {
+  const now = new Date('2026-11-14T21:30:00Z');
+  const build = (over: Partial<Parameters<typeof buildRideLines>[1]> = {}, youngestAge: number | null = null) =>
+    buildRideLines(
+      assignCodes([cand('uuid-casey', 'Casey Jr. Circus Train', 2, {
+        currentWait: 10,
+        verdict: { verdict: 'neutral', reasons: reasons({ typical: 15, betterWindowWait: 5, betterWindowInMin: 40, beatableSoon: true }) },
+      })]),
+      { persona: persona({ youngestAge }), reopens: new Map(), anchorRideId: null, now, timeZone: LA, ...over },
+    )[0];
+  it('flags fit low from the survey for the party age band, and not for a band that rates it fine', () => {
+    expect(build({}, 15).ageFit).toBe('low');      // teens rate Casey Jr. under the floor
+    expect(build({}, 2).ageFit).toBe(null);        // preschoolers love it
+  });
+  it('uses the adult band when there is no persona', () => {
+    expect(build({ persona: null }).ageFit).toBe('low');
+  });
+  it('drops a window that lands at or after close, and keeps one before it', () => {
+    expect(build({ minutesUntilClose: 40 }).window).toBeNull();
+    expect(build({ minutesUntilClose: 41 }).window).not.toBeNull();
+    expect(build({}).window).not.toBeNull();
+  });
+});
+
 describe('ride facts and sunset', () => {
   it('flattens the notes shorthand and reads the facts fields', () => {
     expect(normalizeNotes('Whitewater raft; SOAKING; 42in min')).toBe('whitewater raft, soaking, 42in min');
     expect(normalizeNotes('')).toBeNull();
     expect(factsFor({ rideId: 'x', parkId: 'p', name: 'n', lat: null, lng: null, source: 'manual', queueType: 'indoor', waterRide: false, thrillLevel: 4, durationMin: 3, notes: 'Indoor coaster in the dark; 40in min' }))
-      .toEqual({ queue: 'indoor', water: false, thrill: 4, durationMin: 3, notes: 'indoor coaster in the dark, 40in min' });
+      .toEqual({ queue: 'indoor', water: false, thrill: 4, durationMin: 3, notes: 'indoor coaster in the dark, 40in min', tags: [] });
+    expect(factsFor({ rideId: 'x', parkId: 'p', name: 'n', lat: null, lng: null, source: 'manual', categories: ['immersive', 'classic'] }))
+      .toEqual({ queue: null, water: false, thrill: null, durationMin: null, notes: null, tags: ['classic', 'immersive'] });
   });
   it('returns null facts for a legacy metadata doc or no doc', () => {
     expect(factsFor({ rideId: 'x', parkId: 'p', name: 'n', lat: null, lng: null, source: 'manual' })).toBeNull();

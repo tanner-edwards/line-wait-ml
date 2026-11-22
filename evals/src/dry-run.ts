@@ -1,6 +1,6 @@
 // No AWS. Proves the harness is sound before any money is spent:
 //  1. every fixture builds and every variant renders it;
-//  2. each fixture's IDEAL answer passes every hard check and scenario rule;
+//  2. each fixture's IDEAL answer passes every hard check, scenario rule, and party-fit check;
 //  3. each fixture's BAD answer fails at least one;
 //  4. every code check fires on a deliberate violation (no check is silently dead);
 //  5. code+name id decoding (spec section 5) behaves.
@@ -8,7 +8,11 @@ import { codeChecks, scenarioChecks } from './checks';
 import { buildFixture } from './fixtures/derive';
 import { FIXTURES, fixtureById } from './fixtures/scenarios';
 import { AnswerRow, BuiltFixture, ResolvedRec } from './types';
+import { Persona } from '../../app/backend/src/types';
 import { decodeCodeName, VARIANTS } from './variants';
+
+/** Soft checks a reference answer must still pass: a benchmark should not contradict its own ideal. */
+const FIT_CHECKS = ['age-fit', 'pref-fit', 'walk-fit'];
 
 let problems = 0;
 const bad = (msg: string) => { problems++; console.log(`  BAD ${msg}`); };
@@ -25,7 +29,9 @@ console.log('Fixtures and reference answers');
 for (const fx of FIXTURES) {
   const b = buildFixture(fx);
   const restricted = b.rides.filter(r => r.restrictedFor.length).map(r => `${r.name.split(' ')[0]}(${r.restrictedFor.join('+')})`).join(' ');
-  const ideal = allChecks(toRecs(fx.ideal, b), b).filter(c => !c.pass && c.severity === 'hard');
+  // Ideals must pass every hard check plus the three party-fit checks (soft, but a reference
+  // answer that fails them would contradict the benchmark).
+  const ideal = allChecks(toRecs(fx.ideal, b), b).filter(c => !c.pass && (c.severity === 'hard' || FIT_CHECKS.includes(c.id)));
   // Any failed check counts as catching the bad answer: caption-wording asserts are soft since 2026-11-19.
   const badFails = allChecks(toRecs(fx.bad, b), b).filter(c => !c.pass);
   const renders = Object.values(VARIANTS).map(v => { const r = v.render(b); return r.system && r.user ? `${v.id}:${r.offered.length} rides` : `${v.id}:EMPTY`; });
@@ -35,7 +41,7 @@ for (const fx of FIXTURES) {
 }
 
 console.log('\nEvery code check can fail');
-type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number; youngestAge?: number };
+type Probe = { fx: string; rows: AnswerRow[]; expect: string; nowMin?: number; youngestAge?: number; prefs?: Persona['ridePreferences'] };
 const P = (fx: string, expect: string, ...rows: AnswerRow[]): Probe => ({ fx, expect, rows });
 const probes: Probe[] = [
   P('S1', 'name-template', { ride: 'Pirates of the Caribbean', caption: 'Pirates is half its usual line.' }, { ride: 'Jungle Cruise', caption: 'Jungle Cruise is shorter than usual.' }),
@@ -55,17 +61,49 @@ const probes: Probe[] = [
   P('S4', 'skip-positive', { ride: 'Dumbo the Flying Elephant', caption: 'A great deal with a short line.' }),
   P('S7', 'reopen-not-rare', { ride: 'Space Mountain', caption: 'A great deal right next door.' }),
   { ...P('S6', 'reachable', { ride: 'Space Mountain', caption: 'Line up before close and you still ride.' }), nowMin: 22 * 60 + 50 },
-  // A 10-year-old (7-12 band) sent to Dumbo first: survey appeal for that band is below the bar.
-  { ...P('S2', 'age-fit', { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }), youngestAge: 10 },
+  // A 10-year-old (10-12 band) sent to Dumbo first: survey appeal for that band is below the bar.
+  { ...P('S2', 'age-fit', { ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }), youngestAge: 10, prefs: [] },
+  // A toddler party asking for kid favorites is still flagged for Big Thunder: under 7, the
+  // low-appeal rides are the intense ones, so the kid-favorites pass does not apply.
+  { ...P('S2', 'age-fit', { ride: 'Big Thunder Mountain Railroad', caption: 'Shorter than usual right now.' }), prefs: ['kid-favorites'] },
+  // S10: Indiana Jones (walk 14, a bit under usual) in the top two while Space Mountain (walk 8, 15 under) sits third.
+  P('S10', 'walk-fit', { ride: 'Matterhorn Bobsleds', caption: "You're standing at it, and the line is about normal." }, { ride: 'Indiana Jones Adventure', caption: 'A bit under its usual line.' }, { ride: 'Space Mountain', caption: 'A third off its usual line.' }),
+  // A thrills party led by two gentle rides while Matterhorn (thrill 4, go verdict) sits below.
+  { ...P('S6', 'pref-fit', { ride: 'Haunted Mansion', caption: 'A calm one close by.' }, { ride: 'Dumbo the Flying Elephant', caption: 'A walk-on right now.' }, { ride: 'Matterhorn Bobsleds', caption: 'Shorter than usual.' }), prefs: ['thrills'] },
 ];
 for (const p of probes) {
   const base = fixtureById(p.fx);
-  const fx = { ...base, ...(p.nowMin ? { nowMin: p.nowMin } : {}), ...(p.youngestAge != null && base.persona ? { persona: { ...base.persona, youngestAge: p.youngestAge } } : {}) };
+  const persona = base.persona ? { ...base.persona, ...(p.youngestAge != null ? { youngestAge: p.youngestAge } : {}), ...(p.prefs ? { ridePreferences: p.prefs } : {}) } : base.persona;
+  const fx = { ...base, ...(p.nowMin ? { nowMin: p.nowMin } : {}), persona };
   const b = buildFixture(fx);
   const failed = codeChecks(toRecs(p.rows, b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
   const ok = failed.includes(p.expect);
   console.log(`${ok ? 'ok ' : 'BAD'} ${p.expect.padEnd(18)} ${p.fx}`);
   if (!ok) bad(`check "${p.expect}" did not fire (fired: ${failed.join(', ') || 'none'})`);
+}
+// Must NOT fire: a long line that is clearly falling is still a deal (S6 Big Thunder drops 40 to 25 within 30 minutes).
+{
+  const b = buildFixture(fixtureById('S6'));
+  const f = codeChecks(toRecs([{ ride: 'Haunted Mansion', caption: 'Quick line now.' }, { ride: 'Big Thunder Mountain Railroad', caption: "Longer than usual now, but it's dropping within the half hour." }], b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
+  console.log(`${f.includes('walk-fit') ? 'BAD' : 'ok '} a falling line counts at the dropping wait`);
+  if (f.includes('walk-fit')) bad('Big Thunder (dropping to 25 within 30 minutes) was flagged for its 6-minute walk over Pirates at usual');
+}
+// Must NOT fire: preferences are a boost, so thrills plus kid favorites lets Dumbo (thrill 1) lead
+// next to Matterhorn while Haunted Mansion (thrill 2, fits neither) sits third.
+{
+  const base = fixtureById('S6');
+  const b = buildFixture({ ...base, persona: { ...base.persona!, ridePreferences: ['thrills', 'kid-favorites'] } });
+  const f = codeChecks(toRecs([{ ride: 'Dumbo the Flying Elephant', caption: 'A walk-on right now.' }, { ride: 'Matterhorn Bobsleds', caption: 'Shorter than usual.' }, { ride: 'Haunted Mansion', caption: 'A calm one close by.' }], b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
+  console.log(`${f.includes('pref-fit') ? 'BAD' : 'ok '} thrills plus kid favorites is a boost, not a contradiction`);
+  if (f.includes('pref-fit')) bad('gentle picks were flagged for a party that also selected kid favorites');
+}
+// Must NOT fire: an 8-year-old (7-9 band, grade-school rating alone) sent to Dumbo is fine (4.1).
+{
+  const base = fixtureById('S2');
+  const b = buildFixture({ ...base, persona: { ...base.persona!, youngestAge: 8 } });
+  const f = codeChecks(toRecs([{ ride: 'Dumbo the Flying Elephant', caption: 'Under its usual line right now.' }], b), b, b.rides.map(r => r.name)).filter(c => !c.pass).map(c => c.id);
+  console.log(`${f.includes('age-fit') ? 'BAD' : 'ok '} Dumbo is fine for an 8-year-old`);
+  if (f.includes('age-fit')) bad('Dumbo was flagged for an 8-year-old (grade-school appeal 4.1)');
 }
 // Must NOT fire: a ride name containing "Star" is not app vocabulary.
 {

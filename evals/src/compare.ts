@@ -13,8 +13,10 @@ import { buildFixture, rideMeta } from './fixtures/derive';
 import { fixtureById } from './fixtures/scenarios';
 import { grade } from './grade';
 import { DEFERS } from '../../app/backend/src/recommendations/handler';
+import { fitsPreference } from './checks';
+import { PERSONA_PRESETS } from './personas';
 import { variety } from './variety';
-import { Fixture, RunRecord } from './types';
+import { DerivedRide, Fixture, RunRecord } from './types';
 import { Judgement } from './judge';
 
 interface RunData { runId: string; model: string; variant: string; records: RunRecord[]; judgements: Judgement[] }
@@ -90,6 +92,26 @@ function main() {
     push('scenarios at bar', scen.length ? `${atBar}/${scen.length}` : '-');
     push('scenario runs pass', scen.length ? `${Math.round(100 * scen.reduce((s, [, x]) => s + x.pass, 0) / scen.reduce((s, [, x]) => s + x.total, 0))}%` : '-');
     push('live runs pass', live.length ? `${Math.round(100 * live.reduce((s, [, x]) => s + x.pass, 0) / live.reduce((s, [, x]) => s + x.total, 0))}%` : '-');
+    // Preference lift: on the same live pool (same capture, same run), does a persona with a
+    // preference answer differently from the default guest, and does a fitting ride show up in
+    // its top two more often? Personas whose preference is first-time, or none, are skipped.
+    {
+      const topTwo = new Map<string, DerivedRide[]>();
+      for (const { rec, g } of graded) if (/^LIVE/.test(rec.fixture) && g.recs) topTwo.set(`${rec.fixture}#${rec.run}`, g.recs.slice(0, 2).map(r => built(rec.fixture).byName.get(r.ride!)).filter((d): d is DerivedRide => !!d));
+      let pairs = 0, differ = 0, fitP = 0, fitD = 0;
+      for (const [k, mine] of topTwo) {
+        const [id, run] = k.split('#');
+        const b = built(id); const prefs = b.persona?.ridePreferences ?? [];
+        if (!prefs.length || prefs.includes('first-time')) continue;
+        const persona = PERSONA_PRESETS.find(p => id.endsWith(`-${p.key}`))?.key; if (!persona || persona === 'default') continue;
+        const def = topTwo.get(`${id.slice(0, -persona.length)}default#${run}`); if (!def) continue;
+        pairs++;
+        if (mine.map(d => d.name).join('|') !== def.map(d => d.name).join('|')) differ++;
+        if (mine.some(d => fitsPreference(d, prefs))) fitP++;
+        if (def.some(d => fitsPreference(d, prefs))) fitD++;
+      }
+      push('pref lift (live)', pairs ? `${Math.round(100 * differ / pairs)}% differ from default; fit in top 2 ${Math.round(100 * fitP / pairs)}% vs ${Math.round(100 * fitD / pairs)}%` : '-');
+    }
     push('judge pass (all q)', judgeAll.total ? `${Math.round(100 * judgeAll.pass / judgeAll.total)}%` : '-');
     for (const q of ['grounded', 'present-tense', 'skip-framing', 'restrictions', 'strongest-reason', 'voice', 'ranking']) push(`  judge ${q}`, judge[q] ? `${Math.round(100 * judge[q].pass / judge[q].total)}%` : '-');
     push('p50 / p95 s', `${(med(ok.map(r => r.wallMs!)) / 1000).toFixed(2)} / ${(pct(ok.map(r => r.wallMs!)) / 1000).toFixed(2)}`);
