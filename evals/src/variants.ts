@@ -78,6 +78,7 @@ const metadataMap = (b: BuiltFixture) => new Map<string, RideMetadata>(b.rides.m
     waterRide: (f?.water_ride as boolean | undefined) ?? false,
     durationMin: (f?.duration_min as number | undefined) ?? null,
     notes: (f?.notes as string | undefined) ?? null,
+    categories: r.categories,
   } as RideMetadata];
 }));
 
@@ -146,6 +147,7 @@ function renderSpec(b: BuiltFixture, idStyle: IdStyle, prompt: 'rules' | 'intent
   for (const r of b.rides) if (r.minutesSinceReopen != null) reopens.set(r.id, r.minutesSinceReopen);
   const lines = buildRideLines(codeMap, {
     persona: b.persona, metadata: metadataMap(b), reopens, anchorRideId: anchor.id, now, timeZone: parkTimeZone(b.fx.park),
+    minutesUntilClose: b.minutesUntilClose,
   });
   const weather = b.fx.weather ? `${b.fx.weather.tempF}F, feels like ${b.fx.weather.feelsF}, ${b.fx.weather.conditions}` : null;
   const ctx = buildRequestContext({ parkSlug: b.fx.park, now, parkHours: b.fx.hours, lines, weather, batchSize: BATCH });

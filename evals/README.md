@@ -63,6 +63,15 @@ situation, the real answer, the automatic check results and Judge A's verdicts, 
 for a reviewer. Paste it into a non-Claude chat model (ChatGPT, Gemini) to sanity-check the judge,
 the checks and the scenario expectations. It replies with a JSON block that can be tallied.
 
+## Held-out scenarios (`holdout/*.md`)
+
+The prompt and most of the scenarios in `src/fixtures/scenarios.ts` share an author, so a prompt
+change can fit them. `npm run holdout-pack` writes an authoring packet (product semantics, ride facts
+with survey appeal, the block format, real captured pools; no prompt text, no harness thresholds) to
+`~/.claude/specs/line-wait-ml/holdout-authoring-pack.md`. Paste it into ChatGPT or Gemini, save the
+reply as `holdout/<author>-<date>.md`, and `npm run eval -- --holdout` runs those scenarios as
+`H-<author>-<n>` (see `src/fixtures/holdout.ts`). Never tune the prompt on them.
+
 ## Prompt versions (`src/variants.ts`)
 
 - `v1`: production before the spec, frozen in `src/prompts/v1/` (anchor and skip rides removed,

@@ -191,6 +191,7 @@ export async function prepareRecommendationInputs(
     anchorRideId: currentRideId || null,
     now,
     timeZone: tz,
+    minutesUntilClose: untilClose,
   });
   const requestContext = buildRequestContext({ parkSlug: req.park, now, parkHours, lines, weather, batchSize });
 

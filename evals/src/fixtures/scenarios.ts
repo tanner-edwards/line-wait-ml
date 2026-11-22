@@ -11,6 +11,7 @@ import { EVALS_ROOT } from '../args';
 // They must pass every code check (verified by `npm run dry-run`). `bad` answers must fail.
 
 import { A } from '../checks';
+import { holdoutById } from './holdout';
 import { Fixture, RideFact } from '../types';
 
 const BUZZ: RideFact = { name: 'Buzz Lightyear Astro Blasters', wait: 25, usual: 30, verdict: 'neutral', reason: 'none', walk: 0 };
@@ -581,6 +582,8 @@ export const SMOKE_SCENARIOS = ['S2', 'S4', 'S5', 'S6', 'S7'];
 export const fixtureById = (id: string): Fixture => {
   const f = FIXTURES.find(x => x.id === id);
   if (f) return f;
+  // Held-out scenarios from independent authors (evals/holdout/*.md, see fixtures/holdout.ts).
+  if (id.startsWith('H-')) { const h = holdoutById(id); if (h) return h; }
   // Live snapshots (`npm run live`) are saved as JSON under evals/live/<id>.json. They carry
   // no scripted assertions: the hard code checks and the AI judge are the whole test.
   if (id.startsWith('LIVE-')) {

@@ -6,30 +6,17 @@ import { Severity, Assert, BuiltFixture, CheckResult, DerivedRide, ResolvedRec }
 import { rideMeta } from './fixtures/derive';
 import { DEFERS } from '../../app/backend/src/recommendations/handler';
 import { RideCategory } from '../../app/backend/src/types';
-import AGE_APPEAL from '../config/age-appeal.json';
+import { AGE_FIT_MIN, ageAppealFor, ageBand } from '../../app/backend/src/recommendations/ageAppeal';
 
 // ----------------------------------------------------------------- age fit
-// TouringPlans reader-survey appeal (0-5) per ride and age group (config/age-appeal.json).
-// The app's age bands map onto those groups: 7-9 is grade school, 10-12 sits between grade
-// school and teens (Tanner, 2026-11-21).
-type Appeal = { preschool?: number; gradeSchool?: number; teens?: number; youngAdult?: number; over30?: number };
-const APPEAL = (AGE_APPEAL as { rides: Record<string, Appeal> }).rides;
-/** A top-2 pick below this appeal for the party's age band is flagged. */
-export const AGE_FIT_MIN = 3.7;
-
-export function ageBand(youngestAge: number | null | undefined): { label: string; of: (a: Appeal) => number | undefined } {
-  const avg = (...xs: (number | undefined)[]) => { const v = xs.filter((x): x is number => x != null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : undefined; };
-  if (youngestAge == null || youngestAge >= 18) return { label: 'adults', of: a => avg(a.youngAdult, a.over30) };
-  if (youngestAge >= 13) return { label: 'teens', of: a => a.teens };
-  if (youngestAge >= 10) return { label: '10-12', of: a => avg(a.gradeSchool, a.teens) };
-  if (youngestAge >= 7) return { label: '7-9', of: a => a.gradeSchool };
-  return { label: 'under 7', of: a => a.preschool };
-}
+// TouringPlans reader-survey appeal (0-5) per ride and age group, the age bands, and the floor
+// all live in the backend's ageAppeal.ts (2026-11-22): the prompt's `fit low` flag and this
+// check are the same table by construction, which is the point of the flag.
+export { AGE_FIT_MIN, ageBand };
 
 /** Appeal of a ride for this fixture's party, or undefined when the ride has no survey data. */
 export function ageAppeal(ride: string, b: BuiltFixture): number | undefined {
-  const a = APPEAL[ride];
-  return a ? ageBand(b.persona?.youngestAge).of(a) : undefined;
+  return ageAppealFor(ride, b.persona?.youngestAge);
 }
 
 
@@ -82,7 +69,7 @@ const BANNED = /\b(verdicts?|badges?|scores?|must[- ]?dos?)\b/i; // "list" and "
 // "go ride it" is plain English, so only star/skip pair with "ride".
 const BANNED_LABELS = /\b((star|go|skip)[- ]?(verdict|badge|rating|rated|label|pick)s?|(star|skip)[- ]?rides?|starred)\b/i;
 const POSITIVE_TIMING = /\b(great time|good time|good deal|great deal|rare|rarely|short line|best window|steal|bargain)\b/i;
-const PARTY_FACTOR = /(pregnan|expecting|sit (this|it) out|sits (this|it) out|one of you|rider swap|swap|height|tall enough|too short|under \d+ ?(in|inches)|toddler|little one|kid|child)/i;
+const PARTY_FACTOR = /(pregnan|expecting|wheelchair|transfer|sensory|sit (this|it) out|sits (this|it) out|one of you|rider swap|swap|height|tall enough|too short|under \d+ ?(in|inches)|toddler|little one|kid|child)/i;
 const POSITION = /\b(first|second|(?<!\b(?:a|one) )third|top (pick|choice|spot)|number one|#1|ranked)\b/i;
 // Spec: every pick is for right now; captions never order the picks into a route.
 const ROUTE = /\b(go next(?! door)|next up|up next|and then|then head|after (you|that one)|when you're done|once you're done|on your way)\b/i; // "on the way" dropped 2026-11-19: usually a place, not a route
@@ -235,9 +222,14 @@ export function codeChecks(recs: ResolvedRec[] | null, b: BuiltFixture, offered:
   // this party: unrestricted, not a skip, fits what they asked for, and not below the age floor.
   // A great deal far away still leads (its net score carries the walk); the same deal closer
   // wins. Wanted rides are their call.
+  // Same arithmetic as the backend's savesFor (the `saves` field on the ride line): the arrival
+  // wait is the posted wait plus the t+0 to t+30 slope over the walk.
   const netSaved = (d: DerivedRide): number | null => {
     if (d.usual == null) return null;
-    const soon = Math.min(d.wait, d.buckets[1] ?? d.wait);
+    const b0 = d.buckets[0] ?? d.wait;
+    const b1 = d.buckets[1] ?? d.wait;
+    const arrive = Math.max(0, Math.round(d.wait + ((b1 - b0) / 30) * d.walk));
+    const soon = Math.min(arrive, b1);
     return Math.round(d.usual - soon - d.walk);
   };
   const ageOk = (d: DerivedRide) => { const v = ageAppeal(d.name, b); return kidPref || v == null || v >= AGE_FIT_MIN; };

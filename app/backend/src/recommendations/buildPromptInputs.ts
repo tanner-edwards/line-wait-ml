@@ -29,6 +29,7 @@ import {
   SKIP_POOL_FRACTION,
   RideLine,
   WINDOW_ROUND_MIN, TREND_MIN_DELTA, WINDOW_MAX_MIN } from './promptInputs';
+import { ageFitFor } from './ageAppeal';
 
 // ── Time zones ──
 
@@ -197,6 +198,24 @@ export function computeArrivalWait(
   return currentWait;
 }
 
+/**
+ * Minutes saved by going now versus a normal day, with the walk paid: usual minus the lower of
+ * the arrival wait and the +30 forecast (a line that is long now but drops within the walk plus
+ * a short wait counts at the dropping wait), minus the walk. Null without usual. Rounded.
+ */
+export function savesFor(
+  usual: number | null,
+  arrive: number | null,
+  wait: number | null,
+  bucket30: number | null,
+  walk: number | null,
+): number | null {
+  const now = arrive ?? wait;
+  if (usual === null || now === null) return null;
+  const soon = bucket30 === null ? now : Math.min(now, bucket30);
+  return Math.round(usual - soon - (walk ?? 0));
+}
+
 // ── 6.4 Party fit (port of app/frontend/src/personaSort.ts) ──
 
 /** Typical height in inches by age (~50th percentile). MUST match
@@ -327,12 +346,16 @@ export interface RideLineInputs {
   anchorRideId: string | null;
   now: Date;
   timeZone: string;
+  /** Minutes until the park closes, when known. A later window past close is not shown (seen
+   *  live: "16min at 12:05 AM" on a midnight close). */
+  minutesUntilClose?: number | null;
 }
 
 /** Ride facts for the prompt, or null when the metadata doc has none of them. */
 export function factsFor(meta: RideMetadata | null | undefined): RideFacts | null {
   if (!meta) return null;
-  const has = meta.queueType != null || meta.waterRide != null || meta.durationMin != null || meta.notes != null || meta.thrillLevel != null;
+  const tags = (meta.categories ?? []).filter(t => typeof t === 'string' && t.length > 0).sort();
+  const has = meta.queueType != null || meta.waterRide != null || meta.durationMin != null || meta.notes != null || meta.thrillLevel != null || tags.length > 0;
   if (!has) return null;
   return {
     queue: meta.queueType ?? null,
@@ -340,6 +363,7 @@ export function factsFor(meta: RideMetadata | null | undefined): RideFacts | nul
     thrill: meta.thrillLevel ?? null,
     durationMin: meta.durationMin ?? null,
     notes: normalizeNotes(meta.notes),
+    tags,
   };
 }
 
@@ -379,30 +403,40 @@ export function buildRideLines(
     const reasons = ride.verdict?.reasons ?? null;
     const wait = ride.currentWait;
     const usual = reasons?.typical == null ? null : Math.round(reasons.typical);
+    const arrive = computeArrivalWait(wait, walkMinutes, ride.historicalAverage ?? null);
+    const buckets = bucketsFor(ride);
+    const meta = inputs.metadata?.get(ride.id) ?? null;
+    const untilClose = inputs.minutesUntilClose ?? null;
+    const windowInMin = reasons?.betterWindowInMin ?? null;
     lines.push({
       code,
       rideId: ride.id,
       name: ride.name,
       wait,
-      arrive: computeArrivalWait(wait, walkMinutes, ride.historicalAverage ?? null),
+      arrive,
       usual,
       ofUsual: ofUsual(wait, usual),
       vsUsual: vsUsual(wait, usual),
       walk: walkMinutes,
+      saves: savesFor(usual, arrive, wait, buckets[1], walkMinutes),
       verdict: ride.verdict?.verdict ?? 'neutral',
       reason: reasons?.primary ?? 'none',
       wanted: wanted.has(ride.id),
       restricted: restrictedFor(ride, inputs.persona),
+      // Survey appeal is keyed by the metadata name (ride_metadata.json); the live name is the
+      // fallback for a ride without a doc.
+      ageFit: ageFitFor(meta?.name ?? ride.name, inputs.persona?.youngestAge),
       reopenedMinAgo: inputs.reopens.get(ride.id) ?? null,
-      buckets: bucketsFor(ride),
-      trend: trendFor(wait, bucketsFor(ride)),
+      buckets,
+      trend: trendFor(wait, buckets),
       // Beyond WINDOW_MAX_MIN a window has no present-tense use and only baits
-      // come-back-later copy (seen live on Radiator Springs, 4.5 h out).
-      window: reasons?.betterWindowInMin != null && reasons.betterWindowInMin > WINDOW_MAX_MIN
+      // come-back-later copy (seen live on Radiator Springs, 4.5 h out). Past close it is
+      // not a window at all.
+      window: windowInMin != null && (windowInMin > WINDOW_MAX_MIN || (untilClose != null && windowInMin >= untilClose))
         ? null
         : formatWindow(reasons, inputs.now, inputs.timeZone),
       isAnchor: inputs.anchorRideId !== null && ride.id === inputs.anchorRideId,
-      facts: factsFor(inputs.metadata?.get(ride.id) ?? null),
+      facts: factsFor(meta),
     });
   }
   return lines;

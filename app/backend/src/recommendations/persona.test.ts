@@ -69,6 +69,23 @@ describe('personaToText', () => {
     expect(out).toContain('thrill rides');
   });
 
+  it('names the deciding ride-line field per category and states the one-step boost', () => {
+    const out = personaToText({ ...emptyPersona(), ridePreferences: ['thrills', 'classics'] }, new Map());
+    expect(out).toContain('thrill 3 or higher');
+    expect(out).toContain('tagged classic');
+    expect(out).toContain('one step better than its verdict');
+    expect(out).toContain('not a filter');
+    expect(out).not.toMatch(/Indiana Jones|Pirates/); // membership comes from the tags, not a list
+  });
+
+  it('treats every category selected as no preference at all', () => {
+    const out = personaToText({ ...emptyPersona(), ridePreferences: ['thrills', 'classics', 'immersive', 'kid-favorites'] }, new Map());
+    expect(out).toBe(DEFAULT_PERSONA);
+    const withFirst = personaToText({ ...emptyPersona(), ridePreferences: ['thrills', 'classics', 'immersive', 'kid-favorites', 'first-time'] }, new Map());
+    expect(withFirst).toMatch(/first visit/);
+    expect(withFirst).not.toContain('Ride preferences:');
+  });
+
   it('no longer emits a must-do sentence (wanted travels on the ride line)', () => {
     const out = personaToText(
       { ...emptyPersona(), tripDuration: '1-day', mustDoRideIds: ['ride-rise', 'ride-indy'] },

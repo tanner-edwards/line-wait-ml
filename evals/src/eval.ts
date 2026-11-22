@@ -19,6 +19,7 @@ import { join } from 'path';
 import { arg, EVALS_ROOT, flag, PRODUCTION_MODEL, resolveRun, stamp } from './args';
 import { buildFixture } from './fixtures/derive';
 import { FIXTURES, fixtureById, SMOKE_SCENARIOS } from './fixtures/scenarios';
+import { HOLDOUT } from './fixtures/holdout';
 import { grade } from './grade';
 import { RunData, renderIndex, renderRun } from './html';
 import { isJudgement, JUDGE_VERSION, Judgement, JudgeFailure, judgeAnswer, pool } from './judge';
@@ -87,7 +88,7 @@ async function main() {
     const wanted = arg('fixtures')?.split(',').map(s => s.trim());
     // --smoke: the five hard scenarios plus a live sample with three personas, one run each.
     // Directional in about two minutes; the full matrix is the decision.
-    let fixtures = wanted ? wanted.map(fixtureById) : smoke ? SMOKE_SCENARIOS.map(fixtureById) : FIXTURES;
+    let fixtures = wanted ? wanted.map(fixtureById) : flag('holdout') ? HOLDOUT : smoke ? SMOKE_SCENARIOS.map(fixtureById) : FIXTURES;
     const livePark = arg('live') ?? (smoke ? 'disneyland' : undefined);
     if (livePark) {
       // Live-random: capture the park now, sample --rides rides, one fixture per persona preset.

@@ -10,7 +10,8 @@
     "judge-check": "tsx src/judge-check.ts",
     "typecheck": "tsc --noEmit -p .",
     "review-pack": "tsx src/review-pack.ts",
-    "compare": "tsx src/compare.ts"
+    "compare": "tsx src/compare.ts",
+    "holdout-pack": "tsx src/holdout-pack.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.10.0",

@@ -37,6 +37,9 @@ export interface RideFacts {
   durationMin: number | null;
   /** Short editorial note, normalized to plain casing: "whitewater raft, soaking, 42in min". */
   notes: string | null;
+  /** Editorial hand-tags from ride metadata: classic, iconic, immersive. The persona's ride
+   *  preferences are a boost on these (and on thrill), so the model never guesses membership. */
+  tags: string[];
 }
 
 export interface RideLine {
@@ -56,6 +59,11 @@ export interface RideLine {
   vsUsual: number | null;
   /** Walking minutes from the guest's position. */
   walk: number | null;
+  /** Minutes this party comes out ahead by going now versus a normal day, walk included:
+   *  usual minus the lower of arrive and the +30 forecast, minus walk. The size of the deal
+   *  (2026-11-22: saving time is the goal, and relative labels sent guests across the park for
+   *  a 5-minute line on a 10-minute usual). Null without usual. */
+  saves: number | null;
   verdict: 'star' | 'go' | 'skip' | 'neutral';
   /** verdict.reasons.primary, or 'none'. */
   reason: string;
@@ -63,6 +71,9 @@ export interface RideLine {
   wanted: boolean;
   /** Party-fit flags, same rules as app/frontend/src/personaSort.ts. */
   restricted: Restriction[];
+  /** 'low' when the party's age band rates this ride under AGE_FIT_MIN in the rider survey
+   *  (ageAppeal.ts); null when it rates fine or has no data. */
+  ageFit: 'low' | null;
   /** Minutes since the ride reopened, when within REOPEN_WINDOW_MIN; else null. */
   reopenedMinAgo: number | null;
   /** t+0, t+30, t+60, t+90, t+120 from historicalAverage, rounded. Length 5. */

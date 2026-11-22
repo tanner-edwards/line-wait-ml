@@ -24,16 +24,26 @@ const TRIP_DURATION_TEXT: Record<TripDuration, string> = {
     'Extended five-or-more day visit, very relaxed pace; willing to explore lesser-known attractions.',
 };
 
+// Each category names the ride-line field that decides membership (thrill number or tags), so
+// the model never argues a ride into a category from its description. Same mapping as the eval
+// harness's fitsCategory (evals/src/checks.ts).
 const RIDE_CATEGORY_TEXT: Record<Exclude<RideCategory, 'first-time'>, string> = {
   thrills:
-    'thrill rides (coasters, drops, high-intensity)',
+    'thrill rides (thrill 3 or higher on the ride line)',
   classics:
-    'classic Disney attractions (Pirates, Haunted Mansion, Jungle Cruise, Indiana Jones, etc.)',
+    'classic Disney attractions (tagged classic)',
   immersive:
-    'newer immersive / story-driven attractions (Rise of the Resistance, Web Slingers, Smugglers Run, Radiator Springs Racers, etc.)',
+    'newer immersive, story-driven attractions (tagged immersive)',
   'kid-favorites':
-    'gentle rides for young kids (carousels, Dumbo, Casey Jr., Little Mermaid, etc.)',
+    'gentle rides for young kids (thrill 1)',
 };
+
+// A preference is a one-step boost, never a filter (Tanner, 2026-11-21). Multi-select is a
+// union, and picking every category is the same as picking none, so the paragraph is skipped
+// when all four are selected.
+const BOOST_TEXT =
+  'A ride that matches any of these counts one step better than its verdict says: neutral reads as go, go reads as star. It is a boost, not a filter: other rides still compete, and a matching ride with a clearly worse line does not jump past a better one. Only the thrill number and tags on the ride line decide what matches, never how a ride sounds.';
+const ALL_CATEGORIES = Object.keys(RIDE_CATEGORY_TEXT).length;
 
 const ACCESSIBILITY_TEXT: Record<Exclude<AccessibilityNeed, 'none'>, string> = {
   stroller:
@@ -51,18 +61,18 @@ const RIDER_SWAP_NOTE =
 
 function ageText(age: number): string {
   if (age >= 18) {
-    return 'All adults in the party, no height restrictions to worry about; the full thrill catalog is available.';
+    return 'All adults in the party, no height restrictions to worry about; the full thrill catalog is available. The gentlest kiddie rides are not for this group unless they ask for them; fit low on a ride line says adults rate it poorly.';
   }
   if (age <= 3) {
-    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences. Long walks between attractions are harder with a toddler in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a toddler (age ${age}). Most height-restricted thrill rides are off the table. Pace should account for short attention spans and nap windows. Lean toward gentle dark rides, carousels, and character experiences. Dark, loud, or scary counts against a ride even when height allows; fit low on a ride line says little ones rate it poorly. Long walks between attractions are harder with a toddler in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 6) {
-    return `Youngest in the party is a young child (age ${age}). Several big thrill rides (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks. Long walks between attractions are harder with young kids in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
+    return `Youngest in the party is a young child (age ${age}). Several big thrill rides (Space Mountain, Indiana Jones, Matterhorn, Incredicoaster, Guardians of the Galaxy, Tower of Terror) have height restrictions that exclude this age. Lean toward family-friendly dark rides and shows for the whole-party picks. Dark, loud, or scary counts against a ride even when height allows; fit low on a ride line says kids this age rate it poorly. Long walks between attractions are harder with young kids in tow, favor nearby rides over farther ones; a moderate wait improvement rarely justifies more than a short walk.${RIDER_SWAP_NOTE}`;
   }
   if (age <= 12) {
-    return `Youngest in the party is age ${age}. Most attractions are accessible; only the very tallest thrills (Indiana Jones at 46", Incredicoaster at 48", Guardians at 42") may be borderline, recommend with care if the child is small for their age.`;
+    return `Youngest in the party is age ${age}. Most attractions are accessible; only the very tallest thrills (Indiana Jones at 46", Incredicoaster at 48", Guardians at 42") may be borderline, recommend with care if the child is small for their age. fit low on a ride line says kids this age rate it a bore or a scare.`;
   }
-  return `Youngest in the party is a teen (age ${age}). All attractions are height-accessible.`;
+  return `Youngest in the party is a teen (age ${age}). All attractions are height-accessible. The gentlest kiddie rides read as a bore at this age; fit low on a ride line says so.`;
 }
 
 // `_rideMetadata` is unused since the must-do sentence moved to the ride
@@ -86,17 +96,15 @@ export function personaToText(
   if (persona.ridePreferences.length > 0) {
     if (persona.ridePreferences.includes('first-time')) {
       parts.push(
-        "This is the guest's first visit to the park. Prioritize the famous rides over obscure picks. Say in a few plain words what each ride is; they don't know the park yet. Don't assume park knowledge."
+        "This is the guest's first visit to the park. Prioritize the famous rides over obscure picks; the famous ones are tagged iconic on their ride line. Say in a few plain words what each ride is; they don't know the park yet. Don't assume park knowledge."
       );
     }
     const otherPrefs = persona.ridePreferences.filter(
       (p): p is Exclude<RideCategory, 'first-time'> => p !== 'first-time'
     );
-    if (otherPrefs.length > 0) {
+    if (otherPrefs.length > 0 && otherPrefs.length < ALL_CATEGORIES) {
       const labels = otherPrefs.map(p => RIDE_CATEGORY_TEXT[p]).join('; ');
-      parts.push(
-        `Ride preferences: ${labels}. Weight these categories more heavily when ranking.`
-      );
+      parts.push(`Ride preferences: ${labels}. ${BOOST_TEXT}`);
     }
   }
 
