@@ -6,6 +6,9 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Bell } from 'lucide-react-native';
+import { useIsWatching } from '../context/PersonaContext';
+import { useTrip } from '../context/TripContext';
 import { Recommendation, Ride } from '../types';
 import { colors, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
@@ -22,6 +25,8 @@ interface Props {
 }
 
 export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactElement | null {
+  const isWatching = useIsWatching(rec.rideId);
+  const { hasActiveTrip } = useTrip();
   if (!ride) return null;
   const waitLabel = recWaitLabel(rec, ride);
   const verdict = ride.verdict?.verdict ?? null;
@@ -33,6 +38,11 @@ export function RecommendationTile({ rec, ride, onPress }: Props): React.ReactEl
         {badge ? (
           <View style={styles.badgeCorner}>
             <Pill variant={badge} />
+          </View>
+        ) : null}
+        {isWatching && hasActiveTrip ? (
+          <View style={styles.bellCorner}>
+            <Bell size={12} color={colors.star} />
           </View>
         ) : null}
         <RideIcon rideId={rec.rideId} rideName={ride.name} size={44} />
@@ -63,6 +73,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: spacing.sm,
     left: spacing.sm,
+  },
+  bellCorner: {
+    position: 'absolute',
+    top: spacing.sm,
+    right: spacing.sm,
   },
   name: {
     ...typography.label,
