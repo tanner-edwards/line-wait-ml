@@ -15,7 +15,7 @@ import {
   View,
 } from 'react-native';
 import { BottomSheetFlatList } from '@gorhom/bottom-sheet';
-import { CircleCheck, OctagonX, Star, TrendingUp, X, Zap } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Gem, TrendingUp, X, Zap } from 'lucide-react-native';
 import { useDevice } from '../context/DeviceContext';
 import { useNotificationDetail } from '../context/NotificationDetailContext';
 import { useDeviceNotifications } from '../hooks/useDeviceNotifications';
@@ -221,7 +221,7 @@ function iconFor(entry: NotificationLogEntry): React.ReactElement {
   if (entry.type === 'peak')    return <TrendingUp size={18} color={colors.skip} />;
   if (entry.type === 'reopen' && entry.isOpportunity) return <Zap size={18} color={colors.go} />;
   if (entry.type === 'reopen')  return <CircleCheck size={18} color={colors.go} />;
-  if (entry.badge === 'star')   return <Star size={18} color={colors.star} fill={colors.star} />;
+  if (entry.badge === 'star')   return <Gem size={18} color={colors.star} />;
   return <CircleCheck size={18} color={colors.go} />;
 }
 

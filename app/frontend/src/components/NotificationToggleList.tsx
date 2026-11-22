@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { StyleSheet, Switch, Text, View } from 'react-native';
-import { CircleCheck, OctagonX, Star, TrendingUp } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Gem, TrendingUp } from 'lucide-react-native';
 import { colors } from '../theme/tokens';
 import { NotificationKind, NotificationTypes } from '../types';
 
@@ -18,7 +18,7 @@ interface Row {
 const ROWS: Row[] = [
   {
     kind: 'trough',
-    icon: <Star size={18} color={colors.star} fill={colors.star} />,
+    icon: <Gem size={18} color={colors.star} />,
     title: 'Wait-time opportunities',
     subtitle: 'Alerts when a must-do ride hits a short-wait window.',
   },

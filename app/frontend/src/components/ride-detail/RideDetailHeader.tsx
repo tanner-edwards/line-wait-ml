@@ -24,7 +24,7 @@ import {
   Clock,
   Footprints,
   OctagonX,
-  Star,
+  Gem,
   TrendingDown,
   TrendingUp,
   Zap,
@@ -51,8 +51,8 @@ const DIRECTION: Record<'up' | 'down' | 'stable', { label: string; Icon: typeof 
 // Banner per verdict. Titles blend the mockup's call-to-action tone with the
 // earlier pill copy. Backgrounds are solid hexes (badge color on white) so
 // the sheet's cream can't show through — same values ReasonCard used.
-const VERDICT_BANNER: Record<'star' | 'go' | 'skip', { title: string; color: string; bg: string; border: string; Icon: typeof Star }> = {
-  star: { title: 'RARE OPPORTUNITY', color: colors.star, bg: '#F3E8CD', border: colors.starBorder, Icon: Star },
+const VERDICT_BANNER: Record<'star' | 'go' | 'skip', { title: string; color: string; bg: string; border: string; Icon: typeof Gem }> = {
+  star: { title: 'RARE OPPORTUNITY', color: colors.star, bg: '#F3E8CD', border: colors.starBorder, Icon: Gem },
   go: { title: 'GOOD TIME TO RIDE', color: colors.go, bg: '#E6EDEB', border: colors.goBorder, Icon: CheckCircle },
   skip: { title: 'SKIP FOR NOW', color: colors.skip, bg: '#F8EBEA', border: colors.skipBorder, Icon: OctagonX },
 };

@@ -18,7 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   MapPin,
-  Sparkles,
+  Star,
   Timer,
   Users,
 } from 'lucide-react-native';
@@ -28,7 +28,7 @@ export type DiscoverChip = 'nearby' | 'land' | 'list' | 'opportunity' | 'wait' |
 
 const CHIPS: { key: DiscoverChip; label: string; icon: typeof MapPin }[] = [
   { key: 'nearby', label: 'Nearby', icon: MapPin },
-  { key: 'opportunity', label: 'Opportunity', icon: Sparkles },
+  { key: 'opportunity', label: 'Opportunity', icon: Star },
   { key: 'land', label: 'By Land', icon: Castle },
   // Bell, not heart/bookmark — matches Watch everywhere else.
   { key: 'list', label: 'Your List', icon: Bell },

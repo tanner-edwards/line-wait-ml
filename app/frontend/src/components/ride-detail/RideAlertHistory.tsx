@@ -4,7 +4,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Gem } from 'lucide-react-native';
 import { colors } from '../../theme/tokens';
 import { notificationBody } from '../../../../../notification-copy';
 import { formatTimeAgo } from '../../timestamp';
@@ -25,7 +25,7 @@ export function RideAlertHistory({ entries }: Props): React.ReactElement | null 
         const icon = entry.type === 'closure' ? <OctagonX size={16} color={colors.skip} />
           : entry.type === 'peak'   ? <OctagonX size={16} color={colors.star} />
           : entry.type === 'reopen' ? <CircleCheck size={16} color={colors.go} />
-          : entry.badge === 'star'  ? <Star size={16} color={colors.star} fill={colors.star} />
+          : entry.badge === 'star'  ? <Gem size={16} color={colors.star} />
           : <CircleCheck size={16} color={colors.go} />;
         const body = entry.body ?? notificationBody(entry);
         return (
