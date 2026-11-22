@@ -4,7 +4,7 @@ import { DiscoverChip, DiscoverChips } from './DiscoverChips';
 
 const layout = (width: number) => ({ nativeEvent: { layout: { width, height: 36, x: 0, y: 0 } } });
 
-const KEYS = ['nearby', 'land', 'list', 'opportunity', 'wait', 'demand', 'az'];
+const KEYS = ['nearby', 'opportunity', 'land', 'list', 'wait', 'demand', 'az'];
 
 // Every chip measures 80 wide, More 60; gap is 8.
 function measure(rowW: number) {
@@ -29,8 +29,8 @@ describe('DiscoverChips', () => {
   it('fits as many chips as the row allows, then More', () => {
     setup();
     measure(330); // 3×80 + More 60 + 3 gaps×8 = 324
-    expect(screen.getByTestId('chip-list')).toBeTruthy();
-    expect(screen.queryByTestId('chip-opportunity')).toBeNull();
+    expect(screen.getByTestId('chip-land')).toBeTruthy();
+    expect(screen.queryByTestId('chip-list')).toBeNull();
     expect(screen.getByTestId('chip-more')).toBeTruthy();
   });
 
@@ -49,7 +49,7 @@ describe('DiscoverChips', () => {
     setup('demand');
     measure(330);
     const chips = screen.getAllByRole('button').map(b => b.props.testID).filter(Boolean);
-    expect(chips.slice(0, 4)).toEqual(['chip-demand', 'chip-nearby', 'chip-land', 'chip-more']);
+    expect(chips.slice(0, 4)).toEqual(['chip-demand', 'chip-nearby', 'chip-opportunity', 'chip-more']);
   });
 
   it('drops More when everything fits', () => {

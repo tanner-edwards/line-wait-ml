@@ -18,7 +18,7 @@ import { colors, spacing, typography } from '../theme/tokens';
 import { VerdictBadge } from './VerdictBadge';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
-import { fitWaitLabel, useMetaRowFit } from './metaRowFit';
+import { fitWaitLabel, useMetaRowFit, walkOnMode } from './metaRowFit';
 import { RideIcon } from './icons/RideIcon';
 import { isWalkOnRide } from '../utils/walkOn';
 import { rideWaitLabel, walkMinsTo } from '../grouping';
@@ -47,18 +47,22 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   const walkOn = isOperating && isWalkOnRide(ride.id, ride.currentWait);
   const walkMins = walkOrigin ? walkMinsTo(walkOrigin, ride) : null;
 
-  // Only "N min wait" has short forms — "N min", then "Nm" — rather than
-  // ellipsizing.
+  // "N min wait" steps down to "N min", then "Nm"; Walk On drops its icon,
+  // then ellipsizes, then shows only the icon.
   const waitText = isOperating && !walkOn && ride.currentWait !== null ? `${ride.currentWait} min wait` : null;
   const items = [badge, true, walkMins != null].filter(Boolean).length;
-  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(spacing.md, items);
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit, avail } = useMetaRowFit(spacing.md, items);
+
+  const walkOnShown = walkOnMode(fit, avail);
 
   // Waits (incl. Walk On / No posted wait) get the white pill; Down / Closed /
   // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
     <WaitPill style={styles.waitShrink} testID="badge-walk-on">
-      <Footprints size={13} color={colors.go} />
-      <Text style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
+      {walkOnShown !== 'text' ? <Footprints size={13} color={colors.go} /> : null}
+      {walkOnShown !== 'icon' ? (
+        <Text numberOfLines={1} style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
+      ) : null}
     </WaitPill>
   ) : isOperating && ride.currentWait !== null ? (
     <WaitPill style={styles.waitShrink}>
@@ -83,7 +87,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
         <View style={styles.content}>
           <View style={styles.nameRow}>
             <Text style={[styles.rideName, !isOperating && styles.rideNameDown]}>{ride.name}</Text>
-            {isWatching && hasActiveTrip ? <Bell size={12} color={colors.star} /> : null}
+            {isWatching && hasActiveTrip ? (
+              <View style={styles.bellEnd}><Bell size={12} color={colors.star} /></View>
+            ) : null}
           </View>
           <View style={styles.metaRow} onLayout={onRow} testID={`ride-meta-${ride.id}`}>
             {badge ? (
@@ -92,14 +98,18 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
               </View>
             ) : null}
             {status}
-            {waitText ? (
+            {waitText || walkOn ? (
               // Off-screen copies of the full and short pills, measured at natural width.
+              // Walk On's short form is the same pill without its icon.
               <>
                 <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`ride-meta-measure-${ride.id}`}>
-                  <WaitPill><Text style={styles.statusText}>{waitText}</Text></WaitPill>
+                  <WaitPill>
+                    {walkOn ? <Footprints size={13} color={colors.go} /> : null}
+                    <Text style={styles.statusText}>{walkOn ? 'Walk On' : waitText}</Text>
+                  </WaitPill>
                 </View>
                 <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`ride-meta-measure-short-${ride.id}`}>
-                  <WaitPill><Text style={styles.statusText}>{fitWaitLabel(waitText, 'short')}</Text></WaitPill>
+                  <WaitPill><Text style={styles.statusText}>{walkOn ? 'Walk On' : fitWaitLabel(waitText!, 'short')}</Text></WaitPill>
                 </View>
               </>
             ) : null}
@@ -137,6 +147,8 @@ const styles = StyleSheet.create({
   // Pushes the walk pill to the right edge of the text column, which ends
   // where the chevron's gap begins. Never shrinks — the status gives way.
   walkEnd: { marginLeft: 'auto', flexShrink: 0 },
+  // Right edge of the text column, so every row's bell lines up.
+  bellEnd: { marginLeft: 'auto' },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',

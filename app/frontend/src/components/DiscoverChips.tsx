@@ -3,8 +3,8 @@
 // the hidden chips onto wrapped lines below; picking one collapses the bar
 // and moves that chip to the front.
 //
-// [● Nearby] [By Land] [Your List] [More ⌄]
-// [Opportunity] [Shortest Wait] [Most Popular]     ← expanded only
+// [● Nearby] [Opportunity] [By Land] [More ⌄]
+// [Your List] [Shortest Wait] [Most Popular]     ← expanded only
 // [A–Z by Land]
 //
 // Home.tsx owns which chip is active; this owns expand/collapse and fitting.
@@ -18,7 +18,7 @@ import {
   ChevronDown,
   ChevronUp,
   MapPin,
-  Sparkles,
+  Star,
   Timer,
   Users,
 } from 'lucide-react-native';
@@ -28,10 +28,10 @@ export type DiscoverChip = 'nearby' | 'land' | 'list' | 'opportunity' | 'wait' |
 
 const CHIPS: { key: DiscoverChip; label: string; icon: typeof MapPin }[] = [
   { key: 'nearby', label: 'Nearby', icon: MapPin },
+  { key: 'opportunity', label: 'Opportunity', icon: Star },
   { key: 'land', label: 'By Land', icon: Castle },
   // Bell, not heart/bookmark — matches Watch everywhere else.
   { key: 'list', label: 'Your List', icon: Bell },
-  { key: 'opportunity', label: 'Opportunity', icon: Sparkles },
   { key: 'wait', label: 'Shortest Wait', icon: Timer },
   { key: 'demand', label: 'Most Popular', icon: Users },
   { key: 'az', label: 'A–Z by Land', icon: ArrowDownAZ },

@@ -1,7 +1,7 @@
 // Pill — unified badge/pill primitive.
 //
 // Icon mode (no label): renders a Lucide icon in the variant's color.
-//   star    → Star (filled gold)
+//   star    → Gem (gold)
 //   go      → CircleCheck (filled green, white check)
 //   caution → AlertTriangle (filled orange)
 //   skip    → OctagonX (red)
@@ -14,7 +14,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { AlertTriangle, CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { AlertTriangle, CircleCheck, OctagonX, Gem } from 'lucide-react-native';
 import { colors, radius } from '../theme/tokens';
 
 export type PillVariant = 'star' | 'go' | 'caution' | 'skip' | 'neutral';
@@ -59,7 +59,7 @@ export function Pill({ variant, label, testID }: PillProps): React.ReactElement 
   if (variant === 'star') {
     return (
       <View style={styles.icon} testID={testID ?? 'badge-star'}>
-        <Star size={18} color={colors.star} fill={colors.star} />
+        <Gem size={18} color={colors.star} />
       </View>
     );
   }

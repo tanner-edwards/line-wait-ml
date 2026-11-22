@@ -10,7 +10,7 @@
 
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { CircleCheck, OctagonX, Star } from 'lucide-react-native';
+import { CircleCheck, OctagonX, Gem } from 'lucide-react-native';
 import { colors, fonts, radius } from '../theme/tokens';
 
 export type VerdictBadgeVariant = 'star' | 'go' | 'skip';
@@ -29,7 +29,7 @@ export function VerdictBadge({ variant }: { variant: VerdictBadgeVariant }): Rea
   return (
     <View style={[styles.badge, { backgroundColor: bg }]} testID={`badge-${variant}`}>
       {variant === 'star' ? (
-        <Star size={ICON_SIZE} color={FG} fill={FG} />
+        <Gem size={ICON_SIZE} color={FG} />
       ) : variant === 'go' ? (
         <CircleCheck size={ICON_SIZE} color={FG} strokeWidth={2.5} />
       ) : (

@@ -60,3 +60,9 @@ export function usePersona(): PersonaContextValue {
   if (!ctx) throw new Error('usePersona must be used inside <PersonaProvider>');
   return ctx;
 }
+
+/** Is this ride on the user's watch list? False (not a throw) outside a provider. */
+export function useIsWatching(rideId: string): boolean {
+  const ctx = useContext(PersonaContext);
+  return ctx?.persona?.mustDoRideIds.includes(rideId) ?? false;
+}

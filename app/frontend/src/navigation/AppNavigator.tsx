@@ -34,6 +34,16 @@ export function AppNavigator(): React.ReactElement {
         <Tab.Screen
           name="Recommendations"
           component={RecsStack}
+          listeners={({ navigation, route }) => ({
+            // Tapping the active tab while a screen is pushed (More to
+            // Consider) goes back to the main recs page.
+            tabPress: () => {
+              const nested = (route as { state?: { index?: number } }).state;
+              if (navigation.isFocused() && nested && (nested.index ?? 0) > 0) {
+                navigation.navigate('Recommendations', { screen: 'RecommendationsHome' });
+              }
+            },
+          })}
           options={{
             tabBarIcon: ({ color, focused }) => (
               <Sparkles size={22} color={color} fill={focused ? color : 'none'} />

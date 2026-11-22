@@ -13,7 +13,7 @@
 
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { AlertTriangle, ChevronRight } from 'lucide-react-native';
+import { AlertTriangle, Bell, ChevronRight, Footprints } from 'lucide-react-native';
 import { Recommendation, Ride } from '../types';
 import { colors, radius, spacing, typography } from '../theme/tokens';
 import { Card } from './Card';
@@ -22,7 +22,9 @@ import { SwipeToRetireRow } from './SwipeToRetireRow';
 import { RideIcon } from './icons/RideIcon';
 import { WalkPill } from './WalkPill';
 import { WaitPill } from './WaitPill';
-import { fitWaitLabel, hasShortForms, useMetaRowFit } from './metaRowFit';
+import { useIsWatching } from '../context/PersonaContext';
+import { useTrip } from '../context/TripContext';
+import { fitWaitLabel, hasShortForms, useMetaRowFit, walkOnMode } from './metaRowFit';
 import { isWalkOnRide } from '../utils/walkOn';
 import { roundWait } from '../utils/roundWait';
 import { NO_POSTED_WAIT } from '../grouping';
@@ -83,6 +85,8 @@ export function RecommendationCard({
   onRetire,
   isFirst,
 }: RecommendationCardProps): React.ReactElement {
+  const isWatching = useIsWatching(rec.rideId);
+  const { hasActiveTrip } = useTrip();
   if (!ride) {
     return (
       <View style={styles.skeleton} testID={`rec-card-${rec.rideId}`}>
@@ -110,6 +114,9 @@ export function RecommendationCard({
                   <Text style={styles.rideName}>{ride.name}</Text>
                   {rec.restrictionNote ? (
                     <AlertTriangle size={13} color={colors.star} />
+                  ) : null}
+                  {isWatching && hasActiveTrip ? (
+                    <View style={styles.bellEnd}><Bell size={12} color={colors.star} /></View>
                   ) : null}
                 </View>
                 {badge || waitLabel || rec.walkMinutes !== null ? (
@@ -150,7 +157,8 @@ interface MetaRowProps {
  */
 export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaRowProps): React.ReactElement {
   const items = [badge, waitLabel, walkMinutes !== null].filter(Boolean).length;
-  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit } = useMetaRowFit(META_GAP, items);
+  const { onRow, onBadge, onLabel, onShortLabel, onWalk, fit, avail } = useMetaRowFit(META_GAP, items);
+  const mode = walkOnMode(fit, avail);
   const shown = waitLabel ? fitWaitLabel(waitLabel, fit) : waitLabel;
   const labelStyle = [styles.waitLabel, walkOn && styles.walkOnLabel, waitLabel === NO_POSTED_WAIT && styles.noWaitLabel];
 
@@ -164,13 +172,23 @@ export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaR
       {waitLabel ? (
         <>
           <WaitPill style={styles.waitShrink}>
-            <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+            {walkOn && mode !== 'text' ? <Footprints size={13} color={colors.go} /> : null}
+            {!walkOn || mode !== 'icon' ? (
+              <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+            ) : null}
           </WaitPill>
           {/* Off-screen copy of the full-label pill, measured at natural width. */}
           <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`rec-meta-measure-${rideId}`}>
-            <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+            <WaitPill>
+              {walkOn ? <Footprints size={13} color={colors.go} /> : null}
+              <Text style={labelStyle}>{waitLabel}</Text>
+            </WaitPill>
           </View>
-          {hasShortForms(waitLabel) ? (
+          {walkOn ? (
+            <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`rec-meta-measure-short-${rideId}`}>
+              <WaitPill><Text style={labelStyle}>{waitLabel}</Text></WaitPill>
+            </View>
+          ) : hasShortForms(waitLabel) ? (
             <View style={styles.measure} onLayout={onShortLabel} aria-hidden testID={`rec-meta-measure-short-${rideId}`}>
               <WaitPill><Text style={labelStyle}>{fitWaitLabel(waitLabel, 'short')}</Text></WaitPill>
             </View>
@@ -211,6 +229,8 @@ const styles = StyleSheet.create({
   // Pushes the walk pill to the right edge of the text column, which ends
   // where the chevron's gap begins. Never shrinks — the wait label gives way.
   walkEnd: { marginLeft: 'auto', flexShrink: 0 },
+  // Right edge of the text column, same as Discover rows.
+  bellEnd: { marginLeft: 'auto' },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',

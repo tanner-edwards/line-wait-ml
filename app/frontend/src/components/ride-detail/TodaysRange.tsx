@@ -59,10 +59,10 @@ const BADGE_FILL: Record<'go' | 'skip' | 'star', string> = {
 
 const STAR_MARKER_COLOR = colors.star;
 
-// Lucide "Star" path, 24x24 viewBox — reused here instead of the Lucide
+// Lucide "Gem" outline path, 24x24 viewBox — reused here instead of the Lucide
 // component so it can be drawn as a native SVG node inside this chart's Svg.
 const STAR_PATH_D =
-  'M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.123 2.123 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.123 2.123 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.122 2.122 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.122 2.122 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.122 2.122 0 0 0 1.597-1.16z';
+  'M17 3a2 2 0 0 1 1.6.8l3 4a2 2 0 0 1 .013 2.382l-7.99 10.986a2 2 0 0 1-3.247 0l-7.99-10.986A2 2 0 0 1 2.4 7.8l2.998-3.997A2 2 0 0 1 7 3z';
 const STAR_MARKER_SIZE = 22; // rendered width/height in track-coordinate units
 
 export interface RangeLayout {
@@ -266,7 +266,7 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
               </SvgText>
             ) : null}
 
-            {/* Current wait marker — a gold star for a rare 'star' opportunity,
+            {/* Current wait marker — a gold gem for a rare 'star' opportunity,
                 otherwise a plain dot in the badge color. */}
             {dotX != null ? (
               badge === 'star' ? (
