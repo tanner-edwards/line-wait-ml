@@ -163,8 +163,8 @@ export function MetaRow({ rideId, badge, waitLabel, walkOn, walkMinutes }: MetaR
       ) : null}
       {waitLabel ? (
         <>
-          <WaitPill style={styles.waitShrink}>
-            <Text numberOfLines={1} style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
+          <WaitPill style={walkOn ? [styles.waitShrink, styles.walkOnPill] : styles.waitShrink}>
+            <Text numberOfLines={1} ellipsizeMode="tail" style={labelStyle} testID={`rec-meta-wait-${rideId}`}>{shown}</Text>
           </WaitPill>
           {/* Off-screen copy of the full-label pill, measured at natural width. */}
           <View style={styles.measure} onLayout={onLabel} aria-hidden testID={`rec-meta-measure-${rideId}`}>
@@ -242,6 +242,8 @@ const styles = StyleSheet.create({
   },
   noShrink: { flexShrink: 0 },
   waitShrink: { flexShrink: 1 },
+  // Never collapse to a bare "…" dot — keep a few letters visible.
+  walkOnPill: { minWidth: 68 },
   measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnLabel: { color: colors.go },
   noWaitLabel: { color: colors.textSecondary, fontWeight: '500' },

@@ -56,7 +56,7 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
   // Waits (incl. Walk On / No posted wait) get the white pill; Down / Closed /
   // Refurbishment are statuses and stay plain text.
   const status = walkOn ? (
-    <WaitPill style={styles.waitShrink} testID="badge-walk-on">
+    <WaitPill style={[styles.waitShrink, styles.walkOnPill]} testID="badge-walk-on">
       {fit === 'full' ? <Footprints size={13} color={colors.go} /> : null}
       <Text numberOfLines={1} style={[styles.statusText, styles.walkOnText]}>Walk On</Text>
     </WaitPill>
@@ -169,6 +169,8 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
   },
   waitShrink: { flexShrink: 1 },
+  // Never collapse to a bare "…" dot — keep a few letters visible.
+  walkOnPill: { minWidth: 68 },
   noShrink: { flexShrink: 0 },
   measure: { position: 'absolute', opacity: 0, left: 0, top: 0 },
   walkOnText: { color: colors.go },
