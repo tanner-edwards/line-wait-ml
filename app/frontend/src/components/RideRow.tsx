@@ -87,7 +87,9 @@ export function RideRow({ ride, walkOrigin, isWatching, onPress }: RideRowProps)
         <View style={styles.content}>
           <View style={styles.nameRow}>
             <Text style={[styles.rideName, !isOperating && styles.rideNameDown]}>{ride.name}</Text>
-            {isWatching && hasActiveTrip ? <Bell size={12} color={colors.star} /> : null}
+            {isWatching && hasActiveTrip ? (
+              <View style={styles.bellEnd}><Bell size={12} color={colors.star} /></View>
+            ) : null}
           </View>
           <View style={styles.metaRow} onLayout={onRow} testID={`ride-meta-${ride.id}`}>
             {badge ? (
@@ -145,6 +147,8 @@ const styles = StyleSheet.create({
   // Pushes the walk pill to the right edge of the text column, which ends
   // where the chevron's gap begins. Never shrinks — the status gives way.
   walkEnd: { marginLeft: 'auto', flexShrink: 0 },
+  // Right edge of the text column, so every row's bell lines up.
+  bellEnd: { marginLeft: 'auto' },
   nameRow: {
     flexDirection: 'row',
     alignItems: 'center',
