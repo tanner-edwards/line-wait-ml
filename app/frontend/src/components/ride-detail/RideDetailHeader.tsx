@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import { colors, spacing, typography } from '../../theme/tokens';
 import { WalkPill } from '../WalkPill';
+import { GemIcon } from '../icons/GemIcon';
 import { RideIcon, SHOW_RIDE_ICONS } from '../icons/RideIcon';
 import { TodaysRange } from './TodaysRange';
 import { Tile } from './Tile';
@@ -139,12 +140,11 @@ export function RideDetailHeader({
       {/* Verdict banner — omitted for neutral / caution */}
       {banner ? (
         <View style={[styles.banner, { backgroundColor: banner.bg, borderColor: banner.border }]} testID={`detail-verdict-${badge}`}>
-          <banner.Icon
-            size={36}
-            color={banner.color}
-            fill={badge === 'star' ? banner.color : 'none'}
-            strokeWidth={2}
-          />
+          {badge === 'star' ? (
+            <GemIcon size={36} color={banner.color} filled cutoutColor={banner.bg} />
+          ) : (
+            <banner.Icon size={36} color={banner.color} fill="none" strokeWidth={2} />
+          )}
           <View style={styles.bannerText}>
             <Text style={[styles.bannerTitle, { color: banner.color }]}>{banner.title}</Text>
             {whyText ? <Text style={styles.bannerBody}>{whyText}</Text> : null}

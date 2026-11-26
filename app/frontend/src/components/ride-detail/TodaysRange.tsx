@@ -15,10 +15,11 @@
 
 import React, { useState } from 'react';
 import { View } from 'react-native';
-import Svg, { Circle, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Rect, Text as SvgText } from 'react-native-svg';
 import { colors } from '../../theme/tokens';
 import { roundWait } from '../../utils/roundWait';
 import { Badge } from '../../types';
+import { GEM_FACETS, GEM_OUTLINE } from '../icons/GemIcon';
 
 
 // Geometry constants — all in the viewBox coordinate system.
@@ -59,10 +60,7 @@ const BADGE_FILL: Record<'go' | 'skip' | 'star', string> = {
 
 const STAR_MARKER_COLOR = colors.star;
 
-// Lucide "Gem" outline path, 24x24 viewBox — reused here instead of the Lucide
-// component so it can be drawn as a native SVG node inside this chart's Svg.
-const STAR_PATH_D =
-  'M17 3a2 2 0 0 1 1.6.8l3 4a2 2 0 0 1 .013 2.382l-7.99 10.986a2 2 0 0 1-3.247 0l-7.99-10.986A2 2 0 0 1 2.4 7.8l2.998-3.997A2 2 0 0 1 7 3z';
+// Gem geometry (see GemIcon), drawn as native SVG nodes inside this chart's Svg.
 const STAR_MARKER_SIZE = 22; // rendered width/height in track-coordinate units
 
 export interface RangeLayout {
@@ -270,13 +268,14 @@ export function TodaysRange({ p10, p90, current, typicalWait, badge }: Props): R
                 otherwise a plain dot in the badge color. */}
             {dotX != null ? (
               badge === 'star' ? (
-                <Path
-                  d={STAR_PATH_D}
-                  fill={STAR_MARKER_COLOR}
-                  stroke="white"
-                  strokeWidth={1}
+                <G
                   transform={`translate(${dotX - STAR_MARKER_SIZE / 2} ${TRACK_CY - STAR_MARKER_SIZE / 2}) scale(${STAR_MARKER_SIZE / 24})`}
-                />
+                >
+                  <Path d={GEM_OUTLINE} fill={STAR_MARKER_COLOR} stroke="white" strokeWidth={1.5} strokeLinejoin="round" />
+                  {GEM_FACETS.map(d => (
+                    <Path key={d} d={d} fill="none" stroke="white" strokeWidth={1.5} strokeLinecap="round" />
+                  ))}
+                </G>
               ) : (
                 <Circle cx={dotX} cy={TRACK_CY} r={7} fill={fillColor} stroke="white" strokeWidth={2} />
               )
