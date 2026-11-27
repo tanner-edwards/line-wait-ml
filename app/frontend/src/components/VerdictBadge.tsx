@@ -12,6 +12,7 @@ import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { CircleCheck, OctagonX, Gem } from 'lucide-react-native';
 import { colors, fonts, radius } from '../theme/tokens';
+import { PILL_HEIGHT } from './WaitPill';
 
 export type VerdictBadgeVariant = 'star' | 'go' | 'skip';
 
@@ -47,7 +48,7 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     gap: 6,
     paddingHorizontal: 12,
-    paddingVertical: 5,
+    height: PILL_HEIGHT,
     borderRadius: radius.pill,
   },
   label: {

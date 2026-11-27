@@ -7,6 +7,9 @@ import React from 'react';
 import { LayoutChangeEvent, StyleSheet, View, ViewStyle } from 'react-native';
 import { colors, radius, shadows } from '../theme/tokens';
 
+/** Shared with VerdictBadge so the two pills sit at the same height. */
+export const PILL_HEIGHT = 28;
+
 interface WaitPillProps {
   children: React.ReactNode;
   style?: ViewStyle | ViewStyle[];
@@ -26,14 +29,17 @@ const styles = StyleSheet.create({
   pill: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 4,
-    alignSelf: 'flex-start',
+    // Fixed height, centered by the row (no alignSelf) — lines up with the
+    // verdict badge whatever the content, including the icon-only Walk On.
+    height: PILL_HEIGHT,
+    minWidth: PILL_HEIGHT,
     backgroundColor: colors.surface,
     borderWidth: 1,
     borderColor: colors.borderStrong,
     borderRadius: radius.pill,
     paddingHorizontal: 12,
-    paddingVertical: 4,
     ...shadows.card,
   },
 });
